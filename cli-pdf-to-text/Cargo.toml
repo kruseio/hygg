@@ -23,7 +23,7 @@ redirect-stderr = { version = "0.1", path = "../redirect-stderr" }
 getopts = "0.2"
 
 pdf-extract = "0.7"
-lopdf = "0.35"
+lopdf = "0.37"
 
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2" }
