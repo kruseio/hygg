@@ -1,6 +1,6 @@
 <p align="center">
-  <a href="https://github.com/kruserr/hygg" target="_blank">
-    <img width="300" src="https://raw.githubusercontent.com/kruserr/hygg/main/assets/logo/logo.svg">
+  <a href="https://github.com/kruseio/hygg" target="_blank">
+    <img width="300" src="https://raw.githubusercontent.com/kruseio/hygg/main/assets/logo/logo.svg">
   </a>
 </p>
 
@@ -13,7 +13,7 @@ Minimalistic Vim-like TUI document reader.
 <br>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/kruserr/hygg/main/assets/demo-1.gif" alt="animated" />
+  <img src="https://raw.githubusercontent.com/kruseio/hygg/main/assets/demo-1.gif" alt="animated" />
 </p>
 
 <br>
@@ -33,7 +33,7 @@ cargo install --locked hygg
 hygg doc.pdf
 ```
 
-For further install instructions read the [Getting started page](https://github.com/kruserr/hygg/blob/main/docs/pages/getting-started.md)
+For further install instructions read the [Getting started page](https://github.com/kruseio/hygg/blob/main/docs/pages/getting-started.md)
 
 ## Features
 
@@ -75,29 +75,23 @@ For further install instructions read the [Getting started page](https://github.
 - [ ] Reading statistics and insights
 
 ## Documentation
-Visit the [Documentation](https://github.com/kruserr/hygg/blob/main/docs/README.md)
+Visit the [Documentation](https://github.com/kruseio/hygg/blob/main/docs/README.md)
 
 ## Community
 
 **hygg** is built by readers, for readers. Join our growing community:
 
-- [Report issues](https://github.com/kruserr/hygg/issues)
-- [Request features](https://github.com/kruserr/hygg/issues)
-- [Contribute code](https://github.com/kruserr/hygg/pulls)
+- [Report issues](https://github.com/kruseio/hygg/issues)
+- [Request features](https://github.com/kruseio/hygg/issues)
+- [Contribute code](https://github.com/kruseio/hygg/pulls)
 
 ## Star History
 
-<a href="https://www.star-history.com/#kruserr/hygg&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=kruserr/hygg&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=kruserr/hygg&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=kruserr/hygg&type=Date" />
- </picture>
-</a>
+[![Star History Chart](https://api.star-history.com/svg?repos=kruseio/hygg&type=Date)](https://www.star-history.com/#kruseio/hygg&Date)
 
 ## Contributors
-<a href="https://github.com/kruserr/hygg/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=kruserr/hygg" />
+<a href="https://github.com/kruseio/hygg/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=kruseio/hygg" />
 </a>
 
 Made with [contrib.rocks](https://contrib.rocks).
