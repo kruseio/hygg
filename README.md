@@ -33,6 +33,12 @@ cargo install --locked hygg
 hygg doc.pdf
 ```
 
+If you are a wayland user(it requires specific clipboard protocols):
+```sh
+cargo install --locked --features wayland hygg
+hygg doc.pdf
+```
+
 For further install instructions read the [Getting started page](https://github.com/kruseio/hygg/blob/main/docs/pages/getting-started.md)
 
 ## Features

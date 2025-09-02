@@ -29,3 +29,6 @@ uuid = { version = "1", features = ["v4"] }
 atty = "0.2"
 
 clap = { version = "4.5", features = ["derive"] }
+
+[features]
+wayland = ["cli-text-reader/wayland"]
