@@ -33,3 +33,6 @@ lazy_static = "1.5"
 
 [dev-dependencies]
 tempfile = "3"
+
+[features]
+wayland = ["arboard/wayland-data-control"]

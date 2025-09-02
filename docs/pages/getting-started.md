@@ -24,6 +24,15 @@ e.g. for the fish shell you add the following to your config:
 fish_add_path ~/.cargo/bin
 ```
 
+### Wayland
+```sh
+cargo install --locked --features wayland hygg
+hygg doc.pdf
+```
+If you are on Wayland, you need to enable the `wayland` feature (it forwards to `arboard/wayland-data-control`), since Wayland requires specific clipboard protocols that are not enabled by default.
+
+More details: https://crates.io/crates/arboard
+
 ### Git and cargo
 Clone the repo, build from source and run
 ```sh
