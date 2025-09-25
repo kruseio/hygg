@@ -365,7 +365,7 @@ fn pandoc_to_text(
   // Check if pandoc is available
   if which("pandoc").is_none() {
     return Err(
-      "pandoc not found. Install with: sudo apt install pandoc".into(),
+      "pandoc not found. Install with:\nsudo apt install pandoc\n# scoop install pandoc\n# brew install pandoc".into(),
     );
   }
 
