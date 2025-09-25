@@ -67,14 +67,50 @@ struct Args {
 }
 
 pub fn which(binary: &str) -> Option<std::path::PathBuf> {
-  if let Ok(paths) = env::var("PATH") {
-    for path in env::split_paths(&paths) {
-      let full_path = path.join(binary);
+  if binary.is_empty() || binary.contains('\0') {
+    return None;
+  }
+
+  let extensions = if cfg!(windows) {
+    vec!["", ".exe", ".com", ".bat", ".cmd"]
+  } else {
+    vec![""]
+  };
+
+  let paths = env::var("PATH").ok()?;
+
+  for path in env::split_paths(&paths) {
+    if !path.exists() || !path.is_dir() {
+      continue;
+    }
+
+    for &ext in &extensions {
+      let binary_with_ext = format!("{}{}", binary, ext);
+      let full_path = path.join(&binary_with_ext);
+
       if full_path.is_file() {
-        return Some(full_path);
+        if let Ok(canonical) = full_path.canonicalize() {
+          return Some(canonical);
+        }
       }
     }
   }
+
+  if cfg!(windows) {
+    if let Ok(current_dir) = env::current_dir() {
+      for &ext in &extensions {
+        let binary_with_ext = format!("{}{}", binary, ext);
+        let current_dir_path = current_dir.join(&binary_with_ext);
+
+        if current_dir_path.is_file() {
+          if let Ok(canonical) = current_dir_path.canonicalize() {
+            return Some(canonical);
+          }
+        }
+      }
+    }
+  }
+
   None
 }
 
