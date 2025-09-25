@@ -270,7 +270,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
               if which("pandoc").is_none() {
                 eprintln!(
-                  "pandoc not installed!\nFor additional formats, install pandoc:\nsudo apt install pandoc"
+                  "pandoc not installed!\n\nFor additional formats, install pandoc:\nsudo apt install pandoc\n# scoop install pandoc\n# brew install pandoc"
                 );
               }
               std::process::exit(1);
