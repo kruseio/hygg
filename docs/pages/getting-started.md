@@ -43,6 +43,8 @@ hygg test-data/pdf/pdfreference1.7old-1-50.pdf
 ## Additional formats via pandoc
 ```sh
 sudo apt install pandoc
+# scoop install pandoc
+# brew install pandoc
 hygg doc.docx
 ```
 
