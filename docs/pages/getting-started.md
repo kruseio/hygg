@@ -27,14 +27,14 @@ fish_add_path ~/.cargo/bin
 ### Git and cargo
 Clone the repo, build from source and run
 ```sh
-git clone https://github.com/kruserr/hygg.git
+git clone https://github.com/kruseio/hygg.git
 cd hygg
 cargo run -- test-data/pdf/pdfreference1.7old-1-50.pdf
 ```
 
 Clone the repo, build from source, install and run
 ```sh
-git clone https://github.com/kruserr/hygg.git
+git clone https://github.com/kruseio/hygg.git
 cd hygg
 cargo install --locked --path hygg
 hygg test-data/pdf/pdfreference1.7old-1-50.pdf

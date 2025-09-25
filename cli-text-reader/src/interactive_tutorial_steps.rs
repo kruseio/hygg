@@ -23,7 +23,7 @@ pub fn get_interactive_tutorial_steps() -> Vec<InteractiveTutorialStep> {
         "• 🔒 Privacy-first - your documents stay on your machine".to_string(),
         "".to_string(),
         format!(
-          "{}github.com/kruserr/hygg{} | {}",
+          "{}github.com/kruseio/hygg{} | {}",
           SetForegroundColor(Color::Blue),
           ResetColor,
           stars_text
@@ -231,7 +231,7 @@ pub fn get_interactive_tutorial_steps() -> Vec<InteractiveTutorialStep> {
           ResetColor
         ),
         format!(
-          "• Documentation: {}github.com/kruserr/hygg{}",
+          "• Documentation: {}github.com/kruseio/hygg{}",
           SetForegroundColor(Color::Blue),
           ResetColor
         ),
@@ -266,7 +266,7 @@ pub fn get_interactive_tutorial_steps() -> Vec<InteractiveTutorialStep> {
           ResetColor
         ),
         "".to_string(),
-        "hygg is created and maintained by Ragnar Kruse (kruserr),".to_string(),
+        "hygg is created and maintained by Ragnar Kruse (kruseio),".to_string(),
         "a passionate open-source developer dedicated to building".to_string(),
         "high-quality tools that enhance productivity and make".to_string(),
         "computing more enjoyable.".to_string(),
@@ -277,7 +277,7 @@ pub fn get_interactive_tutorial_steps() -> Vec<InteractiveTutorialStep> {
           ResetColor
         ),
         format!(
-          "• GitHub: {}github.com/kruserr{}",
+          "• GitHub: {}github.com/kruseio{}",
           SetForegroundColor(Color::Blue),
           ResetColor
         ),

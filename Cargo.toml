@@ -17,10 +17,10 @@ members = [
 version = "0.1.17"
 rust-version = "1.88"
 edition = "2024"
-authors = ["kruserr"]
+authors = ["kruseio"]
 license = "AGPL-3.0"
 readme = "README.md"
-repository = "https://github.com/kruserr/hygg"
+repository = "https://github.com/kruseio/hygg"
 keywords = ["pdf", "cli", "parser", "terminal", "utility"]
 categories = [
   "command-line-utilities",

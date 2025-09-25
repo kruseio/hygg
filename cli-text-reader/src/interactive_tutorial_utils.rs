@@ -15,7 +15,7 @@ pub fn fetch_github_stars() -> String {
 
     // Fetch stars if not cached
     let stars_text =
-      match ureq::get("https://api.github.com/repos/kruserr/hygg")
+      match ureq::get("https://api.github.com/repos/kruseio/hygg")
         .timeout(std::time::Duration::from_secs(2))
         .call()
       {

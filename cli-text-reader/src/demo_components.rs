@@ -506,7 +506,7 @@ fn final_message_component() -> DemoComponent {
     description: "Closing with github link",
     actions: vec![
       ShowHint(
-        "hygg - simplifying the way you read\n\ngithub.com/kruserr/hygg"
+        "hygg - simplifying the way you read\n\ngithub.com/kruseio/hygg"
           .to_string(),
         Duration::from_millis(5000),
       ),
@@ -524,7 +524,7 @@ fn final_message_short_component() -> DemoComponent {
     description: "Short closing message",
     actions: vec![
       ShowHint(
-        "hygg - simplifying the way you read\n\ngithub.com/kruserr/hygg"
+        "hygg - simplifying the way you read\n\ngithub.com/kruseio/hygg"
           .to_string(),
         Duration::from_millis(3000),
       ),
