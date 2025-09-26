@@ -23,7 +23,7 @@ hygg-shared = { version = "0.1", path = "../hygg-shared" }
 
 getopts = "0.2"
 
-pdf-extract = "0.7"
+pdf-extract = "0.9"
 lopdf = "0.35"
 
 [target.'cfg(unix)'.dependencies]
