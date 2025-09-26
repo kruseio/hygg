@@ -2,6 +2,7 @@
 
 set -Eeuo pipefail
 
+cargo publish -p hygg-shared
 cargo publish -p cli-pdf-to-text
 cargo publish -p cli-epub-to-text
 cargo publish -p cli-justify

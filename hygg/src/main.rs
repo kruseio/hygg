@@ -1,4 +1,5 @@
 use clap::Parser;
+use hygg_shared::normalize_file_path;
 use std::env;
 use std::io::{self, Read};
 
@@ -88,25 +89,25 @@ pub fn which(binary: &str) -> Option<std::path::PathBuf> {
       let binary_with_ext = format!("{}{}", binary, ext);
       let full_path = path.join(&binary_with_ext);
 
-      if full_path.is_file() {
-        if let Ok(canonical) = full_path.canonicalize() {
-          return Some(canonical);
-        }
+      if full_path.is_file()
+        && let Ok(canonical) = full_path.canonicalize()
+      {
+        return Some(canonical);
       }
     }
   }
 
-  if cfg!(windows) {
-    if let Ok(current_dir) = env::current_dir() {
-      for &ext in &extensions {
-        let binary_with_ext = format!("{}{}", binary, ext);
-        let current_dir_path = current_dir.join(&binary_with_ext);
+  if cfg!(windows)
+    && let Ok(current_dir) = env::current_dir()
+  {
+    for &ext in &extensions {
+      let binary_with_ext = format!("{}{}", binary, ext);
+      let current_dir_path = current_dir.join(&binary_with_ext);
 
-        if current_dir_path.is_file() {
-          if let Ok(canonical) = current_dir_path.canonicalize() {
-            return Some(canonical);
-          }
-        }
+      if current_dir_path.is_file()
+        && let Ok(canonical) = current_dir_path.canonicalize()
+      {
+        return Some(canonical);
       }
     }
   }
@@ -233,11 +234,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let temp_file = format!("{file}-{}", uuid::Uuid::new_v4());
 
     let content = if (args.ocr && which("ocrmypdf").is_some()) {
-      // Validate file path to prevent command injection
-      if let Err(e) = validate_file_path(&file) {
-        eprintln!("Error: Invalid file path: {e}");
-        std::process::exit(1);
-      }
+      // Validate and normalize file path to prevent command injection
+      let canonical_file = match normalize_file_path(&file) {
+        Ok(path) => path.to_string_lossy().to_string(),
+        Err(e) => {
+          eprintln!("Error: Invalid file path: {e}");
+          std::process::exit(1);
+        }
+      };
 
       // Additional validation for temp file path
       if temp_file.contains("..")
@@ -254,7 +258,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       cmd
         .arg("--force-ocr")
         .arg("--") // End of options marker
-        .arg(&file)
+        .arg(&canonical_file)
         .arg(&temp_file)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -361,39 +365,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   Ok(())
 }
 
-// Validate file path to prevent command injection
-fn validate_file_path(file_path: &str) -> Result<(), String> {
-  // Check for dangerous characters that could be used for command injection
-  let dangerous_chars =
-    ['|', '&', ';', '`', '$', '(', ')', '<', '>', '\\', '\n', '\r'];
-
-  if file_path.chars().any(|c| dangerous_chars.contains(&c)) {
-    return Err("File path contains dangerous characters".to_string());
-  }
-
-  // Check for path traversal attempts
-  if file_path.contains("..") {
-    return Err("Path traversal not allowed".to_string());
-  }
-
-  // Check for null bytes
-  if file_path.contains('\0') {
-    return Err("Null bytes not allowed in file path".to_string());
-  }
-
-  // Ensure the file exists and is a regular file
-  let path = std::path::Path::new(file_path);
-  if !path.exists() {
-    return Err("File does not exist".to_string());
-  }
-
-  if !path.is_file() {
-    return Err("Path is not a regular file".to_string());
-  }
-
-  Ok(())
-}
-
 // Convert document to text using pandoc
 fn pandoc_to_text(
   file_path: &str,
@@ -405,8 +376,7 @@ fn pandoc_to_text(
     );
   }
 
-  // Validate file path
-  validate_file_path(file_path)?;
+  let canonical_path = normalize_file_path(file_path)?;
 
   // Run pandoc with plain text output
   let mut cmd = std::process::Command::new("pandoc");
@@ -414,7 +384,7 @@ fn pandoc_to_text(
     .arg("--to=plain")
     .arg("--wrap=none")
     .arg("--")
-    .arg(file_path)
+    .arg(canonical_path)
     .stdin(std::process::Stdio::null())
     .stdout(std::process::Stdio::piped())
     .stderr(std::process::Stdio::piped());

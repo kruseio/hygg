@@ -21,9 +21,9 @@
 //! ```
 
 use epub::doc::EpubDoc;
+use hygg_shared::{PathError, normalize_file_path};
 use std::error::Error;
 use std::fmt;
-use std::path::Path;
 
 /// Custom error type for EPUB processing errors
 #[derive(Debug)]
@@ -52,6 +52,17 @@ impl fmt::Display for EpubError {
 }
 
 impl Error for EpubError {}
+
+impl From<PathError> for EpubError {
+  fn from(error: PathError) -> Self {
+    match error {
+      PathError::FileNotFound(msg) => EpubError::FileNotFound(msg),
+      PathError::InvalidPath(msg) => EpubError::InvalidEpub(msg),
+      PathError::NotAFile(msg) => EpubError::FileNotFound(msg),
+      PathError::IoError(msg) => EpubError::InvalidEpub(msg),
+    }
+  }
+}
 
 /// Convert an EPUB file to plain text
 ///
@@ -83,11 +94,9 @@ impl Error for EpubError {}
 /// }
 /// ```
 pub fn epub_to_text(file_path: &str) -> Result<String, EpubError> {
-  // Check if file exists before attempting to parse
-  if !Path::new(file_path).exists() {
-    return Err(EpubError::FileNotFound(file_path.to_string()));
-  }
-  let mut epub = EpubDoc::new(file_path)
+  let canonical_path = normalize_file_path(file_path)?;
+
+  let mut epub = EpubDoc::new(&canonical_path)
     .map_err(|e| EpubError::InvalidEpub(format!("Failed to open EPUB: {e}")))?;
 
   let mut text_parts = Vec::new();
@@ -157,8 +166,9 @@ mod tests {
     let result = epub_to_text("definitely_nonexistent_file.epub");
     assert!(result.is_err());
     match result.unwrap_err() {
-      EpubError::FileNotFound(path) => {
-        assert_eq!(path, "definitely_nonexistent_file.epub");
+      EpubError::FileNotFound(message) => {
+        assert!(message.contains("definitely_nonexistent_file.epub"));
+        assert!(message.contains("Failed to resolve path"));
       }
       _ => panic!("Expected FileNotFound error"),
     }

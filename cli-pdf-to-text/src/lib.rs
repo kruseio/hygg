@@ -1,3 +1,4 @@
+use hygg_shared::normalize_file_path;
 use std::{
   env,
   io::{BufWriter, Cursor},
@@ -6,6 +7,7 @@ use std::{
 pub fn pdf_to_text(
   pdf_path: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
+  let canonical_path = normalize_file_path(pdf_path)?;
   #[cfg(target_os = "windows")]
   redirect_stderr::redirect_stdout()?;
 
@@ -36,13 +38,11 @@ pub fn pdf_to_text(
     }
   }
 
-  let path = std::path::Path::new(pdf_path);
-
   let mut output_buf = Vec::new();
   {
     let mut output_file = BufWriter::new(Cursor::new(&mut output_buf));
 
-    let doc = pdf_extract::Document::load(path)?;
+    let doc = pdf_extract::Document::load(&canonical_path)?;
 
     pdf_extract::print_metadata(&doc);
 
