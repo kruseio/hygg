@@ -817,6 +817,9 @@ dependencies = [
 [[package]]
 name = "hygg-shared"
 version = "0.1.19"
+dependencies = [
+ "tempfile",
+]
 
 [[package]]
 name = "iana-time-zone"

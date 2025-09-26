@@ -69,8 +69,8 @@ pub fn normalize_file_path(file_path: &str) -> Result<PathBuf, PathError> {
   }
 
   // Check for dangerous characters that could be used for command injection
-  // Note: Backslash is valid on Windows, so we don't include it here
-  let dangerous_chars = ['|', '&', ';', '`', '$', '(', ')', '<', '>', '\n', '\r'];
+  // Note: Backslash is valid on Windows, parentheses are common in filenames
+  let dangerous_chars = ['|', '&', ';', '`', '$', '<', '>', '\n', '\r'];
 
   if file_path.chars().any(|c| dangerous_chars.contains(&c)) {
     return Err(PathError::InvalidPath(
@@ -116,7 +116,6 @@ mod tests {
       "test;file.txt",
       "test`file.txt",
       "test$file.txt",
-      "test(file).txt",
       "test<file>.txt",
     ];
 
