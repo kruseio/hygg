@@ -19,6 +19,7 @@ workspace = true
 
 [dependencies]
 redirect-stderr = { version = "0.1", path = "../redirect-stderr" }
+hygg-shared = { version = "0.1.18", path = "../hygg-shared" }
 
 getopts = "0.2"
 

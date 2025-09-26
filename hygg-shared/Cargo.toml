@@ -1,6 +1,6 @@
 [package]
-name = "cli-epub-to-text"
-description = "A CLI epub to plain text converter"
+name = "hygg-shared"
+description = "Shared utilities for hygg project"
 
 version.workspace = true
 rust-version.workspace = true
@@ -18,10 +18,3 @@ categories.workspace = true
 workspace = true
 
 [dependencies]
-epub = "2.1.4"
-html2text = "0.15"
-hygg-shared = { version = "0.1.18", path = "../hygg-shared" }
-
-[dev-dependencies]
-tempfile = "3"
-zip = "4"

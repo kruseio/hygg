@@ -21,9 +21,9 @@
 //! ```
 
 use epub::doc::EpubDoc;
+use hygg_shared::{normalize_file_path, PathError};
 use std::error::Error;
 use std::fmt;
-use std::path::Path;
 
 /// Custom error type for EPUB processing errors
 #[derive(Debug)]
@@ -52,6 +52,17 @@ impl fmt::Display for EpubError {
 }
 
 impl Error for EpubError {}
+
+impl From<PathError> for EpubError {
+  fn from(error: PathError) -> Self {
+    match error {
+      PathError::FileNotFound(msg) => EpubError::FileNotFound(msg),
+      PathError::InvalidPath(msg) => EpubError::InvalidEpub(msg),
+      PathError::NotAFile(msg) => EpubError::FileNotFound(msg),
+      PathError::IoError(msg) => EpubError::InvalidEpub(msg),
+    }
+  }
+}
 
 /// Convert an EPUB file to plain text
 ///
@@ -83,16 +94,8 @@ impl Error for EpubError {}
 /// }
 /// ```
 pub fn epub_to_text(file_path: &str) -> Result<String, EpubError> {
-  // Normalize the path to handle different path separators and resolve relative paths
-  let path = Path::new(file_path);
-  let canonical_path = path.canonicalize().map_err(|e| {
-    EpubError::FileNotFound(format!("Failed to resolve path '{}': {}", file_path, e))
-  })?;
-
-  // Ensure the file is a regular file
-  if !canonical_path.is_file() {
-    return Err(EpubError::FileNotFound("Path is not a regular file".to_string()));
-  }
+  // Use shared path normalization function
+  let canonical_path = normalize_file_path(file_path)?;
 
   let mut epub = EpubDoc::new(&canonical_path)
     .map_err(|e| EpubError::InvalidEpub(format!("Failed to open EPUB: {e}")))?;

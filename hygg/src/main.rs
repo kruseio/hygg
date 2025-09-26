@@ -1,4 +1,5 @@
 use clap::Parser;
+use hygg_shared::normalize_file_path;
 use std::env;
 use std::io::{self, Read};
 
@@ -234,7 +235,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let content = if (args.ocr && which("ocrmypdf").is_some()) {
       // Validate and normalize file path to prevent command injection
-      let canonical_file = match validate_file_path(&file) {
+      let canonical_file = match normalize_file_path(&file) {
         Ok(path) => path.to_string_lossy().to_string(),
         Err(e) => {
           eprintln!("Error: Invalid file path: {e}");
@@ -364,36 +365,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   Ok(())
 }
 
-// Validate file path to prevent command injection
-fn validate_file_path(file_path: &str) -> Result<std::path::PathBuf, String> {
-  // Check for null bytes
-  if file_path.contains('\0') {
-    return Err("Null bytes not allowed in file path".to_string());
-  }
-
-  // Check for dangerous characters that could be used for command injection
-  // Note: Backslash is valid on Windows, so we don't include it here
-  let dangerous_chars = ['|', '&', ';', '`', '$', '(', ')', '<', '>', '\n', '\r'];
-
-  if file_path.chars().any(|c| dangerous_chars.contains(&c)) {
-    return Err("File path contains dangerous characters".to_string());
-  }
-
-  // Normalize the path to handle different path separators and resolve relative paths
-  let path = std::path::Path::new(file_path);
-
-  // Canonicalize the path to resolve . and .. components and convert to absolute path
-  let canonical_path = path.canonicalize().map_err(|e| {
-    format!("Failed to resolve path '{}': {}", file_path, e)
-  })?;
-
-  // Ensure the file is a regular file
-  if !canonical_path.is_file() {
-    return Err("Path is not a regular file".to_string());
-  }
-
-  Ok(canonical_path)
-}
 
 // Convert document to text using pandoc
 fn pandoc_to_text(
@@ -406,8 +377,8 @@ fn pandoc_to_text(
     );
   }
 
-  // Validate and normalize file path
-  let canonical_path = validate_file_path(file_path)?;
+  // Use shared path normalization function
+  let canonical_path = normalize_file_path(file_path)?;
 
   // Run pandoc with plain text output
   let mut cmd = std::process::Command::new("pandoc");

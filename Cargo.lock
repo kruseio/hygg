@@ -314,6 +314,7 @@ version = "0.1.18"
 dependencies = [
  "epub",
  "html2text",
+ "hygg-shared",
  "tempfile",
  "zip 4.3.0",
 ]
@@ -330,6 +331,7 @@ name = "cli-pdf-to-text"
 version = "0.1.18"
 dependencies = [
  "getopts",
+ "hygg-shared",
  "libc",
  "lopdf 0.35.0",
  "pdf-extract",
@@ -807,9 +809,14 @@ dependencies = [
  "cli-justify",
  "cli-pdf-to-text",
  "cli-text-reader",
+ "hygg-shared",
  "redirect-stderr",
  "uuid",
 ]
+
+[[package]]
+name = "hygg-shared"
+version = "0.1.18"
 
 [[package]]
 name = "iana-time-zone"

@@ -1,3 +1,4 @@
+use hygg_shared::normalize_file_path;
 use std::{
   env,
   io::{BufWriter, Cursor},
@@ -6,16 +7,8 @@ use std::{
 pub fn pdf_to_text(
   pdf_path: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-  // Normalize the path to handle different path separators and resolve relative paths
-  let path = std::path::Path::new(pdf_path);
-  let canonical_path = path.canonicalize().map_err(|e| {
-    format!("Failed to resolve path '{}': {}", pdf_path, e)
-  })?;
-
-  // Ensure the file is a regular file
-  if !canonical_path.is_file() {
-    return Err("Path is not a regular file".into());
-  }
+  // Use shared path normalization function
+  let canonical_path = normalize_file_path(pdf_path)?;
   #[cfg(target_os = "windows")]
   redirect_stderr::redirect_stdout()?;
 
