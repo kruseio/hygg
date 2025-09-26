@@ -83,11 +83,18 @@ impl Error for EpubError {}
 /// }
 /// ```
 pub fn epub_to_text(file_path: &str) -> Result<String, EpubError> {
-  // Check if file exists before attempting to parse
-  if !Path::new(file_path).exists() {
-    return Err(EpubError::FileNotFound(file_path.to_string()));
+  // Normalize the path to handle different path separators and resolve relative paths
+  let path = Path::new(file_path);
+  let canonical_path = path.canonicalize().map_err(|e| {
+    EpubError::FileNotFound(format!("Failed to resolve path '{}': {}", file_path, e))
+  })?;
+
+  // Ensure the file is a regular file
+  if !canonical_path.is_file() {
+    return Err(EpubError::FileNotFound("Path is not a regular file".to_string()));
   }
-  let mut epub = EpubDoc::new(file_path)
+
+  let mut epub = EpubDoc::new(&canonical_path)
     .map_err(|e| EpubError::InvalidEpub(format!("Failed to open EPUB: {e}")))?;
 
   let mut text_parts = Vec::new();
@@ -157,8 +164,9 @@ mod tests {
     let result = epub_to_text("definitely_nonexistent_file.epub");
     assert!(result.is_err());
     match result.unwrap_err() {
-      EpubError::FileNotFound(path) => {
-        assert_eq!(path, "definitely_nonexistent_file.epub");
+      EpubError::FileNotFound(message) => {
+        assert!(message.contains("definitely_nonexistent_file.epub"));
+        assert!(message.contains("Failed to resolve path"));
       }
       _ => panic!("Expected FileNotFound error"),
     }

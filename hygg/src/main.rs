@@ -233,11 +233,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let temp_file = format!("{file}-{}", uuid::Uuid::new_v4());
 
     let content = if (args.ocr && which("ocrmypdf").is_some()) {
-      // Validate file path to prevent command injection
-      if let Err(e) = validate_file_path(&file) {
-        eprintln!("Error: Invalid file path: {e}");
-        std::process::exit(1);
-      }
+      // Validate and normalize file path to prevent command injection
+      let canonical_file = match validate_file_path(&file) {
+        Ok(path) => path.to_string_lossy().to_string(),
+        Err(e) => {
+          eprintln!("Error: Invalid file path: {e}");
+          std::process::exit(1);
+        }
+      };
 
       // Additional validation for temp file path
       if temp_file.contains("..")
@@ -254,7 +257,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       cmd
         .arg("--force-ocr")
         .arg("--") // End of options marker
-        .arg(&file)
+        .arg(&canonical_file)
         .arg(&temp_file)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -362,36 +365,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // Validate file path to prevent command injection
-fn validate_file_path(file_path: &str) -> Result<(), String> {
-  // Check for dangerous characters that could be used for command injection
-  let dangerous_chars =
-    ['|', '&', ';', '`', '$', '(', ')', '<', '>', '\\', '\n', '\r'];
-
-  if file_path.chars().any(|c| dangerous_chars.contains(&c)) {
-    return Err("File path contains dangerous characters".to_string());
-  }
-
-  // Check for path traversal attempts
-  if file_path.contains("..") {
-    return Err("Path traversal not allowed".to_string());
-  }
-
+fn validate_file_path(file_path: &str) -> Result<std::path::PathBuf, String> {
   // Check for null bytes
   if file_path.contains('\0') {
     return Err("Null bytes not allowed in file path".to_string());
   }
 
-  // Ensure the file exists and is a regular file
-  let path = std::path::Path::new(file_path);
-  if !path.exists() {
-    return Err("File does not exist".to_string());
+  // Check for dangerous characters that could be used for command injection
+  // Note: Backslash is valid on Windows, so we don't include it here
+  let dangerous_chars = ['|', '&', ';', '`', '$', '(', ')', '<', '>', '\n', '\r'];
+
+  if file_path.chars().any(|c| dangerous_chars.contains(&c)) {
+    return Err("File path contains dangerous characters".to_string());
   }
 
-  if !path.is_file() {
+  // Normalize the path to handle different path separators and resolve relative paths
+  let path = std::path::Path::new(file_path);
+
+  // Canonicalize the path to resolve . and .. components and convert to absolute path
+  let canonical_path = path.canonicalize().map_err(|e| {
+    format!("Failed to resolve path '{}': {}", file_path, e)
+  })?;
+
+  // Ensure the file is a regular file
+  if !canonical_path.is_file() {
     return Err("Path is not a regular file".to_string());
   }
 
-  Ok(())
+  Ok(canonical_path)
 }
 
 // Convert document to text using pandoc
@@ -405,8 +406,8 @@ fn pandoc_to_text(
     );
   }
 
-  // Validate file path
-  validate_file_path(file_path)?;
+  // Validate and normalize file path
+  let canonical_path = validate_file_path(file_path)?;
 
   // Run pandoc with plain text output
   let mut cmd = std::process::Command::new("pandoc");
@@ -414,7 +415,7 @@ fn pandoc_to_text(
     .arg("--to=plain")
     .arg("--wrap=none")
     .arg("--")
-    .arg(file_path)
+    .arg(canonical_path)
     .stdin(std::process::Stdio::null())
     .stdout(std::process::Stdio::piped())
     .stderr(std::process::Stdio::piped());

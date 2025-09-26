@@ -168,10 +168,14 @@ fn test_epub_to_text_file_not_found() {
   assert!(result.is_err(), "Should return error for nonexistent file");
 
   match result.unwrap_err() {
-    EpubError::FileNotFound(path) => {
-      assert_eq!(
-        path, "nonexistent_file.epub",
+    EpubError::FileNotFound(message) => {
+      assert!(
+        message.contains("nonexistent_file.epub"),
         "Error should contain the file path"
+      );
+      assert!(
+        message.contains("Failed to resolve path"),
+        "Error should indicate path resolution failure"
       );
     }
     _ => panic!("Expected FileNotFound error"),

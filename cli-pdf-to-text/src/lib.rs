@@ -6,6 +6,16 @@ use std::{
 pub fn pdf_to_text(
   pdf_path: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
+  // Normalize the path to handle different path separators and resolve relative paths
+  let path = std::path::Path::new(pdf_path);
+  let canonical_path = path.canonicalize().map_err(|e| {
+    format!("Failed to resolve path '{}': {}", pdf_path, e)
+  })?;
+
+  // Ensure the file is a regular file
+  if !canonical_path.is_file() {
+    return Err("Path is not a regular file".into());
+  }
   #[cfg(target_os = "windows")]
   redirect_stderr::redirect_stdout()?;
 
@@ -36,13 +46,11 @@ pub fn pdf_to_text(
     }
   }
 
-  let path = std::path::Path::new(pdf_path);
-
   let mut output_buf = Vec::new();
   {
     let mut output_file = BufWriter::new(Cursor::new(&mut output_buf));
 
-    let doc = pdf_extract::Document::load(path)?;
+    let doc = pdf_extract::Document::load(&canonical_path)?;
 
     pdf_extract::print_metadata(&doc);
 
