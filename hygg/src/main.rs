@@ -89,25 +89,25 @@ pub fn which(binary: &str) -> Option<std::path::PathBuf> {
       let binary_with_ext = format!("{}{}", binary, ext);
       let full_path = path.join(&binary_with_ext);
 
-      if full_path.is_file() {
-        if let Ok(canonical) = full_path.canonicalize() {
-          return Some(canonical);
-        }
+      if full_path.is_file()
+        && let Ok(canonical) = full_path.canonicalize()
+      {
+        return Some(canonical);
       }
     }
   }
 
-  if cfg!(windows) {
-    if let Ok(current_dir) = env::current_dir() {
-      for &ext in &extensions {
-        let binary_with_ext = format!("{}{}", binary, ext);
-        let current_dir_path = current_dir.join(&binary_with_ext);
+  if cfg!(windows)
+    && let Ok(current_dir) = env::current_dir()
+  {
+    for &ext in &extensions {
+      let binary_with_ext = format!("{}{}", binary, ext);
+      let current_dir_path = current_dir.join(&binary_with_ext);
 
-        if current_dir_path.is_file() {
-          if let Ok(canonical) = current_dir_path.canonicalize() {
-            return Some(canonical);
-          }
-        }
+      if current_dir_path.is_file()
+        && let Ok(canonical) = current_dir_path.canonicalize()
+      {
+        return Some(canonical);
       }
     }
   }
@@ -364,7 +364,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   Ok(())
 }
-
 
 // Convert document to text using pandoc
 fn pandoc_to_text(

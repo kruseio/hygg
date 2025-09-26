@@ -21,7 +21,7 @@
 //! ```
 
 use epub::doc::EpubDoc;
-use hygg_shared::{normalize_file_path, PathError};
+use hygg_shared::{PathError, normalize_file_path};
 use std::error::Error;
 use std::fmt;
 

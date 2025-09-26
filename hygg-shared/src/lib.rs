@@ -78,19 +78,22 @@ pub fn normalize_file_path(file_path: &str) -> Result<PathBuf, PathError> {
     ));
   }
 
-  // Normalize the path to handle different path separators and resolve relative paths
+  // Normalize the path to handle different path separators and resolve relative
+  // paths
   let path = Path::new(file_path);
 
-  // Canonicalize the path to resolve . and .. components and convert to absolute path
+  // Canonicalize the path to resolve . and .. components and convert to
+  // absolute path
   let canonical_path = path.canonicalize().map_err(|e| {
-    PathError::FileNotFound(format!("Failed to resolve path '{}': {}", file_path, e))
+    PathError::FileNotFound(format!(
+      "Failed to resolve path '{}': {}",
+      file_path, e
+    ))
   })?;
 
   // Ensure the file is a regular file
   if !canonical_path.is_file() {
-    return Err(PathError::NotAFile(
-      "Path is not a regular file".to_string(),
-    ));
+    return Err(PathError::NotAFile("Path is not a regular file".to_string()));
   }
 
   Ok(canonical_path)
@@ -121,8 +124,11 @@ mod tests {
 
     for dangerous_path in dangerous_paths {
       let result = normalize_file_path(dangerous_path);
-      assert!(matches!(result, Err(PathError::InvalidPath(_))),
-              "Should reject dangerous path: {}", dangerous_path);
+      assert!(
+        matches!(result, Err(PathError::InvalidPath(_))),
+        "Should reject dangerous path: {}",
+        dangerous_path
+      );
     }
   }
 
@@ -139,7 +145,8 @@ mod tests {
   }
 
   #[test]
-  fn test_normalize_file_path_success() -> Result<(), Box<dyn std::error::Error>> {
+  fn test_normalize_file_path_success() -> Result<(), Box<dyn std::error::Error>>
+  {
     // Create a temporary file for testing
     let temp_file = std::env::temp_dir().join("hygg_test_file.txt");
     {
