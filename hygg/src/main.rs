@@ -376,7 +376,6 @@ fn pandoc_to_text(
     );
   }
 
-  // Use shared path normalization function
   let canonical_path = normalize_file_path(file_path)?;
 
   // Run pandoc with plain text output

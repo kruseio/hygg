@@ -7,7 +7,6 @@ use std::{
 pub fn pdf_to_text(
   pdf_path: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-  // Use shared path normalization function
   let canonical_path = normalize_file_path(pdf_path)?;
   #[cfg(target_os = "windows")]
   redirect_stderr::redirect_stdout()?;

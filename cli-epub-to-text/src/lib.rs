@@ -94,7 +94,6 @@ impl From<PathError> for EpubError {
 /// }
 /// ```
 pub fn epub_to_text(file_path: &str) -> Result<String, EpubError> {
-  // Use shared path normalization function
   let canonical_path = normalize_file_path(file_path)?;
 
   let mut epub = EpubDoc::new(&canonical_path)
