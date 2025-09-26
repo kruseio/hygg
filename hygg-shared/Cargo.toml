@@ -1,6 +1,6 @@
 [package]
 name = "hygg-shared"
-description = "Shared utilities for hygg project"
+description = "Shared utilities for the hygg project"
 
 version.workspace = true
 rust-version.workspace = true

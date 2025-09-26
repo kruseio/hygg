@@ -24,7 +24,7 @@ cli-epub-to-text = { version = "0.1", path = "../cli-epub-to-text" }
 cli-justify = { version = "0.1", path = "../cli-justify" }
 cli-text-reader = { version = "0.1", path = "../cli-text-reader" }
 redirect-stderr = { version = "0.1", path = "../redirect-stderr" }
-hygg-shared = { version = "0.1.18", path = "../hygg-shared" }
+hygg-shared = { version = "0.1", path = "../hygg-shared" }
 
 uuid = { version = "1", features = ["v4"] }
 atty = "0.2"
