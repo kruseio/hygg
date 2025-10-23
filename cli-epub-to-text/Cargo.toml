@@ -19,7 +19,7 @@ workspace = true
 
 [dependencies]
 epub = "2.1.4"
-html2text = "0.15"
+html2text = "0.16"
 hygg-shared = { version = "0.1", path = "../hygg-shared" }
 
 [dev-dependencies]
