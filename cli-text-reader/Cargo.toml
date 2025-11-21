@@ -27,7 +27,7 @@ serde_json = "1"
 dirs = "6"
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
-ureq = { version = "2.12", features = ["json"] }
+ureq = { version = "3.1", features = ["json"] }
 lazy_static = "1.5"
 
 arboard = { version = "3", default-features = true }
