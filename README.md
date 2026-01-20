@@ -28,8 +28,18 @@ Minimalistic Vim-like TUI document reader.
 - **Respects your privacy** - Run locally without server, or selfhost the sync server
 
 ## Quick start guide
+Install via cargo:
 ```sh
 cargo install --locked hygg
+```
+
+Or from the AUR:
+```sh
+paru -S hygg
+```
+
+And then start reading:
+```sh
 hygg doc.pdf
 ```
 
