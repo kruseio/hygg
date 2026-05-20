@@ -9,7 +9,8 @@ use super::structure::{
 };
 use super::wrapping::{
   flush_pending_aligned_toc_row, flush_pending_pdf_block,
-  pending_block_ends_with_hyphen, wrap_aligned_toc_row,
+  pending_block_ends_with_hyphen, pending_paragraph_ends_mid_sentence,
+  wrap_aligned_toc_row,
 };
 
 impl FormatterEngine {
@@ -160,6 +161,9 @@ impl FormatterEngine {
 
     self.in_aligned_toc = false;
     if pending_block_ends_with_hyphen(&self.pending) {
+      return true;
+    }
+    if pending_paragraph_ends_mid_sentence(&self.pending) {
       return true;
     }
     if let Some(capped_indent) =

@@ -120,6 +120,15 @@ pub(crate) fn should_start_new_pdf_paragraph(
       if looks_like_continuation_fragment {
         return false;
       }
+
+      // A small indent bump (1-2 chars) where the previous line ends mid-
+      // sentence is almost always a wrapped continuation, often because
+      // an inline code or styled run sits on the next visual line with a
+      // slightly different left edge.
+      let indent_bump = next_indent_width - current_indent_width;
+      if indent_bump <= 2 {
+        return false;
+      }
     }
   }
 

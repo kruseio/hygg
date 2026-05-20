@@ -41,6 +41,7 @@ fn is_heading_connector_word(word: &str) -> bool {
       | "and"
       | "as"
       | "at"
+      | "but"
       | "by"
       | "for"
       | "from"
@@ -51,8 +52,36 @@ fn is_heading_connector_word(word: &str) -> bool {
       | "or"
       | "the"
       | "to"
+      | "via"
+      | "vs"
+      | "vs."
       | "with"
       | "without"
+      | "is"
+      | "are"
+      | "was"
+      | "were"
+      | "be"
+      | "been"
+      | "being"
+      | "do"
+      | "does"
+      | "did"
+      | "has"
+      | "have"
+      | "had"
+      | "can"
+      | "could"
+      | "shall"
+      | "should"
+      | "will"
+      | "would"
+      | "may"
+      | "might"
+      | "must"
+      | "if"
+      | "than"
+      | "then"
   )
 }
 
@@ -124,6 +153,43 @@ fn looks_like_title_case_heading_word(word: &str) -> bool {
   })
 }
 
+pub(super) fn looks_like_single_word_section_heading(line: &str) -> bool {
+  let trimmed = line.trim();
+  let leading_ws = leading_whitespace_width(line);
+  if leading_ws > 6 {
+    return false;
+  }
+
+  let mut words = trimmed.split_whitespace();
+  let Some(only_word) = words.next() else {
+    return false;
+  };
+  if words.next().is_some() {
+    return false;
+  }
+
+  let chars: Vec<char> = only_word.chars().collect();
+  if !(3..=24).contains(&chars.len()) {
+    return false;
+  }
+  let mut iter = chars.iter();
+  let Some(&first) = iter.next() else {
+    return false;
+  };
+  if !first.is_uppercase() {
+    return false;
+  }
+  let mut letters = 1usize;
+  for &ch in iter {
+    if ch.is_lowercase() || matches!(ch, '-' | '\'' | '’') {
+      letters += 1;
+    } else {
+      return false;
+    }
+  }
+  letters >= 3
+}
+
 pub(super) fn looks_like_left_aligned_section_heading(line: &str) -> bool {
   let trimmed = line.trim();
   if trimmed.is_empty() {
@@ -148,11 +214,11 @@ pub(super) fn looks_like_left_aligned_section_heading(line: &str) -> bool {
   }
 
   let char_count = trimmed.chars().count();
-  if !(12..=88).contains(&char_count) {
+  if !(8..=88).contains(&char_count) {
     return false;
   }
 
-  if trimmed.ends_with(['.', ',', ';', ':', '?', '!']) {
+  if trimmed.ends_with(['.', ',', ';']) {
     return false;
   }
 
@@ -187,10 +253,39 @@ pub(super) fn looks_like_left_aligned_section_heading(line: &str) -> bool {
 }
 
 pub(super) fn looks_like_multi_column_row(line: &str) -> bool {
+  if line.split_whitespace().count() < 3 {
+    return false;
+  }
+
   let leading_ws = leading_whitespace_width(line);
-  leading_ws <= 3
-    && line.contains("   ")
-    && line.split_whitespace().count() >= 3
+  if leading_ws <= 3 && count_internal_gaps_of_width(line, 5) >= 1 {
+    return true;
+  }
+
+  // Tables, callouts, and code-aligned rows can be indented further but still
+  // carry multiple wide internal gaps that we want to preserve verbatim.
+  count_internal_gaps_of_width(line, 5) >= 2
+}
+
+fn count_internal_gaps_of_width(line: &str, threshold: usize) -> usize {
+  let trimmed = line.trim_start_matches([' ', '\t']);
+  let mut count = 0usize;
+  let mut run = 0usize;
+  let mut seen_non_space = false;
+  for ch in trimmed.chars() {
+    if ch == ' ' {
+      if seen_non_space {
+        run += 1;
+      }
+      continue;
+    }
+    if run >= threshold {
+      count += 1;
+    }
+    run = 0;
+    seen_non_space = true;
+  }
+  count
 }
 
 fn has_wide_gap_before_page_number(trimmed: &str) -> bool {

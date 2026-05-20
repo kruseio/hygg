@@ -19,9 +19,16 @@ pub(crate) fn wrap_line_preserving_whitespace(
   }
 
   let trimmed_start = line.trim_start_matches([' ', '\t']);
+  let original_indent_chars = char_len(line) - char_len(trimmed_start);
   if !trimmed_start.is_empty() && char_len(trimmed_start) <= line_width {
     let clamped_indent = line_width.saturating_sub(char_len(trimmed_start));
-    return vec![format!("{}{}", " ".repeat(clamped_indent), trimmed_start)];
+    // Only collapse the leading whitespace when the original indent looks
+    // truly excessive (e.g. an over-indented TOC label) and clamping is
+    // strictly less than the original. Otherwise preserve the indent and
+    // let the wrapping loop split the line at word boundaries.
+    if original_indent_chars > 20 && clamped_indent < original_indent_chars {
+      return vec![format!("{}{}", " ".repeat(clamped_indent), trimmed_start)];
+    }
   }
 
   let indent = leading_whitespace(line).to_string();

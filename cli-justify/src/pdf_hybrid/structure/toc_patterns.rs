@@ -27,23 +27,103 @@ pub(crate) fn is_counter_token(token: &str) -> bool {
 }
 
 pub(crate) fn looks_like_toc_entry_prefix(prefix: &str) -> bool {
+  classify_toc_entry_prefix(prefix).is_some()
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum TocPrefixKind {
+  /// Like `1.2.3` — a bare dotted-numeric or alphanumeric section identifier.
+  NumericSectionLabel,
+  /// Like `Appendix A` — a recognized TOC keyword followed by a counter token.
+  KeywordedLabel,
+  /// Like `Plate 14` — a title-case word followed by a numeric counter.
+  /// More permissive but requires a strictly numeric counter to avoid
+  /// matching multi-column rows like `Akrom K`.
+  TitleNumberLabel,
+}
+
+pub(crate) fn classify_toc_entry_prefix(prefix: &str) -> Option<TocPrefixKind> {
   let prefix = prefix.trim();
   if prefix.is_empty() {
-    return false;
-  }
-
-  if prefix.chars().any(|ch| ch.is_ascii_digit())
-    && prefix.chars().all(|ch| {
-      ch.is_ascii_alphanumeric() || matches!(ch, '.' | ':' | '-' | ' ')
-    })
-  {
-    return true;
+    return None;
   }
 
   let words: Vec<&str> = prefix.split_whitespace().collect();
-  words.len() >= 2
-    && is_title_case_label_word(words[0])
+  if words.len() == 1 {
+    if is_numeric_section_label(words[0]) {
+      return Some(TocPrefixKind::NumericSectionLabel);
+    }
+    return None;
+  }
+
+  if words.len() >= 2
+    && is_toc_label_keyword(words[0])
     && is_counter_token(words[1])
+  {
+    return Some(TocPrefixKind::KeywordedLabel);
+  }
+
+  if words.len() == 2
+    && is_title_case_label_word(words[0])
+    && is_numeric_counter(words[1])
+  {
+    return Some(TocPrefixKind::TitleNumberLabel);
+  }
+
+  None
+}
+
+fn is_toc_label_keyword(word: &str) -> bool {
+  matches!(
+    word.trim_matches([':', '.', ',']),
+    "Chapter"
+      | "Section"
+      | "Part"
+      | "Appendix"
+      | "Annex"
+      | "Volume"
+      | "Book"
+      | "Lesson"
+      | "Module"
+      | "Unit"
+      | "Chap"
+  )
+}
+
+fn is_numeric_section_label(token: &str) -> bool {
+  let token = token.trim_end_matches([':', ')']);
+  if token.is_empty() {
+    return false;
+  }
+  let mut saw_digit = false;
+  for ch in token.chars() {
+    if ch.is_ascii_digit() {
+      saw_digit = true;
+    } else if ch != '.' {
+      return false;
+    }
+  }
+  saw_digit
+}
+
+/// Strictly-numeric counter (digits, optionally separated by dots/dashes).
+/// This excludes single uppercase letters (which would match common
+/// "FirstName LastInitial" rows) and Roman numerals (which would match
+/// proper nouns like `Marius Vix`).
+fn is_numeric_counter(token: &str) -> bool {
+  let token = token.trim_matches(['(', ')', ':']);
+  if token.is_empty() {
+    return false;
+  }
+  let mut saw_digit = false;
+  for ch in token.chars() {
+    if ch.is_ascii_digit() {
+      saw_digit = true;
+    } else if !matches!(ch, '.' | '-') {
+      return false;
+    }
+  }
+  saw_digit
 }
 
 pub(crate) fn looks_like_named_toc_heading(title: &str) -> bool {

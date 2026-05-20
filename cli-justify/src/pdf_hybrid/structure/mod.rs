@@ -7,7 +7,7 @@ mod toc_patterns;
 use self::layout_headings::{
   is_centered_short_heading, looks_like_left_aligned_section_heading,
   looks_like_multi_column_row, looks_like_numbered_label_heading,
-  looks_like_page_header_or_footer,
+  looks_like_page_header_or_footer, looks_like_single_word_section_heading,
 };
 pub(super) use layout_signals::{
   looks_like_code_block_line, looks_like_command_prompt_line,
@@ -33,6 +33,7 @@ pub(crate) fn should_keep_pdf_line_layout(line: &str) -> bool {
     || looks_like_toc_entry(trimmed)
     || is_centered_short_heading(line)
     || looks_like_left_aligned_section_heading(line)
+    || looks_like_single_word_section_heading(line)
     || looks_like_numbered_label_heading(line)
     || looks_like_page_header_or_footer(line)
     || looks_like_multi_column_row(line)

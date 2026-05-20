@@ -3,12 +3,25 @@ use std::io::{BufWriter, Cursor};
 
 mod heuristics;
 mod layout_text_output;
+mod pdf_patch;
 mod sanitize;
 mod stream_recovery;
 
 use heuristics::should_prefer_plaintext_output;
 use sanitize::sanitize_layout_text;
 use stream_recovery::recover_sparse_code_blocks;
+
+fn load_patched_doc(
+  canonical_path: &std::path::Path,
+) -> Result<pdf_extract::Document, Box<dyn std::error::Error>> {
+  match pdf_patch::patched_pdf_bytes(canonical_path) {
+    Ok(bytes) => match pdf_extract::Document::load_mem(&bytes) {
+      Ok(doc) => Ok(doc),
+      Err(_) => Ok(pdf_extract::Document::load(canonical_path)?),
+    },
+    Err(_) => Ok(pdf_extract::Document::load(canonical_path)?),
+  }
+}
 
 fn extract_with_layout_text(
   canonical_path: &std::path::Path,
@@ -17,7 +30,7 @@ fn extract_with_layout_text(
   {
     let mut output_file = BufWriter::new(Cursor::new(&mut output_buf));
 
-    let doc = pdf_extract::Document::load(canonical_path)?;
+    let doc = load_patched_doc(canonical_path)?;
 
     pdf_extract::print_metadata(&doc);
 

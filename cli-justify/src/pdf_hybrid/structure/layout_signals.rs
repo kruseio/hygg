@@ -38,25 +38,40 @@ pub(crate) fn looks_like_command_prompt_line(line: &str) -> bool {
 }
 
 fn looks_like_fragmented_token_line(trimmed: &str) -> bool {
-  if let Some(first) = trimmed.chars().next() {
-    if first == '!' && !trimmed.contains(char::is_whitespace) {
-      return true;
-    }
+  let Some(first) = trimmed.chars().next() else {
+    return false;
+  };
 
-    if (first == '-' || first == '+')
-      && trimmed.chars().nth(1).is_some_and(|ch| ch != ' ' && ch != first)
-    {
-      return true;
-    }
+  if first == '!' && !trimmed.contains(char::is_whitespace) {
+    return true;
+  }
 
-    if first == '.'
-      && trimmed.chars().nth(1).is_some_and(|ch| ch.is_ascii_alphanumeric())
-    {
+  if (first == '-' || first == '+')
+    && trimmed.chars().nth(1).is_some_and(|ch| ch != ' ' && ch != first)
+  {
+    let word_count = trimmed.split_whitespace().count();
+    return word_count <= 3;
+  }
+
+  if first == '.'
+    && trimmed.chars().nth(1).is_some_and(|ch| ch.is_ascii_alphanumeric())
+  {
+    let word_count = trimmed.split_whitespace().count();
+    if word_count > 4 {
+      return false;
+    }
+    let first_token = trimmed.split_whitespace().next().unwrap_or_default();
+    if ends_token_like_path(first_token) {
       return true;
     }
+    return word_count <= 2;
   }
 
   false
+}
+
+fn ends_token_like_path(token: &str) -> bool {
+  token.contains('/') || token.contains('\\') || token.ends_with('/')
 }
 
 fn looks_like_flag_cluster_line(trimmed: &str) -> bool {
@@ -154,20 +169,43 @@ pub(crate) fn looks_like_code_block_line(line: &str) -> bool {
     return true;
   }
 
+  let leading_ws =
+    line.chars().take_while(|&ch| ch == ' ' || ch == '\t').count();
   let word_count = trimmed.split_whitespace().count();
   if word_count <= 2
     && (trimmed.contains('/')
       || trimmed.contains('\\')
       || trimmed.contains('*'))
   {
-    return true;
+    // An isolated path token sitting at the left margin is almost always
+    // body-text prose (e.g. "[path]/etc/gitconfig.") rather than a code
+    // block line, which would normally be indented to align with the rest
+    // of the snippet. Require some indentation OR an obvious code prefix.
+    if leading_ws >= 2 || trimmed.ends_with('/') {
+      return true;
+    }
   }
 
-  if CODE_MARKERS.iter().any(|marker| trimmed.contains(marker)) {
+  if has_strong_code_marker_signal(trimmed) {
     return true;
   }
 
   symbol_density_looks_like_code(trimmed)
+}
+
+fn has_strong_code_marker_signal(trimmed: &str) -> bool {
+  let word_count = trimmed.split_whitespace().count();
+  let marker_hits: usize = CODE_MARKERS
+    .iter()
+    .map(|marker| trimmed.matches(marker).count())
+    .sum();
+  if marker_hits == 0 {
+    return false;
+  }
+  if word_count <= 4 {
+    return true;
+  }
+  marker_hits >= 2 && word_count <= 8
 }
 
 pub(crate) fn looks_like_toc_entry(trimmed: &str) -> bool {
