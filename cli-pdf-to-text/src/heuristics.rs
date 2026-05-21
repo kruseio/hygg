@@ -104,6 +104,19 @@ fn analyze_text(text: &str) -> TextStats {
   stats
 }
 
+/// Decide whether the layout output looks bad enough that running the
+/// (expensive) plaintext extraction as a fallback might be worth it.
+///
+/// We only do the second extraction when the layout pass shows the kind
+/// of damage that `should_prefer_plaintext_output` actually flips for:
+/// either at least one detected sparse intro -> code block that the
+/// plaintext path can outscore by >= 120%, or a near-empty layout that
+/// could plausibly be improved by 40+ lines.
+pub(crate) fn layout_needs_plaintext_fallback(layout_sanitized: &str) -> bool {
+  let layout = analyze_text(layout_sanitized);
+  layout.sparse_intro_blocks > 0 || layout.non_empty_lines < 20
+}
+
 pub(crate) fn should_prefer_plaintext_output(
   layout_sanitized: &str,
   plaintext_sanitized: &str,
@@ -117,4 +130,45 @@ pub(crate) fn should_prefer_plaintext_output(
 
   plaintext.quality_score().saturating_mul(100)
     >= layout.quality_score().saturating_mul(120)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::layout_needs_plaintext_fallback;
+
+  #[test]
+  fn skips_fallback_for_healthy_layout() {
+    // A long, varied document with no sparse-intro problems should
+    // never trigger the expensive plaintext fallback.
+    let mut layout = String::new();
+    for _ in 0..50 {
+      layout.push_str(
+        "This is a normal paragraph of body text in a healthy PDF.\n",
+      );
+    }
+    assert!(!layout_needs_plaintext_fallback(&layout));
+  }
+
+  #[test]
+  fn triggers_fallback_for_near_empty_layout() {
+    // If the layout extractor produced almost nothing, plaintext might
+    // still recover content.
+    let layout = "Title\n\nSubtitle\n";
+    assert!(layout_needs_plaintext_fallback(layout));
+  }
+
+  #[test]
+  fn triggers_fallback_when_sparse_intro_block_detected() {
+    // Intro line ending with ':' immediately followed by a heading
+    // (with no code in between) is the exact pattern the recovery
+    // heuristic targets — plaintext should at least be inspected.
+    let layout = concat!(
+      "Here is an example .gitignore file:\n",
+      "\n",
+      "Another Section Heading\n",
+      "\n",
+      "Some body text follows here.\n",
+    );
+    assert!(layout_needs_plaintext_fallback(layout));
+  }
 }

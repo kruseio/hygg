@@ -37,3 +37,10 @@ unused_imports = "allow"
 needless_return = "allow"
 implicit_saturating_sub = "allow"
 single_component_path_imports = "allow"
+
+# Override the unmaintained crates.io copy of cff-parser 0.1.0 with our
+# locally-patched fork. The upstream `get_table` panics on Expert-encoded
+# CFF fonts, which crashes pdf-extract 0.8+ on Adobe-generated PDFs.
+# See vendor/cff-parser/src/encoding.rs for the one-line fix.
+[patch.crates-io]
+cff-parser = { path = "vendor/cff-parser" }

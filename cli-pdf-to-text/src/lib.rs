@@ -1,4 +1,5 @@
 use hygg_shared::normalize_file_path;
+use rayon::prelude::*;
 use std::io::{BufWriter, Cursor};
 
 mod heuristics;
@@ -7,7 +8,7 @@ mod pdf_patch;
 mod sanitize;
 mod stream_recovery;
 
-use heuristics::should_prefer_plaintext_output;
+use heuristics::{layout_needs_plaintext_fallback, should_prefer_plaintext_output};
 use sanitize::sanitize_layout_text;
 use stream_recovery::recover_sparse_code_blocks;
 
@@ -23,29 +24,48 @@ fn load_patched_doc(
   }
 }
 
+fn render_page_layout(
+  doc: &pdf_extract::Document,
+  page_num: u32,
+) -> Option<String> {
+  let mut buf = Vec::new();
+  {
+    let mut writer = BufWriter::new(Cursor::new(&mut buf));
+    let mut output = layout_text_output::LayoutTextOutput::new(
+      &mut writer as &mut dyn std::io::Write,
+    );
+    pdf_extract::output_doc_page(doc, &mut output, page_num).ok()?;
+  }
+  String::from_utf8(buf).ok()
+}
+
+/// Extract layout-aware text from every page in parallel.
+///
+/// `pdf_extract::Document` (a re-export of `lopdf::Document`) is
+/// `Send + Sync`, so we share one parsed instance across rayon
+/// workers via reference. Per-page output is collected and
+/// concatenated in page order.
 fn extract_with_layout_text(
   canonical_path: &std::path::Path,
 ) -> Result<String, Box<dyn std::error::Error>> {
-  let mut output_buf = Vec::new();
-  {
-    let mut output_file = BufWriter::new(Cursor::new(&mut output_buf));
+  let doc = load_patched_doc(canonical_path)?;
+  pdf_extract::print_metadata(&doc);
 
-    let doc = load_patched_doc(canonical_path)?;
+  let mut page_nums: Vec<u32> = doc.get_pages().into_keys().collect();
+  page_nums.sort_unstable();
 
-    pdf_extract::print_metadata(&doc);
+  // par_iter().collect() preserves source order, so the resulting Vec
+  // is already in page order without an extra sort.
+  let pages: Vec<Option<String>> = page_nums
+    .par_iter()
+    .map(|&page_num| render_page_layout(&doc, page_num))
+    .collect();
 
-    let mut output = Box::new(layout_text_output::LayoutTextOutput::new(
-      &mut output_file as &mut dyn std::io::Write,
-    ));
-
-    pdf_extract::output_doc(&doc, output.as_mut())?;
+  let mut combined = String::new();
+  for page in pages.into_iter().flatten() {
+    combined.push_str(&page);
   }
-
-  let text = std::str::from_utf8(&output_buf)
-    .map_err(|e| format!("Failed to convert PDF output to UTF-8: {e}"))?
-    .to_owned();
-
-  Ok(text)
+  Ok(combined)
 }
 
 pub fn pdf_to_text(
@@ -84,7 +104,24 @@ pub fn pdf_to_text(
   }
 
   let layout_text = extract_with_layout_text(&canonical_path);
-  let plaintext_output = pdf_extract::extract_text(&canonical_path);
+
+  let layout_text = layout_text?;
+  let mut layout_sanitized = sanitize_layout_text(&layout_text);
+
+  if let Ok(Some(recovered)) =
+    recover_sparse_code_blocks(&canonical_path, &layout_sanitized)
+  {
+    layout_sanitized = recovered;
+  }
+
+  // Only run the slower plaintext fallback when the layout pass shows
+  // damage that the plaintext heuristic might actually prefer. On large
+  // PDFs this halves wall time.
+  let plaintext_result = if layout_needs_plaintext_fallback(&layout_sanitized) {
+    pdf_extract::extract_text(&canonical_path).ok()
+  } else {
+    None
+  };
 
   #[cfg(target_os = "windows")]
   redirect_stderr::restore_stdout()?;
@@ -103,16 +140,7 @@ pub fn pdf_to_text(
     }
   }
 
-  let layout_text = layout_text?;
-  let mut layout_sanitized = sanitize_layout_text(&layout_text);
-
-  if let Ok(Some(recovered)) =
-    recover_sparse_code_blocks(&canonical_path, &layout_sanitized)
-  {
-    layout_sanitized = recovered;
-  }
-
-  if let Ok(plaintext_output) = plaintext_output {
+  if let Some(plaintext_output) = plaintext_result {
     let plaintext_sanitized = sanitize_layout_text(&plaintext_output);
     if should_prefer_plaintext_output(&layout_sanitized, &plaintext_sanitized) {
       return Ok(plaintext_sanitized);
