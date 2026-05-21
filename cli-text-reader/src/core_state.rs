@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use super::core_types::{BufferState, EditorState, ViewMode};
 use crate::demo_script::DemoScript;
+use crate::editor::streaming::{PdfStreamingState, PendingPdfStream};
 use crate::highlights::HighlightData;
 use crate::interactive_tutorial_buffer::TutorialSuccessCondition;
 
@@ -76,4 +77,8 @@ pub struct Editor {
   pub cursor_currently_visible: bool,
   // Track if we just switched buffers to skip centering
   pub buffer_just_switched: bool,
+  // Streaming-PDF page table; None for non-streaming sessions.
+  pub pdf_streaming: Option<PdfStreamingState>,
+  // Background-opening PDF state; held while we wait for the doc to parse.
+  pub pdf_pending: Option<PendingPdfStream>,
 }

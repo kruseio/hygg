@@ -18,6 +18,16 @@ pub struct Progress {
   pub viewport_offset: Option<usize>,
   #[serde(default)]
   pub cursor_y: Option<usize>,
+  /// 1-based PDF page that the viewport was on at save time. Only populated
+  /// for streaming PDF sessions; falls back to None for older saves and
+  /// non-PDF documents.
+  #[serde(default)]
+  pub page: Option<u32>,
+  /// Cursor's row within the page's rendered output (0-based). Paired with
+  /// `page` to restore the exact spot regardless of which other pages are
+  /// loaded when we re-open.
+  #[serde(default)]
+  pub line_in_page: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -32,6 +42,10 @@ enum Event {
     viewport_offset: Option<usize>,
     #[serde(default)]
     cursor_y: Option<usize>,
+    #[serde(default)]
+    page: Option<u32>,
+    #[serde(default)]
+    line_in_page: Option<usize>,
   },
 }
 
@@ -61,6 +75,26 @@ pub fn save_progress_with_viewport(
   viewport_offset: Option<usize>,
   cursor_y: Option<usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+  save_progress_full(
+    document_hash,
+    offset,
+    total_lines,
+    viewport_offset,
+    cursor_y,
+    None,
+    None,
+  )
+}
+
+pub fn save_progress_full(
+  document_hash: u64,
+  offset: usize,
+  total_lines: usize,
+  viewport_offset: Option<usize>,
+  cursor_y: Option<usize>,
+  page: Option<u32>,
+  line_in_page: Option<usize>,
+) -> Result<(), Box<dyn std::error::Error>> {
   let percentage = (offset as f64 / total_lines as f64) * 100.0;
   let event = Event::UpdateProgress {
     timestamp: Utc::now(),
@@ -70,6 +104,8 @@ pub fn save_progress_with_viewport(
     percentage,
     viewport_offset,
     cursor_y,
+    page,
+    line_in_page,
   };
   let serialized = serde_json::to_string(&event)?;
   let progress_file_path = get_progress_file_path()?;
@@ -99,6 +135,8 @@ pub fn load_progress(
       percentage,
       viewport_offset,
       cursor_y,
+      page,
+      line_in_page,
       ..
     } = event;
 
@@ -110,6 +148,8 @@ pub fn load_progress(
         percentage,
         viewport_offset,
         cursor_y,
+        page,
+        line_in_page,
       });
     }
   }
@@ -145,6 +185,8 @@ mod tests {
       percentage,
       viewport_offset: None,
       cursor_y: None,
+      page: None,
+      line_in_page: None,
     };
 
     let serialized = serde_json::to_string(&event).unwrap();
@@ -166,6 +208,8 @@ mod tests {
         percentage,
         viewport_offset,
         cursor_y,
+        page,
+        line_in_page,
         ..
       } = event;
 
@@ -177,6 +221,8 @@ mod tests {
           percentage,
           viewport_offset,
           cursor_y,
+          page,
+          line_in_page,
         });
       }
     }

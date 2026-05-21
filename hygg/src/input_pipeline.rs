@@ -56,6 +56,21 @@ pub(crate) fn cleanup_temp_file(
   Ok(())
 }
 
+/// If the resolved input file is a `.pdf`, return its path. Returns None
+/// for any other extension, or when no file was supplied.
+pub(crate) fn resolve_pdf_path(args: &Args) -> Option<String> {
+  let file = resolve_input_file(args.file.clone())?;
+  let extension = std::path::Path::new(&file)
+    .extension()
+    .and_then(|ext| ext.to_str())
+    .map(|ext| ext.to_lowercase());
+  if extension.as_deref() == Some("pdf") {
+    Some(file)
+  } else {
+    None
+  }
+}
+
 fn resolve_input_file(args_file: Option<String>) -> Option<String> {
   if let Some(file) = args_file {
     return Some(file);

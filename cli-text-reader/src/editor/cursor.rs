@@ -21,6 +21,13 @@ impl Editor {
         execute!(stdout, Hide)?;
         return Ok(());
       }
+      // Keep the cursor hidden while the PDF is still being opened in the
+      // background. The highlight bar already marks the row the cursor will
+      // land on; the cursor itself only appears once real content is in.
+      if self.pdf_pending.is_some() {
+        execute!(stdout, Hide)?;
+        return Ok(());
+      }
       let active_mode = self.get_active_mode();
       // Position the cursor at current position in text
       if active_mode == EditorMode::Normal
@@ -181,6 +188,12 @@ impl Editor {
   ) -> io::Result<()> {
     if !self.show_cursor {
       // Cursor should remain hidden
+      return Ok(());
+    }
+    // Keep the cursor hidden while the PDF is still being opened in the
+    // background. The highlight bar already marks the row the cursor will
+    // land on; the cursor itself only appears once real content is in.
+    if self.pdf_pending.is_some() {
       return Ok(());
     }
 

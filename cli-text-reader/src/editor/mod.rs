@@ -44,6 +44,8 @@ mod selection_basic;
 mod selection_text;
 mod selection_words;
 mod status_line;
+pub(crate) mod streaming;
+pub(crate) mod streaming_loader;
 mod text_objects;
 mod text_objects_delimiters;
 mod text_objects_paragraphs;

@@ -19,6 +19,8 @@ workspace = true
 
 [dependencies]
 cli-justify = { version = "0.1", path = "../cli-justify" }
+cli-pdf-to-text = { version = "0.1", path = "../cli-pdf-to-text" }
+hygg-shared = { version = "0.1", path = "../hygg-shared" }
 
 getopts = "0.2"
 crossterm = "0.29"

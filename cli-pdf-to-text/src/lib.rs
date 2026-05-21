@@ -6,13 +6,16 @@ mod heuristics;
 mod layout_text_output;
 mod pdf_patch;
 mod sanitize;
+mod stream;
 mod stream_recovery;
+
+pub use stream::{PdfStream, SharedPdfStream};
 
 use heuristics::{layout_needs_plaintext_fallback, should_prefer_plaintext_output};
 use sanitize::sanitize_layout_text;
 use stream_recovery::recover_sparse_code_blocks;
 
-fn load_patched_doc(
+pub(crate) fn load_patched_doc_internal(
   canonical_path: &std::path::Path,
 ) -> Result<pdf_extract::Document, Box<dyn std::error::Error>> {
   match pdf_patch::patched_pdf_bytes(canonical_path) {
@@ -24,7 +27,7 @@ fn load_patched_doc(
   }
 }
 
-fn render_page_layout(
+pub(crate) fn render_page_layout_internal(
   doc: &pdf_extract::Document,
   page_num: u32,
 ) -> Option<String> {
@@ -48,7 +51,7 @@ fn render_page_layout(
 fn extract_with_layout_text(
   canonical_path: &std::path::Path,
 ) -> Result<String, Box<dyn std::error::Error>> {
-  let doc = load_patched_doc(canonical_path)?;
+  let doc = load_patched_doc_internal(canonical_path)?;
   pdf_extract::print_metadata(&doc);
 
   let mut page_nums: Vec<u32> = doc.get_pages().into_keys().collect();
@@ -58,7 +61,7 @@ fn extract_with_layout_text(
   // is already in page order without an extra sort.
   let pages: Vec<Option<String>> = page_nums
     .par_iter()
-    .map(|&page_num| render_page_layout(&doc, page_num))
+    .map(|&page_num| render_page_layout_internal(&doc, page_num))
     .collect();
 
   let mut combined = String::new();

@@ -6,7 +6,9 @@ mod input_pipeline;
 use args::Args;
 use clap::Parser;
 use demo_mode::handle_demo_modes;
-use input_pipeline::{cleanup_temp_file, prepare_input, read_stdin_content};
+use input_pipeline::{
+  cleanup_temp_file, prepare_input, read_stdin_content, resolve_pdf_path,
+};
 use std::io::IsTerminal;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -14,6 +16,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let stdin_content = read_stdin_content();
 
   if handle_demo_modes(&args)? {
+    return Ok(());
+  }
+
+  // Streaming path: terminal output, a PDF file, no OCR, no stdin.
+  if std::io::stdout().is_terminal()
+    && stdin_content.is_none()
+    && !args.ocr
+    && let Some(pdf_path) = resolve_pdf_path(&args)
+  {
+    if let Err(e) = redirect_stderr::redirect_stderr() {
+      eprintln!("Warning: Failed to redirect stderr: {e}");
+    }
+    cli_text_reader::run_cli_text_reader_pdf_path(pdf_path, args.col)?;
     return Ok(());
   }
 

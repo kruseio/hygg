@@ -16,6 +16,13 @@ impl Editor {
     line_index: usize,
     term_width: u16,
   ) -> IoResult<bool> {
+    // Suppress the highlight bar while the PDF is still being opened in
+    // the background. cursor_y is already pre-positioned to the row the
+    // streaming install will land on, so once pdf_pending clears the bar
+    // appears in its final position without a jump.
+    if self.pdf_pending.is_some() {
+      return Ok(false);
+    }
     if self.show_highlighter && line_index == self.cursor_y {
       self.debug_log(&format!(
         "Highlighting line {} with width {} (view_mode: {:?})",
@@ -104,6 +111,13 @@ impl Editor {
     line_index: usize,
     term_width: u16,
   ) -> IoResult<bool> {
+    // Suppress the highlight bar while the PDF is still being opened in
+    // the background. cursor_y is already pre-positioned to the row the
+    // streaming install will land on, so once pdf_pending clears the bar
+    // appears in its final position without a jump.
+    if self.pdf_pending.is_some() {
+      return Ok(false);
+    }
     if self.show_highlighter && line_index == self.cursor_y {
       self.debug_log(&format!(
         "Highlighting line {} with width {} (view_mode: {:?})",

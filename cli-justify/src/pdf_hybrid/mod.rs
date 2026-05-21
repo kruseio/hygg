@@ -4,11 +4,15 @@ mod engine;
 mod engine_handlers;
 mod engine_output;
 mod figure_labels;
+mod page_stream;
 mod structure;
 mod wrapping;
 mod wrapping_plain;
 
 pub use engine::justify_pdf_hybrid;
+pub use page_stream::{
+  justify_pdf_page, justify_pdf_seam, PartialParagraph, PdfPageJustified,
+};
 
 #[cfg(test)]
 mod tests {

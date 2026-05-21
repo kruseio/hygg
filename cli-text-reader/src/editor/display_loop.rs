@@ -7,7 +7,7 @@ use crossterm::{
 use std::io::{self, IsTerminal, Result as IoResult, Write};
 
 use super::core::{Editor, EditorMode, ViewMode};
-use crate::progress::save_progress_with_viewport;
+use crate::progress::save_progress_full;
 
 impl Editor {
   pub fn main_loop(
@@ -18,6 +18,18 @@ impl Editor {
     let mut first_iteration = true;
 
     loop {
+      // If the PDF is still being opened in the background, see if the
+      // opener has finished and install the streaming state when it has.
+      if self.pdf_pending.is_some() {
+        let _ = self.poll_pending_pdf_stream();
+      }
+      // Drain any pages the background PDF loader has finished extracting
+      // before we render. This keeps the page table in sync and triggers a
+      // redraw if anything new arrived.
+      if self.pdf_streaming.is_some() {
+        let _ = self.drain_pdf_stream();
+      }
+
       self.debug_log(&format!(
         "Main loop iteration - buffers: {}, active: {}, mode: {:?}",
         self.buffers.len(),
@@ -226,8 +238,18 @@ impl Editor {
       if std::io::stdout().is_terminal() {
         self.debug_log("Waiting for keyboard event...");
         // Use longer timeout when idle to reduce CPU usage
-        let timeout = if self.needs_redraw || self.tutorial_demo_mode {
-          std::time::Duration::from_millis(16) // ~60fps when animating or in demo mode
+        let streaming_active = self
+          .pdf_streaming
+          .as_ref()
+          .map(|s| !s.fully_loaded)
+          .unwrap_or(false);
+        let pending_pdf = self.pdf_pending.is_some();
+        let timeout = if self.needs_redraw
+          || self.tutorial_demo_mode
+          || streaming_active
+          || pending_pdf
+        {
+          std::time::Duration::from_millis(16) // ~60fps when animating, in demo, streaming, or opening PDF
         } else {
           std::time::Duration::from_millis(250) // Slower when idle
         };
@@ -394,12 +416,18 @@ impl Editor {
       if current_line != self.last_offset
         || self.offset != self.last_saved_viewport_offset
       {
-        save_progress_with_viewport(
+        let (page, line_in_page) = match self.current_pdf_position() {
+          Some((p, l)) => (Some(p), Some(l)),
+          None => (None, None),
+        };
+        save_progress_full(
           self.document_hash,
           current_line,
           self.total_lines,
           Some(self.offset),
           Some(self.cursor_y),
+          page,
+          line_in_page,
         )?;
         self.last_offset = current_line;
         self.last_saved_viewport_offset = self.offset;

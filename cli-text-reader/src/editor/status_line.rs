@@ -15,9 +15,18 @@ impl Editor {
     // Position info is now always hidden per user request
 
     // Show progress indicator if enabled, in normal view mode, and not in demo
+    // Skip while the PDF is still loading — the padded splash buffer (or a
+    // partially-streamed page table) would otherwise report a misleading
+    // percentage that snaps to its real value once every page is in.
     if self.show_progress
       && self.view_mode == super::core::ViewMode::Normal
       && !self.tutorial_demo_mode
+      && self.pdf_pending.is_none()
+      && self
+        .pdf_streaming
+        .as_ref()
+        .map(|s| s.fully_loaded)
+        .unwrap_or(true)
     {
       self.draw_progress_indicator(stdout)?;
     }
@@ -197,9 +206,18 @@ impl Editor {
     self.draw_mode_indicator_buffered(buffer)?;
 
     // Show progress indicator if enabled, in normal view mode, and not in demo
+    // Skip while the PDF is still loading — the padded splash buffer (or a
+    // partially-streamed page table) would otherwise report a misleading
+    // percentage that snaps to its real value once every page is in.
     if self.show_progress
       && self.view_mode == super::core::ViewMode::Normal
       && !self.tutorial_demo_mode
+      && self.pdf_pending.is_none()
+      && self
+        .pdf_streaming
+        .as_ref()
+        .map(|s| s.fully_loaded)
+        .unwrap_or(true)
     {
       self.draw_progress_indicator_buffered(buffer)?;
     }

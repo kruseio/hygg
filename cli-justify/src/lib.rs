@@ -4,5 +4,8 @@ mod text_utils;
 mod wrap;
 
 pub use justify_text::justify;
-pub use pdf_hybrid::justify_pdf_hybrid;
+pub use pdf_hybrid::{
+  justify_pdf_hybrid, justify_pdf_page, justify_pdf_seam, PartialParagraph,
+  PdfPageJustified,
+};
 pub use wrap::wrap_preserve_whitespace;

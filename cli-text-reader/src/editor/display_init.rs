@@ -49,7 +49,25 @@ impl Editor {
     // so users can access the tutorial with :tutorial command
 
     let mut skip_first_center = false;
-    match load_progress(self.document_hash) {
+    // While the PDF is being opened in the background, the buffer is just
+    // a single-line splash. Restoring a saved (line, cursor_y) from a
+    // prior session at this point would point at non-existent rows and
+    // make the splash render badly. The streaming install path will
+    // jump straight to the target page once the doc parse completes.
+    if self.pdf_pending.is_some() {
+      // Blank splash: lib.rs hands us a one-element buffer of just an
+      // empty string and pre-sets cursor_y to the row the streaming
+      // install will land on. We just zero the viewport offset and skip
+      // load_progress (which would point at non-existent rows in the
+      // single-line splash buffer); cursor_y is left as lib.rs configured
+      // it.
+      self.offset = 0;
+      self.last_offset = 0;
+      self.last_saved_viewport_offset = 0;
+      skip_first_center = true;
+      self.debug_log("PDF pending in background; using predicted cursor_y");
+    } else {
+      match load_progress(self.document_hash) {
       Ok(progress) => {
         // Check if we have new viewport information
         if let (Some(viewport_offset), Some(saved_cursor_y)) =
@@ -103,6 +121,7 @@ impl Editor {
         // cursor_y is already initialized to height/2 in the constructor
       }
     };
+    }
 
     if std::io::stdout().is_terminal() {
       execute!(stdout, terminal::EnterAlternateScreen, Hide)?;

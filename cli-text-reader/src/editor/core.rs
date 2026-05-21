@@ -3,10 +3,30 @@ pub use crate::core_types::{
   BufferState, EditorMode, EditorState, SplitPosition, ViewMode,
 };
 
+use crate::editor::streaming::PdfStreamingState;
 use crate::highlights::HighlightData;
 use crate::progress::generate_hash;
 use arboard::Clipboard;
 use crossterm::terminal;
+
+/// Map a flat line index back to (page_index, line_within_page) using the
+/// streaming state's current per-page rendered line counts.
+fn page_and_offset_for_line(
+  state: &PdfStreamingState,
+  line: usize,
+) -> (usize, usize) {
+  let mut accumulated = 0usize;
+  for idx in 0..state.pages.len() {
+    let count = state.page_line_count(idx);
+    if line < accumulated + count {
+      return (idx, line - accumulated);
+    }
+    accumulated += count;
+  }
+  let last_idx = state.pages.len().saturating_sub(1);
+  let last_count = state.page_line_count(last_idx);
+  (last_idx, last_count.saturating_sub(1))
+}
 
 impl Editor {
   pub fn new(lines: Vec<String>, col: usize) -> Self {
@@ -132,6 +152,8 @@ impl Editor {
       last_saved_viewport_offset: 0,
       cursor_currently_visible: true,
       buffer_just_switched: false,
+      pdf_streaming: None,
+      pdf_pending: None,
     }
   }
 
@@ -257,6 +279,212 @@ impl Editor {
     let needs = self.needs_redraw;
     self.needs_redraw = false;
     needs
+  }
+
+  /// Rebuild `self.lines` (and total_lines / active buffer state) from the
+  /// current PDF streaming page table. Called whenever a Loading slot
+  /// transitions to Loaded, or after a seam stitch. No-op for sessions that
+  /// aren't streaming a PDF.
+  pub fn rebuild_lines_from_pdf_stream(&mut self) {
+    let Some(state) = self.pdf_streaming.as_ref() else {
+      return;
+    };
+    let new_lines = state.flat_lines();
+    self.lines = new_lines.clone();
+    self.total_lines = self.lines.len();
+    if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
+      buffer.lines = new_lines;
+    }
+    self.needs_redraw = true;
+  }
+
+  /// Poll the background "open PDF" thread; if it has finished, install
+  /// the resulting streaming state (or surface the error in the editor
+  /// buffer). Returns true if state changed.
+  pub fn poll_pending_pdf_stream(&mut self) -> bool {
+    use crate::editor::streaming::{
+      LoadedPage, PageSlot, PdfStreamingState, StreamReady,
+    };
+    let Some(pending) = self.pdf_pending.as_ref() else {
+      return false;
+    };
+    let message = match pending.receiver.try_recv() {
+      Ok(msg) => msg,
+      Err(std::sync::mpsc::TryRecvError::Empty) => {
+        return false;
+      }
+      Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+        // Open thread died without sending — surface a generic error.
+        self.lines = vec![
+          "  Failed to open PDF (background opener exited unexpectedly).".into(),
+        ];
+        self.total_lines = self.lines.len();
+        if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
+          buffer.lines = self.lines.clone();
+        }
+        self.pdf_pending = None;
+        self.needs_redraw = true;
+        return true;
+      }
+    };
+    let restore_line_in_page =
+      self.pdf_pending.as_ref().and_then(|p| p.restore_line_in_page);
+    self.pdf_pending = None;
+    match message {
+      StreamReady::Err(err) => {
+        self.lines = vec![format!("  {err}")];
+        self.total_lines = self.lines.len();
+        if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
+          buffer.lines = self.lines.clone();
+        }
+        self.needs_redraw = true;
+      }
+      StreamReady::Ok {
+        stream,
+        target_page,
+        preloaded_pages,
+        pages_receiver,
+        cancel,
+        worker,
+      } => {
+        let total_pages = stream.total_pages();
+        let mut pages: Vec<PageSlot> =
+          (0..total_pages).map(|_| PageSlot::Loading).collect();
+        for (page_1based, raw_text) in preloaded_pages {
+          if page_1based == 0 || page_1based > total_pages {
+            continue;
+          }
+          let loaded = LoadedPage::from_raw(raw_text, self.col);
+          pages[page_1based - 1] = PageSlot::Loaded(loaded);
+        }
+
+        let fully_loaded = pages.iter().all(|p| p.is_loaded());
+        let state = PdfStreamingState {
+          stream,
+          col: self.col,
+          pages,
+          receiver: pages_receiver,
+          cancel,
+          fully_loaded,
+          worker: Some(worker),
+        };
+        let target_line_start =
+          state.line_start_for_page(target_page - 1);
+        let target_page_lines = state.page_line_count(target_page - 1);
+        self.pdf_streaming = Some(state);
+        self.rebuild_lines_from_pdf_stream();
+        // Land at the saved row within the target page; clamp to the page's
+        // current rendered height so a shrunk page or missing line_in_page
+        // still produces a valid position.
+        let line_in_page = restore_line_in_page
+          .unwrap_or(0)
+          .min(target_page_lines.saturating_sub(1));
+        let document_line = target_line_start + line_in_page;
+        // Place the cursor on the same screen row the splash used so the
+        // visible cursor / highlight bar doesn't shift when streaming
+        // state takes over. center_cursor() on the next render is then a
+        // no-op for the common case; edge case (document_line < center_y)
+        // falls back to clamping near the top, matching center_cursor's
+        // overscroll handling.
+        let content_height = self.height.saturating_sub(1);
+        let center_y = content_height / 2;
+        if document_line < center_y {
+          self.offset = 0;
+          self.cursor_y = document_line;
+        } else {
+          self.offset = document_line - center_y;
+          self.cursor_y = center_y;
+        }
+        self.last_offset = document_line;
+        self.last_saved_viewport_offset = self.offset;
+        self.needs_redraw = true;
+      }
+    }
+    true
+  }
+
+  /// Drain any pages the background loader has finished extracting and
+  /// install them into the page table. Returns the number of pages that
+  /// were newly applied (0 if the channel was empty). Maintains viewport
+  /// stickiness: after rebuilding the flat lines, the cursor stays on the
+  /// same (page, line-within-page) it was on before the drain.
+  pub fn drain_pdf_stream(&mut self) -> usize {
+    use crate::editor::streaming::{LoadedPage, PageSlot};
+    let Some(state) = self.pdf_streaming.as_mut() else {
+      return 0;
+    };
+    // Collect messages in a tight loop to avoid mutable-borrow churn.
+    let messages: Vec<_> = state.receiver.try_iter().collect();
+    if messages.is_empty() {
+      return 0;
+    }
+
+    // Snapshot the logical cursor location: which page, which row within
+    // that page's flat-lines slice.
+    let cursor_line = self.offset + self.cursor_y;
+    let cursor_screen_row = self.cursor_y;
+    let (anchor_page, anchor_line_in_page) =
+      page_and_offset_for_line(state, cursor_line);
+
+    let col = state.col;
+    let mut applied = 0usize;
+    for msg in messages {
+      let idx = msg.page_index;
+      if idx >= state.pages.len() {
+        continue;
+      }
+      if let PageSlot::Loaded(_) = state.pages[idx] {
+        continue;
+      }
+      let loaded = LoadedPage::from_raw(msg.raw_text, col);
+      state.pages[idx] = PageSlot::Loaded(loaded);
+      applied += 1;
+    }
+    if applied == 0 {
+      return 0;
+    }
+    state.fully_loaded = state.pages.iter().all(|p| p.is_loaded());
+
+    // Snapshot per-page line counts AFTER applying the swaps. Used below
+    // to re-anchor the viewport on the same (page, line-in-page) the
+    // cursor was on prior to the swap.
+    let pages_snapshot: Vec<usize> =
+      (0..state.pages.len()).map(|i| state.page_line_count(i)).collect();
+
+    self.rebuild_lines_from_pdf_stream();
+
+    // Re-anchor the viewport: keep (anchor_page, anchor_line_in_page) on
+    // the same screen row it was previously occupying.
+    let mut new_line = 0usize;
+    for (idx, count) in pages_snapshot.iter().enumerate() {
+      if idx >= anchor_page {
+        break;
+      }
+      new_line += count;
+    }
+    let clamped_line_in_page = anchor_line_in_page.min(
+      pages_snapshot.get(anchor_page).copied().unwrap_or(0).saturating_sub(1),
+    );
+    new_line += clamped_line_in_page;
+    self.offset = new_line.saturating_sub(cursor_screen_row);
+    self.cursor_y = new_line - self.offset;
+    self.last_offset = new_line;
+    self.last_saved_viewport_offset = self.offset;
+    self.needs_redraw = true;
+    applied
+  }
+
+  /// Return `(page_1based, line_in_page)` for the cursor's current position
+  /// in a streaming PDF session, where `line_in_page` is the row within the
+  /// page's rendered output. Returns None if not streaming a PDF.
+  pub fn current_pdf_position(&self) -> Option<(u32, usize)> {
+    let state = self.pdf_streaming.as_ref()?;
+    if state.pages.is_empty() {
+      return None;
+    }
+    let target_line = self.offset + self.cursor_y;
+    let (page_idx, line_in_page) = page_and_offset_for_line(state, target_line);
+    Some(((page_idx + 1) as u32, line_in_page))
   }
 
   // Get the effective viewport height for the current buffer
