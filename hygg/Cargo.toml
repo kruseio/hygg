@@ -27,6 +27,5 @@ redirect-stderr = { version = "0.1", path = "../redirect-stderr" }
 hygg-shared = { version = "0.1", path = "../hygg-shared" }
 
 uuid = { version = "1", features = ["v4"] }
-atty = "0.2"
 
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }

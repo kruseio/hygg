@@ -13,13 +13,13 @@
 
 // use std::os::fd::FromRawFd as _;
 #[cfg(target_family = "windows")]
-static mut WINAPI_STDERR_HANDLE: *mut winapi::ctypes::c_void =
+static mut WINAPI_STDERR_HANDLE: windows_sys::Win32::Foundation::HANDLE =
   std::ptr::null_mut();
 #[cfg(not(target_os = "windows"))]
 static mut UNIX_STDERR_HANDLE: i32 = -1;
 
 #[cfg(target_family = "windows")]
-static mut WINAPI_STDOUT_HANDLE: *mut winapi::ctypes::c_void =
+static mut WINAPI_STDOUT_HANDLE: windows_sys::Win32::Foundation::HANDLE =
   std::ptr::null_mut();
 #[cfg(not(target_os = "windows"))]
 static mut UNIX_STDOUT_HANDLE: i32 = -1;
@@ -38,18 +38,21 @@ pub fn redirect_stderr() -> std::io::Result<()> {
   #[cfg(target_os = "windows")]
   {
     use std::os::windows::io::AsRawHandle;
-    use winapi::um::handleapi::SetHandleInformation;
-    use winapi::um::processenv::SetStdHandle;
-    use winapi::um::winbase::{HANDLE_FLAG_INHERIT, STD_ERROR_HANDLE};
+    use windows_sys::Win32::Foundation::{
+      HANDLE_FLAG_INHERIT, SetHandleInformation,
+    };
+    use windows_sys::Win32::System::Console::{
+      STD_ERROR_HANDLE, SetStdHandle,
+    };
 
     unsafe {
       // Ensure the handle is not inherited
-      let handle = dev_null.as_raw_handle() as *mut winapi::ctypes::c_void;
+      let handle = dev_null.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
       SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
 
       if (WINAPI_STDERR_HANDLE != handle) {
         WINAPI_STDERR_HANDLE =
-          std::io::stdout().as_raw_handle() as *mut winapi::ctypes::c_void;
+          std::io::stdout().as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
       }
 
       // Redirect stderr to NUL
@@ -86,10 +89,9 @@ pub fn restore_stderr() -> std::io::Result<()> {
 
   #[cfg(target_os = "windows")]
   {
-    use std::os::windows::io::AsRawHandle;
-    use winapi::um::handleapi::SetHandleInformation;
-    use winapi::um::processenv::SetStdHandle;
-    use winapi::um::winbase::{HANDLE_FLAG_INHERIT, STD_ERROR_HANDLE};
+    use windows_sys::Win32::System::Console::{
+      STD_ERROR_HANDLE, SetStdHandle,
+    };
 
     unsafe {
       if SetStdHandle(STD_ERROR_HANDLE, WINAPI_STDERR_HANDLE) == 0 {
@@ -127,18 +129,21 @@ pub fn redirect_stdout() -> std::io::Result<()> {
   #[cfg(target_os = "windows")]
   {
     use std::os::windows::io::AsRawHandle;
-    use winapi::um::handleapi::SetHandleInformation;
-    use winapi::um::processenv::SetStdHandle;
-    use winapi::um::winbase::{HANDLE_FLAG_INHERIT, STD_OUTPUT_HANDLE};
+    use windows_sys::Win32::Foundation::{
+      HANDLE_FLAG_INHERIT, SetHandleInformation,
+    };
+    use windows_sys::Win32::System::Console::{
+      STD_OUTPUT_HANDLE, SetStdHandle,
+    };
 
     unsafe {
       // Ensure the handle is not inherited
-      let handle = dev_null.as_raw_handle() as *mut winapi::ctypes::c_void;
+      let handle = dev_null.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
       SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
 
       if (WINAPI_STDOUT_HANDLE != handle) {
         WINAPI_STDOUT_HANDLE =
-          std::io::stdout().as_raw_handle() as *mut winapi::ctypes::c_void;
+          std::io::stdout().as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
       }
 
       // Redirect stderr to NUL
@@ -190,10 +195,9 @@ pub fn restore_stdout() -> std::io::Result<()> {
 
   #[cfg(target_os = "windows")]
   {
-    use std::os::windows::io::AsRawHandle;
-    use winapi::um::handleapi::SetHandleInformation;
-    use winapi::um::processenv::SetStdHandle;
-    use winapi::um::winbase::{HANDLE_FLAG_INHERIT, STD_OUTPUT_HANDLE};
+    use windows_sys::Win32::System::Console::{
+      STD_OUTPUT_HANDLE, SetStdHandle,
+    };
 
     unsafe {
       if SetStdHandle(STD_OUTPUT_HANDLE, WINAPI_STDOUT_HANDLE) == 0 {

@@ -7,6 +7,7 @@ use args::Args;
 use clap::Parser;
 use demo_mode::handle_demo_modes;
 use input_pipeline::{cleanup_temp_file, prepare_input, read_stdin_content};
+use std::io::IsTerminal;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
   let args = Args::parse();
@@ -19,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   // Server flags are currently placeholders and intentionally no-op.
   let prepared = prepare_input(&args, stdin_content)?;
 
-  if !atty::is(atty::Stream::Stdout) {
+  if !std::io::stdout().is_terminal() {
     println!("{}", prepared.lines.join("\n"));
     cleanup_temp_file(prepared.temp_file.as_deref())?;
     return Ok(());

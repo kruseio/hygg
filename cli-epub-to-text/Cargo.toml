@@ -18,10 +18,10 @@ categories.workspace = true
 workspace = true
 
 [dependencies]
-epub = "2.1.4"
-html2text = "0.15"
+epub = "2.1.5"
+html2text = "0.17"
 hygg-shared = { version = "0.1", path = "../hygg-shared" }
 
 [dev-dependencies]
 tempfile = "3"
-zip = "4"
+zip = "8"

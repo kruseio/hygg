@@ -1,6 +1,6 @@
 use crate::{args::Args, binary_lookup::which};
 use hygg_shared::normalize_file_path;
-use std::io::{self, Read};
+use std::io::{self, IsTerminal, Read};
 use std::process::{Command, Stdio};
 
 pub(crate) struct PreparedInput {
@@ -10,7 +10,7 @@ pub(crate) struct PreparedInput {
 }
 
 pub(crate) fn read_stdin_content() -> Option<String> {
-  if atty::is(atty::Stream::Stdin) {
+  if io::stdin().is_terminal() {
     return None;
   }
 

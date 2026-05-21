@@ -23,13 +23,14 @@ hygg-shared = { version = "0.1", path = "../hygg-shared" }
 
 getopts = "0.2"
 
+# Pinned to 0.7 until upstream cff-parser stops panicking on the
+# 32 MB pdfreference1.7old.pdf fixture (0.8+ pulled in cff-parser 0.1
+# which has an explicit panic in encoding.rs).
 pdf-extract = "0.7"
-lopdf = "0.35"
+lopdf = "0.40"
 
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2" }
-[target.'cfg(target_os = "windows")'.dependencies]
-winapi = { version = "0.3" }
 
 [dev-dependencies]
 rayon = "1"
