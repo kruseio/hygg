@@ -40,7 +40,7 @@ impl Editor {
       write!(stdout, "{}", " ".repeat(term_width as usize))?;
 
       // Reset cursor position to beginning of line
-      execute!(stdout, MoveTo(0, line_index as u16))?;
+      execute!(stdout, MoveTo(0, line_index as u16), ResetColor)?;
 
       Ok(true)
     } else {
@@ -133,6 +133,7 @@ impl Editor {
 
       // Reset cursor position to beginning of line
       buffer.queue(MoveTo(0, line_index as u16))?;
+      buffer.queue(ResetColor)?;
 
       Ok(true)
     } else {
@@ -172,5 +173,31 @@ impl Editor {
     }
 
     Ok(false)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn buffered_current_line_resets_after_background_setup() -> IoResult<()> {
+    let mut editor = Editor::new(vec!["current".to_string()], 80);
+    editor.cursor_y = 2;
+
+    let mut buffer = Vec::new();
+    assert!(editor.highlight_current_line_buffered(&mut buffer, 2, 4)?);
+
+    let mut expected_tail = b"    ".to_vec();
+    expected_tail.queue(MoveTo(0, 2))?;
+    expected_tail.queue(ResetColor)?;
+
+    assert!(
+      buffer.ends_with(&expected_tail),
+      "expected buffered highlight setup to fill the line, move back, then reset colors; got {:?}",
+      String::from_utf8_lossy(&buffer)
+    );
+
+    Ok(())
   }
 }
