@@ -206,7 +206,9 @@ impl Editor {
           }
 
           // Calculate layout parameters
-          let term_width = 80u16; // Default width for non-terminal
+          // Use cached `self.width` everywhere so the highlight-bar fill and
+          // `center_offset` agree on the same width within one frame.
+          let term_width = self.width as u16;
           let center_offset = if self.width > self.col {
             (self.width / 2) - self.col / 2
           } else {
