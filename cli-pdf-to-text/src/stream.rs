@@ -68,68 +68,6 @@ impl PdfStream {
 /// Convenience wrapper so callers can hold a cheap shared handle.
 pub type SharedPdfStream = Arc<PdfStream>;
 
-/// RAII guard that redirects stdout to /dev/null for its lifetime, mirroring
-/// the dance `pdf_to_text` performs around extraction. Required because
-/// `pdf-extract` / `lopdf` may emit warning messages to stdout while parsing
-/// glyphs.
-struct StdoutSilencer {
-  #[cfg(not(target_os = "windows"))]
-  state: Option<UnixStdoutState>,
-}
-
-#[cfg(not(target_os = "windows"))]
-struct UnixStdoutState {
-  saved_fd: i32,
-  original_fd: i32,
-}
-
-impl StdoutSilencer {
-  #[cfg(not(target_os = "windows"))]
-  fn engage() -> Self {
-    use std::fs::File;
-    use std::os::fd::AsRawFd;
-
-    let stdout = std::io::stdout();
-    let original_fd = stdout.as_raw_fd();
-    let saved_fd = unsafe { libc::dup(original_fd) };
-    if saved_fd < 0 {
-      return Self { state: None };
-    }
-    let Ok(dev_null) = File::open("/dev/null") else {
-      unsafe {
-        libc::close(saved_fd);
-      }
-      return Self { state: None };
-    };
-    unsafe {
-      libc::dup2(dev_null.as_raw_fd(), original_fd);
-    }
-    Self { state: Some(UnixStdoutState { saved_fd, original_fd }) }
-  }
-
-  #[cfg(target_os = "windows")]
-  fn engage() -> Self {
-    let _ = redirect_stderr::redirect_stdout();
-    Self {}
-  }
-}
-
-impl Drop for StdoutSilencer {
-  fn drop(&mut self) {
-    #[cfg(not(target_os = "windows"))]
-    if let Some(state) = self.state.take() {
-      unsafe {
-        libc::dup2(state.saved_fd, state.original_fd);
-        libc::close(state.saved_fd);
-      }
-    }
-    #[cfg(target_os = "windows")]
-    {
-      let _ = redirect_stderr::restore_stdout();
-    }
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;

@@ -78,35 +78,10 @@ pub fn pdf_to_text(
 ) -> Result<String, Box<dyn std::error::Error>> {
   let canonical_path = normalize_file_path(pdf_path)?;
 
-  #[cfg(target_os = "windows")]
+  // `redirect_stderr::redirect_stdout` works on both Windows and Unix now;
+  // suppress the noisy logging pdf_extract / lopdf write to stdout while we
+  // do the extraction passes.
   redirect_stderr::redirect_stdout()?;
-
-  #[allow(unused_assignments)]
-  let mut original_fd = -1;
-
-  #[allow(unused_assignments)]
-  let mut duplicate_fd = -1;
-
-  #[cfg(not(target_os = "windows"))]
-  {
-    extern crate libc;
-
-    use std::fs::File;
-    use std::io::{self, Write};
-    use std::os::fd::AsRawFd;
-    use std::os::unix::io::FromRawFd;
-
-    let stdout = io::stdout();
-    original_fd = stdout.as_raw_fd();
-
-    duplicate_fd = unsafe { libc::dup(original_fd) };
-
-    let dev_null = File::open("/dev/null")
-      .map_err(|e| format!("Failed to open /dev/null: {e}"))?;
-    unsafe {
-      libc::dup2(dev_null.as_raw_fd(), original_fd);
-    }
-  }
 
   let layout_text = extract_with_layout_text(&canonical_path);
 
@@ -128,22 +103,7 @@ pub fn pdf_to_text(
     None
   };
 
-  #[cfg(target_os = "windows")]
   redirect_stderr::restore_stdout()?;
-
-  #[cfg(not(target_os = "windows"))]
-  {
-    extern crate libc;
-
-    use std::fs::File;
-    use std::io::{self, Write};
-    use std::os::fd::AsRawFd;
-    use std::os::unix::io::FromRawFd;
-
-    unsafe {
-      libc::dup2(duplicate_fd, original_fd);
-    }
-  }
 
   if let Some(plaintext_output) = plaintext_result {
     let plaintext_sanitized = sanitize_layout_text(&plaintext_output);

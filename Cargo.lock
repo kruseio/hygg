@@ -368,7 +368,6 @@ version = "0.1.19"
 dependencies = [
  "getopts",
  "hygg-shared",
- "libc",
  "lopdf 0.40.0",
  "pdf-extract",
  "rayon",

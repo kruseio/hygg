@@ -18,6 +18,7 @@ categories.workspace = true
 workspace = true
 
 [dependencies]
+redirect-stderr = { version = "0.1", path = "../redirect-stderr" }
 hygg-shared = { version = "0.1", path = "../hygg-shared" }
 
 getopts = "0.2"
@@ -25,9 +26,3 @@ getopts = "0.2"
 pdf-extract = "0.10"
 lopdf = "0.40"
 rayon = "1"
-
-[target.'cfg(unix)'.dependencies]
-libc = { version = "0.2" }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-redirect-stderr = { version = "0.1", path = "../redirect-stderr" }

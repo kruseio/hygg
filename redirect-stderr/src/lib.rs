@@ -66,14 +66,21 @@ pub fn redirect_stderr() -> std::io::Result<()> {
     use libc;
     use std::os::unix::io::AsRawFd;
 
-    unsafe {
-      let raw_fd = dev_null.as_raw_fd();
+    let dev_null_fd = dev_null.as_raw_fd();
 
-      if (UNIX_STDERR_HANDLE != raw_fd) {
-        UNIX_STDERR_HANDLE = std::io::stdout().as_raw_fd();
+    unsafe {
+      // Save the real stderr fd (not stderr's *current* fd compared against
+      // dev_null) so a later `restore_stderr` can put it back. Close any
+      // previously-saved dup before overwriting.
+      if UNIX_STDERR_HANDLE != -1 {
+        libc::close(UNIX_STDERR_HANDLE);
+      }
+      UNIX_STDERR_HANDLE = libc::dup(libc::STDERR_FILENO);
+      if UNIX_STDERR_HANDLE == -1 {
+        return Err(io::Error::last_os_error());
       }
 
-      if libc::dup2(raw_fd, libc::STDERR_FILENO) == -1 {
+      if libc::dup2(dev_null_fd, libc::STDERR_FILENO) == -1 {
         return Err(io::Error::last_os_error());
       }
     }
@@ -83,7 +90,6 @@ pub fn redirect_stderr() -> std::io::Result<()> {
 }
 
 pub fn restore_stderr() -> std::io::Result<()> {
-  use std::fs::File;
   use std::io::{self};
 
   #[cfg(target_os = "windows")]
@@ -100,12 +106,16 @@ pub fn restore_stderr() -> std::io::Result<()> {
   #[cfg(not(target_os = "windows"))]
   {
     use libc;
-    use std::os::unix::io::AsRawFd;
 
     unsafe {
+      if UNIX_STDERR_HANDLE == -1 {
+        return Ok(());
+      }
       if libc::dup2(UNIX_STDERR_HANDLE, libc::STDERR_FILENO) == -1 {
         return Err(io::Error::last_os_error());
       }
+      libc::close(UNIX_STDERR_HANDLE);
+      UNIX_STDERR_HANDLE = -1;
     }
   }
 
@@ -156,39 +166,36 @@ pub fn redirect_stdout() -> std::io::Result<()> {
     use libc;
     use std::os::unix::io::AsRawFd;
 
-    // Save the original stdout
-    let stdout = io::stdout();
-    let original_fd = stdout.as_raw_fd();
-
-    // Redirect stdout to /dev/null
-    let dev_null_fd = File::open("/dev/null").unwrap().as_raw_fd();
+    // Use the `dev_null` File bound above. A previous version opened
+    // /dev/null again inline and then read `.as_raw_fd()` off the dropped
+    // temporary, leaving the local `dev_null_fd` pointing at an already-
+    // closed descriptor — the subsequent `dup2` then silently failed and
+    // stdout was never actually redirected on Unix.
+    let original_fd = io::stdout().as_raw_fd();
+    let dev_null_fd = dev_null.as_raw_fd();
 
     unsafe {
-      if (UNIX_STDOUT_HANDLE != dev_null_fd) {
-        UNIX_STDOUT_HANDLE = libc::dup(original_fd);
+      // Save the original stdout fd the first time we're called so a later
+      // `restore_stdout` can put it back. Close the previously-saved dup if
+      // we're stacking redirects, to avoid leaking fds.
+      if UNIX_STDOUT_HANDLE != -1 {
+        libc::close(UNIX_STDOUT_HANDLE);
+      }
+      UNIX_STDOUT_HANDLE = libc::dup(original_fd);
+      if UNIX_STDOUT_HANDLE == -1 {
+        return Err(io::Error::last_os_error());
       }
 
-      libc::dup2(dev_null_fd, original_fd);
+      if libc::dup2(dev_null_fd, original_fd) == -1 {
+        return Err(io::Error::last_os_error());
+      }
     }
-
-    // unsafe {
-    //   let raw_fd = dev_null.as_raw_fd();
-
-    //   if (UNIX_STDOUT_HANDLE != raw_fd) {
-    //     UNIX_STDOUT_HANDLE = std::io::stdout().as_raw_fd();
-    //   }
-
-    //   if libc::dup2(raw_fd, libc::STDOUT_FILENO) == -1 {
-    //     return Err(io::Error::last_os_error());
-    //   }
-    // }
   }
 
   Ok(())
 }
 
 pub fn restore_stdout() -> std::io::Result<()> {
-  use std::fs::File;
   use std::io::{self};
 
   #[cfg(target_os = "windows")]
@@ -209,12 +216,21 @@ pub fn restore_stdout() -> std::io::Result<()> {
     use libc;
     use std::os::unix::io::AsRawFd;
 
-    // Save the original stdout
-    let stdout = io::stdout();
-    let original_fd = stdout.as_raw_fd();
+    let original_fd = io::stdout().as_raw_fd();
 
     unsafe {
-      libc::dup2(UNIX_STDOUT_HANDLE, original_fd);
+      if UNIX_STDOUT_HANDLE == -1 {
+        // Nothing to restore.
+        return Ok(());
+      }
+      if libc::dup2(UNIX_STDOUT_HANDLE, original_fd) == -1 {
+        return Err(io::Error::last_os_error());
+      }
+      // We're done with the saved fd; release it and reset the sentinel
+      // so a follow-up `redirect_stdout` saves the (now restored) original
+      // rather than overwriting the saved dup it still holds.
+      libc::close(UNIX_STDOUT_HANDLE);
+      UNIX_STDOUT_HANDLE = -1;
     }
   }
 
