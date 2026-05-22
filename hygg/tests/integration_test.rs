@@ -197,7 +197,7 @@ fn test_docx_processing_with_pandoc() {
 #[test]
 fn test_txt_processing() {
   use std::process::Stdio;
-  use std::time::Duration;
+  use std::time::{Duration, Instant};
 
   let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
     .parent()
@@ -214,26 +214,31 @@ fn test_txt_processing() {
     .arg("--col")
     .arg("80")
     .arg(test_file.to_str().unwrap())
+    .stdin(Stdio::null())
     .stdout(Stdio::null())
     .stderr(Stdio::null())
     .spawn()
     .expect("Failed to spawn hygg");
 
-  // Give it a short time to process and exit
-  std::thread::sleep(Duration::from_millis(100));
-
-  // Try to get the exit status - if it's still running, kill it
-  match child.try_wait() {
-    Ok(Some(status)) => {
-      // Process exited on its own - good
-      assert!(status.code().is_some(), "hygg should exit cleanly");
+  // Poll for exit. macOS adds substantial overhead when cargo test directly
+  // spawns a recently-built debug binary, so the deadline has to comfortably
+  // exceed that pre-main load time, not the 100 ms it used to be.
+  let deadline = Instant::now() + Duration::from_secs(5);
+  loop {
+    match child.try_wait() {
+      Ok(Some(status)) => {
+        assert!(status.code().is_some(), "hygg should exit cleanly");
+        return;
+      }
+      Ok(None) => {
+        if Instant::now() >= deadline {
+          let _ = child.kill();
+          panic!("hygg should have exited when stdout is not a TTY");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+      }
+      Err(e) => panic!("Failed to check hygg status: {e}"),
     }
-    Ok(None) => {
-      // Still running - kill it
-      child.kill().expect("Failed to kill hygg process");
-      panic!("hygg should have exited when stdout is not a TTY");
-    }
-    Err(e) => panic!("Failed to check hygg status: {}", e),
   }
 }
 
@@ -259,7 +264,7 @@ fn test_file_type_detection() {
 fn test_stdin_processing() {
   use std::io::Write;
   use std::process::Stdio;
-  use std::time::Duration;
+  use std::time::{Duration, Instant};
 
   // Test that hygg can accept stdin input
   let mut child = Command::new(env!("CARGO_BIN_EXE_hygg"))
@@ -272,26 +277,33 @@ fn test_stdin_processing() {
     .expect("Failed to spawn hygg");
 
   let mut stdin = child.stdin.take().expect("Failed to get stdin");
-  stdin.write_all(b"This is a test of stdin processing.\nIt should be properly justified.\n")
-        .expect("Failed to write to stdin");
+  stdin
+    .write_all(
+      b"This is a test of stdin processing.\nIt should be properly justified.\n",
+    )
+    .expect("Failed to write to stdin");
   stdin.flush().expect("Failed to flush stdin");
   // Properly drop the owned stdin to close it
   drop(stdin);
 
-  // Give it a short time to process and exit
-  std::thread::sleep(Duration::from_millis(100));
-
-  // Try to get the exit status - if it's still running, kill it
-  match child.try_wait() {
-    Ok(Some(status)) => {
-      // Process exited on its own - good
-      assert!(status.code().is_some(), "hygg should exit cleanly");
+  // Poll for exit. macOS adds substantial overhead when cargo test directly
+  // spawns a recently-built debug binary, so the deadline has to comfortably
+  // exceed that pre-main load time, not the 100 ms it used to be.
+  let deadline = Instant::now() + Duration::from_secs(5);
+  loop {
+    match child.try_wait() {
+      Ok(Some(status)) => {
+        assert!(status.code().is_some(), "hygg should exit cleanly");
+        return;
+      }
+      Ok(None) => {
+        if Instant::now() >= deadline {
+          let _ = child.kill();
+          panic!("hygg should have exited when stdout is not a TTY");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+      }
+      Err(e) => panic!("Failed to check hygg status: {e}"),
     }
-    Ok(None) => {
-      // Still running - kill it
-      child.kill().expect("Failed to kill hygg process");
-      panic!("hygg should have exited when stdout is not a TTY");
-    }
-    Err(e) => panic!("Failed to check hygg status: {}", e),
   }
 }
