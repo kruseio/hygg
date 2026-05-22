@@ -128,12 +128,10 @@ pub enum StreamReady {
 /// Held by the editor while the PDF is being opened in the background.
 pub struct PendingPdfStream {
   pub receiver: std::sync::mpsc::Receiver<StreamReady>,
-  /// When the open job was kicked off — handy for surfacing elapsed time
-  /// in the splash if we add a richer loading UI later.
-  #[allow(dead_code)]
+  /// When the open job was kicked off — surfaced as elapsed time in the
+  /// loading splash so the user can see hygg hasn't frozen on a slow open.
   pub started_at: std::time::Instant,
   /// Display-friendly path so the splash can show *which* file is opening.
-  #[allow(dead_code)]
   pub canonical_path_display: String,
   /// Saved cursor row within the target page's rendered output, if any.
   /// Restored as cursor position once the preloaded pages are installed.

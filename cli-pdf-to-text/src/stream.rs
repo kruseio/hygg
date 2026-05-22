@@ -52,15 +52,24 @@ impl PdfStream {
 
   /// Extract sanitized layout-aware text for a single page.
   ///
-  /// `page_index` is 1-based. Returns `None` if the index is out of range
-  /// or the page failed to render.
+  /// `page_index` is 1-based. Returns `None` if the index is out of range,
+  /// the page failed to render, or rendering panicked. `pdf-extract` / `lopdf`
+  /// can panic on malformed content streams or unusual font encodings; we
+  /// catch those so a single broken page does not take down the streaming
+  /// loader thread and leave the editor stuck at "loading" for every other
+  /// page in the document.
   pub fn extract_page(&self, page_index: usize) -> Option<String> {
     if page_index == 0 {
       return None;
     }
     let &page_num = self.page_numbers.get(page_index - 1)?;
     // See note on `open` above: no stdout silencing here either.
-    let raw = render_page_layout_internal(&self.doc, page_num)?;
+    let doc = &self.doc;
+    let raw = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      render_page_layout_internal(doc, page_num)
+    }))
+    .ok()
+    .flatten()?;
     Some(sanitize_layout_text(&raw))
   }
 }

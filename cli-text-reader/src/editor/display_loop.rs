@@ -28,6 +28,49 @@ impl Editor {
     Ok(())
   }
 
+  /// Render a centered "Loading <file>… (Xs)" message on top of the splash
+  /// buffer while `pdf_pending` is set. Without this the user just sees an
+  /// empty screen with a cursor for the entire `Document::load` duration —
+  /// 30-60 s on large PDFs — and assumes hygg has frozen.
+  fn draw_pdf_loading_splash_buffered(
+    &self,
+    buffer: &mut Vec<u8>,
+  ) -> IoResult<()> {
+    use crossterm::QueueableCommand;
+    use crossterm::cursor::MoveTo;
+    use crossterm::terminal::{Clear, ClearType};
+
+    let Some(pending) = self.pdf_pending.as_ref() else {
+      return Ok(());
+    };
+
+    let file_name = std::path::Path::new(&pending.canonical_path_display)
+      .file_name()
+      .and_then(|n| n.to_str())
+      .unwrap_or(&pending.canonical_path_display);
+    let elapsed = pending.started_at.elapsed().as_secs_f32();
+    let message = format!("  Loading {file_name}… ({elapsed:.1}s)  ");
+
+    if self.height < 2 || self.width == 0 {
+      return Ok(());
+    }
+
+    let row = (self.height.saturating_sub(1) / 2) as u16;
+    let msg_width = message.chars().count();
+    let col = if self.width > msg_width {
+      ((self.width - msg_width) / 2) as u16
+    } else {
+      0
+    };
+
+    buffer.queue(MoveTo(0, row))?;
+    buffer.queue(Clear(ClearType::CurrentLine))?;
+    buffer.queue(MoveTo(col, row))?;
+    write!(buffer, "{message}")?;
+
+    Ok(())
+  }
+
   pub fn main_loop(
     &mut self,
     stdout: &mut io::Stdout,
@@ -40,6 +83,11 @@ impl Editor {
       // opener has finished and install the streaming state when it has.
       if self.pdf_pending.is_some() {
         let _ = self.poll_pending_pdf_stream();
+        // Repaint each tick so the elapsed-time counter in the loading
+        // splash actually advances while we wait on the opener thread.
+        if self.pdf_pending.is_some() {
+          self.mark_dirty();
+        }
       }
       // Drain any pages the background PDF loader has finished extracting
       // before we render. This keeps the page table in sync and triggers a
@@ -155,6 +203,15 @@ impl Editor {
 
           // Show status line and position info
           self.draw_status_line_buffered(&mut render_buffer)?;
+
+          // While the PDF is still being parsed in the background, draw a
+          // centered "Loading <file> (Xs)" splash on top of the blank
+          // splash buffer so the user can see hygg is actually working
+          // instead of staring at an empty screen for tens of seconds on
+          // large PDFs.
+          if self.pdf_pending.is_some() {
+            self.draw_pdf_loading_splash_buffered(&mut render_buffer)?;
+          }
 
           // Render demo hint if active
           if self.tutorial_demo_mode {
