@@ -2,7 +2,9 @@ use crossterm::{
   cursor::Hide,
   event::{self, Event as CEvent},
   execute,
-  terminal::{self, Clear, ClearType},
+  terminal::{
+    BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate,
+  },
 };
 use std::io::{self, IsTerminal, Result as IoResult, Write};
 
@@ -59,6 +61,7 @@ impl Editor {
           // Only hide cursor if it's currently visible
           // This reduces flicker on Windows terminals
           use crossterm::QueueableCommand;
+          render_buffer.queue(BeginSynchronizedUpdate)?;
           if self.cursor_currently_visible && self.show_cursor {
             render_buffer.queue(Hide)?;
             self.cursor_currently_visible = false;
@@ -102,7 +105,7 @@ impl Editor {
           }
 
           // Calculate layout parameters
-          let term_width = terminal::size()?.0 as u16;
+          let term_width = self.width as u16;
           let center_offset = if self.width > self.col {
             (self.width / 2) - self.col / 2
           } else {
@@ -148,6 +151,7 @@ impl Editor {
 
           // Position cursor and show it at the final position
           self.position_cursor_buffered(&mut render_buffer, center_offset)?;
+          render_buffer.queue(EndSynchronizedUpdate)?;
 
           // Write everything to stdout in one go
           stdout.write_all(&render_buffer)?;
