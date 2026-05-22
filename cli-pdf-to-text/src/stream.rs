@@ -3,73 +3,70 @@ use std::sync::Arc;
 
 use hygg_shared::normalize_file_path;
 
-use crate::render_page_layout_internal;
 use crate::sanitize::sanitize_layout_text;
 
-/// On-demand page extractor backed by a single parsed `pdf_extract::Document`.
+/// On-demand page extractor backed by a single parsed `pdf_oxide::PdfDocument`.
 ///
-/// `pdf_extract::Document` is `Sync`, so a `PdfStream` can be wrapped in
-/// `Arc` and shared across the main thread (for the initially shown page)
-/// and a background loader thread (for the rest of the document).
+/// pdf_oxide parses the file lazily — `open` does the xref + catalog and
+/// returns in tens of milliseconds even on the 31 MB / 1310-page PDF
+/// reference, where `lopdf::Document::load` (the old backend) took ~40 s
+/// because it eagerly decompressed every content stream. Per-page
+/// extraction is sub-millisecond warm, hundreds of micros cold.
+///
+/// `pdf_oxide::PdfDocument` is `Send + Sync` (its interior-mutable caches
+/// are `Mutex`-guarded), so a `PdfStream` can be wrapped in `Arc` and
+/// shared between the main thread (rendering the first visible page) and
+/// the background loader thread (extracting the rest of the document) the
+/// same way the lopdf-backed version was.
 pub struct PdfStream {
   canonical_path: PathBuf,
-  doc: pdf_extract::Document,
-  page_numbers: Vec<u32>,
+  doc: pdf_oxide::PdfDocument,
+  total_pages: usize,
 }
 
 impl PdfStream {
-  /// Open a PDF and parse its structure. Does not extract any page text.
-  ///
-  /// This is the fast path used by the streaming editor: it skips the
-  /// up-front content-stream patching that `pdf_to_text` applies (which
-  /// decompresses every page synchronously and dominates open time on
-  /// large PDFs). Text emitted via the rare `'` / `"` text operators may
-  /// be missing from individual pages as a result; users hitting that
-  /// can fall back to the non-streaming pipeline via shell redirection
-  /// (`hygg file.pdf | hygg` or similar).
+  /// Open a PDF and parse its catalog. Does not extract any page text.
   pub fn open(pdf_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
     let canonical_path = normalize_file_path(pdf_path)?;
-    // No stdout-silencing here: `PdfStream::open` is intended to be called
-    // from a background thread while the editor is interactively using the
-    // terminal. fd 1 is process-global, so dup2'ing it would also silence
-    // the editor's main thread and trip the "not a terminal" exit in the
-    // main loop. We rely on `pdf_extract::Document::load` being quiet for
-    // valid PDFs; any noise it does emit gets overwritten by the editor's
-    // next redraw inside the alternate screen.
-    let doc = pdf_extract::Document::load(&canonical_path)?;
-    let mut page_numbers: Vec<u32> = doc.get_pages().into_keys().collect();
-    page_numbers.sort_unstable();
-    Ok(Self { canonical_path, doc, page_numbers })
+    let doc = pdf_oxide::PdfDocument::open(&canonical_path)
+      .map_err(|e| format!("pdf_oxide open failed: {e:?}"))?;
+    let total_pages = doc
+      .page_count()
+      .map_err(|e| format!("pdf_oxide page_count failed: {e:?}"))?;
+    Ok(Self { canonical_path, doc, total_pages })
   }
 
   pub fn total_pages(&self) -> usize {
-    self.page_numbers.len()
+    self.total_pages
   }
 
   pub fn canonical_path(&self) -> &std::path::Path {
     &self.canonical_path
   }
 
-  /// Extract sanitized layout-aware text for a single page.
+  /// Extract sanitized text for a single page.
   ///
-  /// `page_index` is 1-based. Returns `None` if the index is out of range,
-  /// the page failed to render, or rendering panicked. `pdf-extract` / `lopdf`
-  /// can panic on malformed content streams or unusual font encodings; we
-  /// catch those so a single broken page does not take down the streaming
-  /// loader thread and leave the editor stuck at "loading" for every other
-  /// page in the document.
+  /// `page_index` is 1-based to match the historical lopdf-backed API
+  /// (the rest of hygg counts pages from 1 in saved progress, status
+  /// line, etc.). Returns `None` if the index is out of range, the page
+  /// has no extractable text, or extraction panicked. pdf_oxide claims a
+  /// 100 % pass rate on its 3 830-PDF corpus, but we still wrap in
+  /// `catch_unwind` so a misbehaving page can't take down the background
+  /// loader thread and leave every later page stuck on "loading".
   pub fn extract_page(&self, page_index: usize) -> Option<String> {
-    if page_index == 0 {
+    if page_index == 0 || page_index > self.total_pages {
       return None;
     }
-    let &page_num = self.page_numbers.get(page_index - 1)?;
-    // See note on `open` above: no stdout silencing here either.
     let doc = &self.doc;
+    let page_0based = page_index - 1;
     let raw = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-      render_page_layout_internal(doc, page_num)
+      doc.extract_text(page_0based).ok()
     }))
     .ok()
     .flatten()?;
+    if raw.trim().is_empty() {
+      return None;
+    }
     Some(sanitize_layout_text(&raw))
   }
 }
