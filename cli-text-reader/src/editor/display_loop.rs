@@ -12,6 +12,22 @@ use super::core::{Editor, EditorMode, ViewMode};
 use crate::progress::save_progress_full;
 
 impl Editor {
+  fn show_idle_cursor_if_needed(
+    &mut self,
+    buffer: &mut Vec<u8>,
+  ) -> IoResult<()> {
+    if self.show_cursor
+      && self.pdf_pending.is_none()
+      && !self.cursor_currently_visible
+    {
+      use crossterm::QueueableCommand;
+
+      buffer.queue(crossterm::cursor::Show)?;
+      self.cursor_currently_visible = true;
+    }
+    Ok(())
+  }
+
   pub fn main_loop(
     &mut self,
     stdout: &mut io::Stdout,
@@ -226,12 +242,13 @@ impl Editor {
       } else {
         // Even if not redrawing, ensure cursor is visible and positioned
         // correctly But do it efficiently with a single write
-        if self.show_cursor && std::io::stdout().is_terminal() {
-          use crossterm::QueueableCommand;
+        if std::io::stdout().is_terminal() {
           let mut buffer = Vec::new();
-          buffer.queue(crossterm::cursor::Show)?;
-          stdout.write_all(&buffer)?;
-          stdout.flush()?;
+          self.show_idle_cursor_if_needed(&mut buffer)?;
+          if !buffer.is_empty() {
+            stdout.write_all(&buffer)?;
+            stdout.flush()?;
+          }
         }
       }
 
@@ -440,5 +457,70 @@ impl Editor {
     }
 
     Ok(())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::editor::streaming::{PendingPdfStream, StreamReady};
+  use std::sync::mpsc;
+  use std::time::Instant;
+
+  fn test_editor() -> Editor {
+    let mut editor = Editor::new(vec!["line".to_string()], 80);
+    editor.height = 24;
+    editor.width = 80;
+    editor
+  }
+
+  fn rendered(buffer: Vec<u8>) -> String {
+    String::from_utf8(buffer).expect("cursor commands should be utf8")
+  }
+
+  #[test]
+  fn idle_cursor_show_marks_cursor_visible() {
+    let mut editor = test_editor();
+    editor.show_cursor = true;
+    editor.cursor_currently_visible = false;
+
+    let mut buffer = Vec::new();
+    editor.show_idle_cursor_if_needed(&mut buffer).unwrap();
+
+    assert!(rendered(buffer).contains("\x1b[?25h"));
+    assert!(editor.cursor_currently_visible);
+  }
+
+  #[test]
+  fn idle_cursor_show_skips_redundant_show_when_already_visible() {
+    let mut editor = test_editor();
+    editor.show_cursor = true;
+    editor.cursor_currently_visible = true;
+
+    let mut buffer = Vec::new();
+    editor.show_idle_cursor_if_needed(&mut buffer).unwrap();
+
+    assert!(buffer.is_empty());
+    assert!(editor.cursor_currently_visible);
+  }
+
+  #[test]
+  fn idle_cursor_show_skips_show_while_pdf_is_pending() {
+    let mut editor = test_editor();
+    editor.show_cursor = true;
+    editor.cursor_currently_visible = false;
+    let (_tx, rx) = mpsc::channel::<StreamReady>();
+    editor.pdf_pending = Some(PendingPdfStream {
+      receiver: rx,
+      started_at: Instant::now(),
+      canonical_path_display: "pending.pdf".to_string(),
+      restore_line_in_page: None,
+    });
+
+    let mut buffer = Vec::new();
+    editor.show_idle_cursor_if_needed(&mut buffer).unwrap();
+
+    assert!(buffer.is_empty());
+    assert!(!editor.cursor_currently_visible);
   }
 }
