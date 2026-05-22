@@ -8,6 +8,34 @@ use std::io::{self, IsTerminal, Write};
 use super::core::{Editor, EditorMode, ViewMode};
 
 impl Editor {
+  fn hide_cursor_buffered(&mut self, buffer: &mut Vec<u8>) -> io::Result<()> {
+    if self.cursor_currently_visible {
+      buffer.queue(Hide)?;
+      self.cursor_currently_visible = false;
+    }
+    Ok(())
+  }
+
+  fn queue_cursor_style_if_changed(
+    &mut self,
+    buffer: &mut Vec<u8>,
+    style: SetCursorStyle,
+  ) -> io::Result<()> {
+    if self.last_cursor_style != Some(style) {
+      buffer.queue(style)?;
+      self.last_cursor_style = Some(style);
+    }
+    Ok(())
+  }
+
+  fn show_cursor_buffered(&mut self, buffer: &mut Vec<u8>) -> io::Result<()> {
+    if !self.cursor_currently_visible {
+      buffer.queue(Show)?;
+      self.cursor_currently_visible = true;
+    }
+    Ok(())
+  }
+
   // Position and style the cursor based on editor mode
   #[allow(dead_code)]
   pub fn position_cursor(
@@ -187,14 +215,13 @@ impl Editor {
     center_offset: usize,
   ) -> io::Result<()> {
     if !self.show_cursor {
-      // Cursor should remain hidden
-      return Ok(());
+      return self.hide_cursor_buffered(buffer);
     }
     // Keep the cursor hidden while the PDF is still being opened in the
     // background. The highlight bar already marks the row the cursor will
     // land on; the cursor itself only appears once real content is in.
     if self.pdf_pending.is_some() {
-      return Ok(());
+      return self.hide_cursor_buffered(buffer);
     }
 
     let active_mode = self.get_active_mode();
@@ -236,19 +263,17 @@ impl Editor {
       ))?;
 
       // Set appropriate cursor style for the mode and show cursor
-      match active_mode {
-        EditorMode::Normal => {
-          buffer.queue(SetCursorStyle::BlinkingBlock)?;
-        }
+      if let Some(style) = match active_mode {
+        EditorMode::Normal => Some(SetCursorStyle::BlinkingBlock),
         EditorMode::VisualChar | EditorMode::VisualLine => {
-          buffer.queue(SetCursorStyle::SteadyBlock)?;
+          Some(SetCursorStyle::SteadyBlock)
         }
-        _ => {}
+        _ => None,
+      } {
+        self.queue_cursor_style_if_changed(buffer, style)?;
       }
 
-      // Show cursor at the final position and track state
-      buffer.queue(Show)?;
-      self.cursor_currently_visible = true;
+      self.show_cursor_buffered(buffer)?;
     } else if active_mode == EditorMode::Command
       || active_mode == EditorMode::CommandExecution
       || active_mode == EditorMode::Search
@@ -265,11 +290,97 @@ impl Editor {
       };
 
       buffer.queue(MoveTo(cmd_len as u16, (self.height - 1) as u16))?;
-      buffer.queue(SetCursorStyle::BlinkingBar)?;
-      buffer.queue(Show)?;
-      self.cursor_currently_visible = true;
+      self
+        .queue_cursor_style_if_changed(buffer, SetCursorStyle::BlinkingBar)?;
+      self.show_cursor_buffered(buffer)?;
     }
 
     Ok(())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::editor::streaming::{PendingPdfStream, StreamReady};
+  use std::sync::mpsc;
+  use std::time::Instant;
+
+  fn test_editor() -> Editor {
+    let mut editor = Editor::new(vec!["line".to_string()], 80);
+    editor.height = 24;
+    editor.width = 80;
+    editor.cursor_x = 0;
+    editor.cursor_y = 0;
+    editor
+  }
+
+  fn rendered(buffer: Vec<u8>) -> String {
+    String::from_utf8(buffer).expect("cursor commands should be utf8")
+  }
+
+  #[test]
+  fn buffered_cursor_hides_when_show_cursor_is_false() {
+    let mut editor = test_editor();
+    editor.cursor_currently_visible = true;
+    editor.show_cursor = false;
+
+    let mut buffer = Vec::new();
+    editor.position_cursor_buffered(&mut buffer, 0).unwrap();
+
+    assert!(rendered(buffer).contains("\x1b[?25l"));
+    assert!(!editor.cursor_currently_visible);
+  }
+
+  #[test]
+  fn buffered_cursor_hides_while_pdf_is_pending() {
+    let mut editor = test_editor();
+    editor.cursor_currently_visible = true;
+    let (_tx, rx) = mpsc::channel::<StreamReady>();
+    editor.pdf_pending = Some(PendingPdfStream {
+      receiver: rx,
+      started_at: Instant::now(),
+      canonical_path_display: "pending.pdf".to_string(),
+      restore_line_in_page: None,
+    });
+
+    let mut buffer = Vec::new();
+    editor.position_cursor_buffered(&mut buffer, 0).unwrap();
+
+    assert!(rendered(buffer).contains("\x1b[?25l"));
+    assert!(!editor.cursor_currently_visible);
+  }
+
+  #[test]
+  fn buffered_cursor_reuses_visible_state_and_cached_style() {
+    let mut editor = test_editor();
+    editor.cursor_currently_visible = true;
+    editor.last_cursor_style = Some(SetCursorStyle::BlinkingBlock);
+    editor.set_active_mode(EditorMode::Normal);
+
+    let mut buffer = Vec::new();
+    editor.position_cursor_buffered(&mut buffer, 0).unwrap();
+
+    let output = rendered(buffer);
+    assert!(!output.contains("\x1b[?25h"));
+    assert!(!output.contains("\x1b[1 q"));
+    assert!(editor.cursor_currently_visible);
+    assert_eq!(editor.last_cursor_style, Some(SetCursorStyle::BlinkingBlock));
+  }
+
+  #[test]
+  fn buffered_cursor_queues_style_when_mode_changes() {
+    let mut editor = test_editor();
+    editor.cursor_currently_visible = true;
+    editor.last_cursor_style = Some(SetCursorStyle::BlinkingBlock);
+    editor.set_active_mode(EditorMode::VisualChar);
+
+    let mut buffer = Vec::new();
+    editor.position_cursor_buffered(&mut buffer, 0).unwrap();
+
+    let output = rendered(buffer);
+    assert!(output.contains("\x1b[2 q"));
+    assert!(!output.contains("\x1b[?25h"));
+    assert_eq!(editor.last_cursor_style, Some(SetCursorStyle::SteadyBlock));
   }
 }

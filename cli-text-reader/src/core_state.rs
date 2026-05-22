@@ -1,4 +1,5 @@
 use arboard::Clipboard;
+use crossterm::cursor::SetCursorStyle;
 use crossterm::event::KeyEvent;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -75,6 +76,8 @@ pub struct Editor {
   pub last_saved_viewport_offset: usize,
   // Track cursor visibility state to optimize hide/show operations
   pub cursor_currently_visible: bool,
+  // Track cursor style state to avoid redundant terminal style changes
+  pub last_cursor_style: Option<SetCursorStyle>,
   // Track if we just switched buffers to skip centering
   pub buffer_just_switched: bool,
   // Streaming-PDF page table; None for non-streaming sessions.

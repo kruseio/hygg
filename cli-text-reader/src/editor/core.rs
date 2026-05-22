@@ -151,6 +151,7 @@ impl Editor {
       initial_setup_complete: false,
       last_saved_viewport_offset: 0,
       cursor_currently_visible: true,
+      last_cursor_style: None,
       buffer_just_switched: false,
       pdf_streaming: None,
       pdf_pending: None,
