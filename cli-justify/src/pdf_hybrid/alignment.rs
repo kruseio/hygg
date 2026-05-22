@@ -188,7 +188,7 @@ pub(super) fn is_chapter_like_toc_heading(row: &AlignedTocRow) -> bool {
 }
 
 fn toc_section_marker(entry_prefix: &str) -> Option<&str> {
-  let marker = entry_prefix.trim_end().split_whitespace().next()?;
+  let marker = entry_prefix.split_whitespace().next()?;
   looks_like_toc_section_marker(marker).then_some(marker)
 }
 
@@ -215,7 +215,7 @@ fn is_appendix_subsection_marker(marker: &str) -> bool {
 }
 
 fn plate_entry_marker(entry_prefix: &str) -> Option<String> {
-  let mut parts = entry_prefix.trim_end().split_whitespace();
+  let mut parts = entry_prefix.split_whitespace();
   let kind = parts.next()?;
   let number = parts.next()?;
   if kind != "Plate" || !is_ascii_numeric(number) {

@@ -1,6 +1,6 @@
-use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::thread::{self, JoinHandle};
 
 use cli_pdf_to_text::SharedPdfStream;
@@ -57,7 +57,8 @@ fn run_loader(
     return;
   }
   let start = start_page.clamp(1, total_pages);
-  let skip: std::collections::HashSet<usize> = already_loaded.into_iter().collect();
+  let skip: std::collections::HashSet<usize> =
+    already_loaded.into_iter().collect();
 
   for page_1based in load_order(start, total_pages) {
     if cancel.load(Ordering::Relaxed) {

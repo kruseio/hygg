@@ -317,7 +317,8 @@ impl Editor {
       Err(std::sync::mpsc::TryRecvError::Disconnected) => {
         // Open thread died without sending — surface a generic error.
         self.lines = vec![
-          "  Failed to open PDF (background opener exited unexpectedly).".into(),
+          "  Failed to open PDF (background opener exited unexpectedly)."
+            .into(),
         ];
         self.total_lines = self.lines.len();
         if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
@@ -369,8 +370,7 @@ impl Editor {
           fully_loaded,
           worker: Some(worker),
         };
-        let target_line_start =
-          state.line_start_for_page(target_page - 1);
+        let target_line_start = state.line_start_for_page(target_page - 1);
         let target_page_lines = state.page_line_count(target_page - 1);
         self.pdf_streaming = Some(state);
         self.rebuild_lines_from_pdf_stream();

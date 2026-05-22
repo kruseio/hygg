@@ -195,10 +195,8 @@ pub(crate) fn looks_like_code_block_line(line: &str) -> bool {
 
 fn has_strong_code_marker_signal(trimmed: &str) -> bool {
   let word_count = trimmed.split_whitespace().count();
-  let marker_hits: usize = CODE_MARKERS
-    .iter()
-    .map(|marker| trimmed.matches(marker).count())
-    .sum();
+  let marker_hits: usize =
+    CODE_MARKERS.iter().map(|marker| trimmed.matches(marker).count()).sum();
   if marker_hits == 0 {
     return false;
   }

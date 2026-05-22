@@ -32,9 +32,9 @@ fn expand_quote_operators(doc: &mut Document) {
 
   for stream_id in stream_ids {
     let Ok(data) = doc.get_object(stream_id).and_then(|obj| {
-      obj
-        .as_stream()
-        .and_then(|s| s.decompressed_content().or_else(|_| Ok(s.content.clone())))
+      obj.as_stream().and_then(|s| {
+        s.decompressed_content().or_else(|_| Ok(s.content.clone()))
+      })
     }) else {
       continue;
     };

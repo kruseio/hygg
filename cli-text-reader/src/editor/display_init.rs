@@ -68,59 +68,59 @@ impl Editor {
       self.debug_log("PDF pending in background; using predicted cursor_y");
     } else {
       match load_progress(self.document_hash) {
-      Ok(progress) => {
-        // Check if we have new viewport information
-        if let (Some(viewport_offset), Some(saved_cursor_y)) =
-          (progress.viewport_offset, progress.cursor_y)
-        {
-          // Use exact saved viewport state
-          self.offset = viewport_offset;
-          self.cursor_y = saved_cursor_y;
-          self.debug_log(&format!(
+        Ok(progress) => {
+          // Check if we have new viewport information
+          if let (Some(viewport_offset), Some(saved_cursor_y)) =
+            (progress.viewport_offset, progress.cursor_y)
+          {
+            // Use exact saved viewport state
+            self.offset = viewport_offset;
+            self.cursor_y = saved_cursor_y;
+            self.debug_log(&format!(
             "Restored exact viewport state: offset={viewport_offset}, cursor_y={saved_cursor_y}"
           ));
-        } else {
-          // Fallback to old logic for backward compatibility
-          let saved_line = progress.offset;
-          let content_height = self.height.saturating_sub(1);
-          let center_y = content_height / 2;
+          } else {
+            // Fallback to old logic for backward compatibility
+            let saved_line = progress.offset;
+            let content_height = self.height.saturating_sub(1);
+            let center_y = content_height / 2;
 
-          // Try to center the saved line on screen
-          if saved_line < center_y {
-            // Line is near the top, can't center fully
-            self.offset = 0;
-            self.cursor_y = saved_line;
-          } else if saved_line >= self.total_lines.saturating_sub(center_y) {
-            // Line is near the bottom
-            if self.total_lines > content_height {
-              self.offset = self.total_lines - content_height;
-              self.cursor_y = saved_line - self.offset;
-            } else {
+            // Try to center the saved line on screen
+            if saved_line < center_y {
+              // Line is near the top, can't center fully
               self.offset = 0;
               self.cursor_y = saved_line;
+            } else if saved_line >= self.total_lines.saturating_sub(center_y) {
+              // Line is near the bottom
+              if self.total_lines > content_height {
+                self.offset = self.total_lines - content_height;
+                self.cursor_y = saved_line - self.offset;
+              } else {
+                self.offset = 0;
+                self.cursor_y = saved_line;
+              }
+            } else {
+              // Normal case - center the saved line
+              self.offset = saved_line.saturating_sub(center_y);
+              self.cursor_y = center_y;
             }
-          } else {
-            // Normal case - center the saved line
-            self.offset = saved_line.saturating_sub(center_y);
-            self.cursor_y = center_y;
-          }
-          self.debug_log(&format!(
+            self.debug_log(&format!(
             "Using fallback progress logic: line={saved_line}, offset={}, cursor_y={}", 
             self.offset, self.cursor_y
           ));
-        }
+          }
 
-        // Update tracking fields
-        self.last_offset = progress.offset;
-        self.last_saved_viewport_offset = self.offset;
-        skip_first_center = true;
-      }
-      Err(e) => {
-        self.debug_log(&format!("No progress found: {e}"));
-        self.offset = 0;
-        // cursor_y is already initialized to height/2 in the constructor
-      }
-    };
+          // Update tracking fields
+          self.last_offset = progress.offset;
+          self.last_saved_viewport_offset = self.offset;
+          skip_first_center = true;
+        }
+        Err(e) => {
+          self.debug_log(&format!("No progress found: {e}"));
+          self.offset = 0;
+          // cursor_y is already initialized to height/2 in the constructor
+        }
+      };
     }
 
     if std::io::stdout().is_terminal() {

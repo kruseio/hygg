@@ -64,11 +64,7 @@ pub(crate) fn resolve_pdf_path(args: &Args) -> Option<String> {
     .extension()
     .and_then(|ext| ext.to_str())
     .map(|ext| ext.to_lowercase());
-  if extension.as_deref() == Some("pdf") {
-    Some(file)
-  } else {
-    None
-  }
+  if extension.as_deref() == Some("pdf") { Some(file) } else { None }
 }
 
 fn resolve_input_file(args_file: Option<String>) -> Option<String> {

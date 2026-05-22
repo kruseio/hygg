@@ -11,7 +11,7 @@ mod wrapping_plain;
 
 pub use engine::justify_pdf_hybrid;
 pub use page_stream::{
-  justify_pdf_page, justify_pdf_seam, PartialParagraph, PdfPageJustified,
+  PartialParagraph, PdfPageJustified, justify_pdf_page, justify_pdf_seam,
 };
 
 #[cfg(test)]
@@ -66,8 +66,7 @@ mod tests {
 
   #[test]
   fn joins_paragraph_when_blank_line_breaks_a_sentence() {
-    let input =
-      "If a file is in the database, it's committed. If it has been\n\nmodified, it is staged.";
+    let input = "If a file is in the database, it's committed. If it has been\n\nmodified, it is staged.";
     let out = justify_pdf_hybrid(input, 80);
     let joined = out.join("\n");
     assert!(
@@ -218,9 +217,9 @@ mod tests {
       "expected Table 2 line preserved, got: {out:?}"
     );
     assert!(
-      out
-        .iter()
-        .any(|line| line.contains("Figure 3") && line.contains("Second diagram")),
+      out.iter().any(
+        |line| line.contains("Figure 3") && line.contains("Second diagram")
+      ),
       "expected Figure 3 line preserved, got: {out:?}"
     );
   }

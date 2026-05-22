@@ -22,11 +22,7 @@ impl Editor {
       && self.view_mode == super::core::ViewMode::Normal
       && !self.tutorial_demo_mode
       && self.pdf_pending.is_none()
-      && self
-        .pdf_streaming
-        .as_ref()
-        .map(|s| s.fully_loaded)
-        .unwrap_or(true)
+      && self.pdf_streaming.as_ref().map(|s| s.fully_loaded).unwrap_or(true)
     {
       self.draw_progress_indicator(stdout)?;
     }
@@ -213,11 +209,7 @@ impl Editor {
       && self.view_mode == super::core::ViewMode::Normal
       && !self.tutorial_demo_mode
       && self.pdf_pending.is_none()
-      && self
-        .pdf_streaming
-        .as_ref()
-        .map(|s| s.fully_loaded)
-        .unwrap_or(true)
+      && self.pdf_streaming.as_ref().map(|s| s.fully_loaded).unwrap_or(true)
     {
       self.draw_progress_indicator_buffered(buffer)?;
     }

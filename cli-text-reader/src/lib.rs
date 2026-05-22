@@ -24,8 +24,8 @@ mod utils;
 
 use editor::Editor;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::editor::streaming::{PendingPdfStream, StreamReady};
 use crate::editor::streaming_loader::spawn_loader;
@@ -80,7 +80,10 @@ pub fn run_cli_text_reader_pdf_path(
   col: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
   debug::init_debug_logging()?;
-  debug::debug_log("main", "Starting cli-text-reader (PDF streaming, deferred open)");
+  debug::debug_log(
+    "main",
+    "Starting cli-text-reader (PDF streaming, deferred open)",
+  );
   debug::debug_log_state("main", "col", &col.to_string());
 
   // Canonicalize the path up front so the document hash is stable across
@@ -93,13 +96,11 @@ pub fn run_cli_text_reader_pdf_path(
   // can paint a "Loading…" splash immediately.
   let (ready_tx, ready_rx) = std::sync::mpsc::channel::<StreamReady>();
   let path_for_thread = canonical_str.clone();
-  let (saved_target_page, saved_line_in_page) = match load_progress(document_hash) {
-    Ok(p) => (
-      p.page.map(|n| n as usize).unwrap_or(1),
-      p.line_in_page,
-    ),
-    Err(_) => (1, None),
-  };
+  let (saved_target_page, saved_line_in_page) =
+    match load_progress(document_hash) {
+      Ok(p) => (p.page.map(|n| n as usize).unwrap_or(1), p.line_in_page),
+      Err(_) => (1, None),
+    };
 
   // Size of the synchronous preload window around the cursor's saved page.
   // Picked so the viewport is fully covered by real content on first render
@@ -108,16 +109,13 @@ pub fn run_cli_text_reader_pdf_path(
   // placeholder->loaded flicker the user sees while pages stream in).
   const PRELOAD_RADIUS: usize = 10;
 
-  std::thread::Builder::new()
-    .name("hygg-pdf-opener".into())
-    .spawn(move || {
+  std::thread::Builder::new().name("hygg-pdf-opener".into()).spawn(
+    move || {
       let message = match cli_pdf_to_text::PdfStream::open(&path_for_thread) {
         Ok(stream) => {
           let total_pages = stream.total_pages();
           if total_pages == 0 {
-            StreamReady::Err(
-              "PDF parsed but reports zero pages".to_string(),
-            )
+            StreamReady::Err("PDF parsed but reports zero pages".to_string())
           } else {
             let target_page = saved_target_page.clamp(1, total_pages);
             let lo = target_page.saturating_sub(PRELOAD_RADIUS).max(1);
@@ -148,18 +146,16 @@ pub fn run_cli_text_reader_pdf_path(
         Err(e) => StreamReady::Err(format!("Failed to open PDF: {e}")),
       };
       let _ = ready_tx.send(message);
-    })?;
+    },
+  )?;
 
   // Splash buffer is intentionally blank — the cursor and highlight bar
   // render during the splash too, but at the *predicted* row the install
   // path will land on. That way the cursor and highlight bar don't appear
   // to hop when the streaming state takes over: they're already in the
   // final position, and only the surrounding lines fill in.
-  let mut editor = Editor::new_with_content(
-    vec![String::new()],
-    col,
-    canonical_str.clone(),
-  );
+  let mut editor =
+    Editor::new_with_content(vec![String::new()], col, canonical_str.clone());
   editor.document_hash = document_hash;
   editor.pdf_pending = Some(PendingPdfStream {
     receiver: ready_rx,
@@ -178,11 +174,12 @@ pub fn run_cli_text_reader_pdf_path(
   let content_height = editor.height.saturating_sub(1);
   let center_y = content_height / 2;
   let line_in_page_hint = saved_line_in_page.unwrap_or(0);
-  let predicted_cursor_y = if saved_target_page == 1 && line_in_page_hint < center_y {
-    line_in_page_hint
-  } else {
-    center_y
-  };
+  let predicted_cursor_y =
+    if saved_target_page == 1 && line_in_page_hint < center_y {
+      line_in_page_hint
+    } else {
+      center_y
+    };
   editor.cursor_y = predicted_cursor_y;
 
   let result = editor.run();

@@ -176,17 +176,17 @@ fn classify_label(line: &str) -> Option<LabelKind> {
   }
 
   // Section heading numbers ("2.4 ...", "G.1 ...").
-  if let Some(first) = words.first() {
-    if is_section_number_token(first) {
-      return None;
-    }
+  if let Some(first) = words.first()
+    && is_section_number_token(first)
+  {
+    return None;
   }
 
   // TOC / footer-like lines that end with a page number.
-  if let Some(last) = words.last() {
-    if last.chars().all(|c| c.is_ascii_digit()) {
-      return None;
-    }
+  if let Some(last) = words.last()
+    && last.chars().all(|c| c.is_ascii_digit())
+  {
+    return None;
   }
 
   // Sentence-terminator => probably prose, not a label.
@@ -201,7 +201,8 @@ fn classify_label(line: &str) -> Option<LabelKind> {
 
   // Bullets / list markers.
   let first_char = trimmed.chars().next();
-  if matches!(first_char, Some('•' | '·' | '◦' | '▪' | '▫' | '◆' | '►')) {
+  if matches!(first_char, Some('•' | '·' | '◦' | '▪' | '▫' | '◆' | '►'))
+  {
     return None;
   }
 
@@ -250,9 +251,9 @@ fn next_non_blank(lines: &[&str], start: usize) -> Option<usize> {
 /// consecutive labels, blank lines (up to 2 in a row), and FIGURE/TABLE
 /// captions. The cluster is dropped (captions kept) only when:
 ///   * it has enough strong labels with varied indentation, AND
-///   * it is sandwiched between body-text-like lines on both sides
-///     (so we don't shred title pages, dedication pages, or other
-///     legitimately sparse top/bottom-of-document content).
+///   * it is sandwiched between body-text-like lines on both sides (so we don't
+///     shred title pages, dedication pages, or other legitimately sparse
+///     top/bottom-of-document content).
 fn strip_diagram_labels(text: &str) -> String {
   let lines: Vec<&str> = text.lines().collect();
   let mut drop = vec![false; lines.len()];
@@ -320,8 +321,8 @@ fn strip_diagram_labels(text: &str) -> String {
 
     let bounded_above = prev_non_blank(&lines, i)
       .is_some_and(|idx| is_cluster_boundary_line(lines[idx]));
-    let bounded_below =
-      next_non_blank(&lines, j).is_some_and(|idx| is_cluster_boundary_line(lines[idx]));
+    let bounded_below = next_non_blank(&lines, j)
+      .is_some_and(|idx| is_cluster_boundary_line(lines[idx]));
 
     let label_shape_ok = (strong_count >= 3 && distinct_indents >= 3)
       || (strong_count >= 2 && has_caption && distinct_indents >= 2);
@@ -418,9 +419,18 @@ mod tests {
     let para = "         The PDF operators for setting the graphics state and painting graphics";
 
     assert!(output.contains(body), "body paragraph should survive: {output:?}");
-    assert!(output.contains(caption), "FIGURE caption should survive: {output:?}");
-    assert!(output.contains(next_section), "section heading should survive: {output:?}");
-    assert!(output.contains(para), "following paragraph should survive: {output:?}");
+    assert!(
+      output.contains(caption),
+      "FIGURE caption should survive: {output:?}"
+    );
+    assert!(
+      output.contains(next_section),
+      "section heading should survive: {output:?}"
+    );
+    assert!(
+      output.contains(para),
+      "following paragraph should survive: {output:?}"
+    );
 
     for label in [
       "Acrobat\n",
@@ -454,13 +464,13 @@ mod tests {
     let output = strip_diagram_labels(input);
     assert!(output.contains("(although a few such devices do also"));
     assert!(output.contains("support  PDF  directly)"));
-    for label in [
-      "PostScript\n",
-      "page description",
-      "Acrobat\n",
-      "Acrobat Distiller",
-    ] {
-      assert!(!output.contains(label), "expected {label:?} stripped:\n{output}");
+    for label in
+      ["PostScript\n", "page description", "Acrobat\n", "Acrobat Distiller"]
+    {
+      assert!(
+        !output.contains(label),
+        "expected {label:?} stripped:\n{output}"
+      );
     }
   }
 
@@ -523,7 +533,9 @@ mod tests {
     );
 
     let output = strip_diagram_labels(input);
-    for line in ["*.a", "!lib.a", "/TODO", "build/", "doc/*.txt", "doc/**/*.pdf"] {
+    for line in
+      ["*.a", "!lib.a", "/TODO", "build/", "doc/*.txt", "doc/**/*.pdf"]
+    {
       assert!(output.contains(line), "code line {line:?} should survive");
     }
   }

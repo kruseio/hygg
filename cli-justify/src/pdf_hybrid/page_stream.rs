@@ -62,12 +62,12 @@ fn detect_partial_paragraphs(
     return (None, None);
   }
 
-  let head = if looks_like_continuation(paragraphs.first().copied().unwrap_or(""))
-  {
-    Some(paragraphs.first().copied().unwrap_or("").to_string())
-  } else {
-    None
-  };
+  let head =
+    if looks_like_continuation(paragraphs.first().copied().unwrap_or("")) {
+      Some(paragraphs.first().copied().unwrap_or("").to_string())
+    } else {
+      None
+    };
   let tail = if paragraphs.len() == 1 {
     None
   } else if looks_incomplete(paragraphs.last().copied().unwrap_or("")) {
@@ -125,7 +125,10 @@ fn looks_like_continuation(paragraph: &str) -> bool {
     .next()
     .map(|w| w.trim_end_matches(|ch: char| !ch.is_alphabetic()))
     .unwrap_or("");
-  matches!(first_word.to_ascii_lowercase().as_str(), "and" | "but" | "or" | "so")
+  matches!(
+    first_word.to_ascii_lowercase().as_str(),
+    "and" | "but" | "or" | "so"
+  )
 }
 
 fn looks_incomplete(paragraph: &str) -> bool {
@@ -157,7 +160,10 @@ mod tests {
   fn detects_tail_partial_when_paragraph_lacks_terminator() {
     let text = "First paragraph ends cleanly.\n\nThis longer paragraph carries over without any punctuation at the end";
     let (head, tail) = detect_partial_paragraphs(text);
-    assert!(head.is_none(), "first paragraph starts uppercase, not a continuation");
+    assert!(
+      head.is_none(),
+      "first paragraph starts uppercase, not a continuation"
+    );
     let tail = tail.expect("trailing partial should be detected");
     assert!(tail.contains("without any punctuation"));
   }
@@ -193,6 +199,9 @@ mod tests {
     let next = "the lazy dog and goes home.";
     let merged = justify_pdf_seam(prev, next, 80);
     let joined = merged.join(" ");
-    assert!(joined.contains("over the lazy dog"), "seam should join into one paragraph: {merged:?}");
+    assert!(
+      joined.contains("over the lazy dog"),
+      "seam should join into one paragraph: {merged:?}"
+    );
   }
 }

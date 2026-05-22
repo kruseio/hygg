@@ -41,18 +41,17 @@ pub fn redirect_stderr() -> std::io::Result<()> {
     use windows_sys::Win32::Foundation::{
       HANDLE_FLAG_INHERIT, SetHandleInformation,
     };
-    use windows_sys::Win32::System::Console::{
-      STD_ERROR_HANDLE, SetStdHandle,
-    };
+    use windows_sys::Win32::System::Console::{STD_ERROR_HANDLE, SetStdHandle};
 
     unsafe {
       // Ensure the handle is not inherited
-      let handle = dev_null.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
+      let handle =
+        dev_null.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
       SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
 
       if (WINAPI_STDERR_HANDLE != handle) {
-        WINAPI_STDERR_HANDLE =
-          std::io::stdout().as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
+        WINAPI_STDERR_HANDLE = std::io::stdout().as_raw_handle()
+          as windows_sys::Win32::Foundation::HANDLE;
       }
 
       // Redirect stderr to NUL
@@ -89,9 +88,7 @@ pub fn restore_stderr() -> std::io::Result<()> {
 
   #[cfg(target_os = "windows")]
   {
-    use windows_sys::Win32::System::Console::{
-      STD_ERROR_HANDLE, SetStdHandle,
-    };
+    use windows_sys::Win32::System::Console::{STD_ERROR_HANDLE, SetStdHandle};
 
     unsafe {
       if SetStdHandle(STD_ERROR_HANDLE, WINAPI_STDERR_HANDLE) == 0 {
@@ -138,12 +135,13 @@ pub fn redirect_stdout() -> std::io::Result<()> {
 
     unsafe {
       // Ensure the handle is not inherited
-      let handle = dev_null.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
+      let handle =
+        dev_null.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
       SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
 
       if (WINAPI_STDOUT_HANDLE != handle) {
-        WINAPI_STDOUT_HANDLE =
-          std::io::stdout().as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
+        WINAPI_STDOUT_HANDLE = std::io::stdout().as_raw_handle()
+          as windows_sys::Win32::Foundation::HANDLE;
       }
 
       // Redirect stderr to NUL

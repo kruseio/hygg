@@ -146,8 +146,8 @@ impl<W: ConvertToFmt> OutputDev for LayoutTextOutput<W> {
   fn end_page(&mut self) -> Result<(), OutputError> {
     use std::fmt::Write;
     if self.have_char {
-      write!(self.writer, "\n")?;
-      write!(self.writer, "\n")?;
+      writeln!(self.writer)?;
+      writeln!(self.writer)?;
     }
     Ok(())
   }
@@ -196,7 +196,7 @@ impl<W: ConvertToFmt> OutputDev for LayoutTextOutput<W> {
       }
 
       if self.pending_newline {
-        write!(self.writer, "\n")?;
+        writeln!(self.writer)?;
         self.last_end = 0.0;
         self.pending_newline = false;
 

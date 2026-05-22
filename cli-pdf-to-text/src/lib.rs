@@ -11,7 +11,9 @@ mod stream_recovery;
 
 pub use stream::{PdfStream, SharedPdfStream};
 
-use heuristics::{layout_needs_plaintext_fallback, should_prefer_plaintext_output};
+use heuristics::{
+  layout_needs_plaintext_fallback, should_prefer_plaintext_output,
+};
 use sanitize::sanitize_layout_text;
 use stream_recovery::recover_sparse_code_blocks;
 

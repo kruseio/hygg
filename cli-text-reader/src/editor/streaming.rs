@@ -1,9 +1,9 @@
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Receiver;
-use std::sync::Arc;
 
 use cli_justify::{
-  justify_pdf_page, justify_pdf_seam, PartialParagraph, PdfPageJustified,
+  PartialParagraph, PdfPageJustified, justify_pdf_page, justify_pdf_seam,
 };
 use cli_pdf_to_text::SharedPdfStream;
 
@@ -51,14 +51,13 @@ impl LoadedPage {
       count = count.saturating_sub(head.line_count);
     }
 
-    if let Some(tail) = &self.tail_partial {
-      if let Some(next_page) = next
-        && let Some(next_head) = next_page.head_partial.as_ref()
-      {
-        count = count.saturating_sub(tail.line_count);
-        let seam = justify_pdf_seam(&tail.raw_text, &next_head.raw_text, col);
-        count += seam.len();
-      }
+    if let Some(tail) = &self.tail_partial
+      && let Some(next_page) = next
+      && let Some(next_head) = next_page.head_partial.as_ref()
+    {
+      count = count.saturating_sub(tail.line_count);
+      let seam = justify_pdf_seam(&tail.raw_text, &next_head.raw_text, col);
+      count += seam.len();
     }
     count.max(1)
   }
@@ -176,11 +175,8 @@ impl PdfStreamingState {
           }
         }
         PageSlot::Loaded(page) => {
-          let prev = if idx == 0 {
-            None
-          } else {
-            self.pages[idx - 1].as_loaded()
-          };
+          let prev =
+            if idx == 0 { None } else { self.pages[idx - 1].as_loaded() };
           let next = self.pages.get(idx + 1).and_then(PageSlot::as_loaded);
 
           let head_skip = if let Some(head) = &page.head_partial
@@ -240,14 +236,14 @@ impl PdfStreamingState {
         } else {
           self.pages[page_index - 1].as_loaded()
         };
-        let next =
-          self.pages.get(page_index + 1).and_then(PageSlot::as_loaded);
+        let next = self.pages.get(page_index + 1).and_then(PageSlot::as_loaded);
         page.rendered_line_count(prev, next, self.col)
       }
     }
   }
 
-  /// Sum of `page_line_count()` across all pages up to (not including) `page_index`.
+  /// Sum of `page_line_count()` across all pages up to (not including)
+  /// `page_index`.
   pub fn line_start_for_page(&self, page_index: usize) -> usize {
     let upto = page_index.min(self.pages.len());
     (0..upto).map(|i| self.page_line_count(i)).sum()

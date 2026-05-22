@@ -261,11 +261,8 @@ impl Editor {
       if std::io::stdout().is_terminal() {
         self.debug_log("Waiting for keyboard event...");
         // Use longer timeout when idle to reduce CPU usage
-        let streaming_active = self
-          .pdf_streaming
-          .as_ref()
-          .map(|s| !s.fully_loaded)
-          .unwrap_or(false);
+        let streaming_active =
+          self.pdf_streaming.as_ref().map(|s| !s.fully_loaded).unwrap_or(false);
         let pending_pdf = self.pdf_pending.is_some();
         let timeout = if self.needs_redraw
           || self.tutorial_demo_mode
