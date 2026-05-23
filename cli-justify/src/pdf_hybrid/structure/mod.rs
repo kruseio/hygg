@@ -11,10 +11,11 @@ use self::layout_headings::{
 };
 pub(super) use layout_signals::{
   looks_like_code_block_line, looks_like_command_prompt_line,
-  looks_like_toc_entry,
+  looks_like_git_log_graph_line, looks_like_toc_entry,
 };
 pub(super) use lists::{
-  is_list_continuation_line, parse_list_marker, should_start_new_pdf_paragraph,
+  is_list_continuation_line, looks_like_table_or_figure_caption,
+  parse_list_marker, should_start_new_pdf_paragraph,
 };
 pub(super) use toc::{
   AlignedTocRow, AlignedTocRowStart, normalize_preserved_compact_layout_line,

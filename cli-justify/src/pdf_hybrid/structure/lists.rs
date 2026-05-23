@@ -24,6 +24,37 @@ pub(crate) fn parse_list_marker(
     }
   }
 
+  // Option-flag rows in command-line documentation tables: `-p Description`
+  // or `--name-only Description`. These look like prose to should_start_
+  // new_pdf_paragraph (the indent change to a 1-char bump doesn't trigger
+  // a break), so without recognising them as list items the whole table
+  // collapses into one flowed paragraph.
+  if let Some(flag) = parse_option_flag(trimmed) {
+    let rest = &trimmed[flag.len()..];
+    if let Some(rest) = rest.strip_prefix(' ') {
+      let trimmed_rest = rest.trim_start();
+      if !trimmed_rest.is_empty() {
+        let marker = format!("{flag} ");
+        return Some((indent, marker, trimmed_rest.to_string()));
+      }
+    }
+  }
+
+  // Printf-style format-specifier rows in command-line documentation
+  // tables: `%H Commit hash`, `%an Author name`. Same problem as option
+  // flags above — without explicit row recognition the whole specifier
+  // table flows together as one paragraph.
+  if let Some(spec) = parse_format_specifier(trimmed) {
+    let rest = &trimmed[spec.len()..];
+    if let Some(rest) = rest.strip_prefix(' ') {
+      let trimmed_rest = rest.trim_start();
+      if !trimmed_rest.is_empty() {
+        let marker = format!("{spec} ");
+        return Some((indent, marker, trimmed_rest.to_string()));
+      }
+    }
+  }
+
   let mut idx = 0usize;
   for ch in trimmed.chars() {
     if !ch.is_ascii_digit() {
@@ -55,6 +86,64 @@ pub(crate) fn parse_list_marker(
   Some((indent, marker, content))
 }
 
+/// Recognises an option-flag token at the start of `trimmed` and returns
+/// the slice covering the flag (without the trailing space). Matches:
+///
+///   * `-X[X...]` — short flags, at least one letter after the dash.
+///   * `--XX[X...]` — long flags, at least one letter after the two dashes.
+///
+/// In both forms the flag name may include digits and additional ASCII
+/// hyphens after the leading letter (e.g. `--name-status`, `--abbrev-1`),
+/// but must START with a letter so plain negative numbers like `-3` and
+/// `--` are not mistaken for flags.
+fn parse_option_flag(trimmed: &str) -> Option<&str> {
+  let bytes = trimmed.as_bytes();
+  if bytes.first() != Some(&b'-') {
+    return None;
+  }
+  let dash_end = if bytes.get(1) == Some(&b'-') { 2 } else { 1 };
+  let first_name = *bytes.get(dash_end)?;
+  if !first_name.is_ascii_alphabetic() {
+    return None;
+  }
+  let mut end = dash_end + 1;
+  while end < bytes.len() {
+    let ch = bytes[end];
+    if ch.is_ascii_alphanumeric() || ch == b'-' {
+      end += 1;
+    } else {
+      break;
+    }
+  }
+  Some(&trimmed[..end])
+}
+
+/// Recognises a printf-style format specifier at the start of `trimmed`
+/// (e.g. `%H`, `%an`, `%cd`) and returns the slice covering it (without
+/// the trailing space). Requires at least one letter immediately after
+/// the `%` so bare percent signs or stray `% Foo` text mid-prose don't
+/// false-match.
+fn parse_format_specifier(trimmed: &str) -> Option<&str> {
+  let bytes = trimmed.as_bytes();
+  if bytes.first() != Some(&b'%') {
+    return None;
+  }
+  let first_name = *bytes.get(1)?;
+  if !first_name.is_ascii_alphabetic() {
+    return None;
+  }
+  let mut end = 2;
+  while end < bytes.len() {
+    let ch = bytes[end];
+    if ch.is_ascii_alphanumeric() {
+      end += 1;
+    } else {
+      break;
+    }
+  }
+  Some(&trimmed[..end])
+}
+
 pub(crate) fn is_list_continuation_line(
   line: &str,
   list_indent: &str,
@@ -83,11 +172,52 @@ pub(crate) fn is_list_continuation_line(
     && trimmed.chars().next().is_some_and(|ch| ch.is_lowercase())
 }
 
+/// Recognises labelled figure / table captions like
+///   * `Table 2. Common options to git log`
+///   * `Figure 3.1: Anatomy of a commit`
+///   * `Table 12 — Numeric type ranges`
+///
+/// These are typographically separate from the surrounding prose in the
+/// PDF (italic / bold / extra leading), but pdf_extract gives us only the
+/// text. Without forcing a paragraph break here the caption collapses
+/// into the trailing sentence of the previous paragraph — and so does the
+/// table that follows it.
+pub(crate) fn looks_like_table_or_figure_caption(trimmed: &str) -> bool {
+  let mut words = trimmed.split_whitespace();
+  let Some(label) = words.next() else {
+    return false;
+  };
+  if !matches!(label, "Table" | "Figure") {
+    return false;
+  }
+  let Some(number) = words.next() else {
+    return false;
+  };
+  let number_clean = number.trim_end_matches(['.', ':', ')']);
+  if number_clean.is_empty() {
+    return false;
+  }
+  if !number_clean.chars().all(|ch| ch.is_ascii_digit() || ch == '.') {
+    return false;
+  }
+  // Need at least one more token so we don't fire on a bare "Table 2."
+  // reference sitting at the end of an unrelated sentence.
+  words.next().is_some()
+}
+
 pub(crate) fn should_start_new_pdf_paragraph(
   current_indent: &str,
   previous_line: &str,
   line: &str,
 ) -> bool {
+  // Table / figure captions are paragraph-level labels for the figure
+  // that follows. Whatever the indent comparison says, treat them as
+  // their own paragraph so the caption (and the table beneath it) don't
+  // get glued onto the prior sentence.
+  if looks_like_table_or_figure_caption(line.trim()) {
+    return true;
+  }
+
   let next_indent = leading_whitespace(line);
   if next_indent == current_indent {
     return false;

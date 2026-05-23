@@ -3,7 +3,8 @@ use crate::text_utils::leading_whitespace;
 use super::alignment::is_chapter_like_toc_heading;
 use super::engine::{FormatterEngine, PendingAlignedTocRow, PendingPdfBlock};
 use super::structure::{
-  AlignedTocRow, is_list_continuation_line, parse_aligned_toc_continuation,
+  AlignedTocRow, is_list_continuation_line, looks_like_git_log_graph_line,
+  looks_like_table_or_figure_caption, parse_aligned_toc_continuation,
   parse_aligned_toc_row_start, parse_list_marker, parse_plain_aligned_toc_row,
   should_start_new_pdf_paragraph,
 };
@@ -172,6 +173,20 @@ impl FormatterEngine {
       self.pending_code_block_parent_callout_indent = Some(capped_indent);
     }
     self.pending_deep_callout_bottom_margin = false;
+    // Drop blank lines that fall inside a git-log --graph block. The lopdf
+    // backend emits "\n\n" between pages, which splits a multi-page graph
+    // into two pieces; without this, downstream output ends up with a stray
+    // blank between adjacent graph rows. If a real prose line follows, the
+    // code-to-prose transition in `handle_paragraph_line` re-inserts a
+    // single blank, so this only collapses spurious mid-block breaks.
+    if self.in_code_block
+      && self
+        .out
+        .last()
+        .is_some_and(|last| looks_like_git_log_graph_line(last.trim()))
+    {
+      return true;
+    }
     self.out.push(String::new());
     true
   }
@@ -191,10 +206,32 @@ impl FormatterEngine {
         lines.push(line.to_string());
       }
       _ => {
+        let starts_caption =
+          looks_like_table_or_figure_caption(line.trim());
+        let prior_was_list_item =
+          matches!(self.pending, Some(PendingPdfBlock::ListItem { .. }));
         self.start_pending_pdf_block(PendingPdfBlock::Paragraph {
           indent: leading_whitespace(line).to_string(),
           lines: vec![line.to_string()],
         });
+        // Push an explicit blank separator between the just-flushed block
+        // and this new paragraph in two cases that pdf_extract leaves
+        // ambiguous:
+        //   * After a list (option / spec table) ends and prose resumes.
+        //     The PDF has extra leading after the last row, but no blank
+        //     line, so the table and the next sentence would otherwise
+        //     run together.
+        //   * Before a caption — captions read as their own paragraph in
+        //     the PDF but the extracted text has them glued to the
+        //     trailing sentence above.
+        // Skip when the prior content is already followed by a blank
+        // (handle_blank_line ran, or code-block padding fired) so we
+        // don't double up.
+        if (prior_was_list_item || starts_caption)
+          && self.out.last().is_some_and(|last| !last.is_empty())
+        {
+          self.out.push(String::new());
+        }
       }
     }
   }
