@@ -114,9 +114,29 @@ fn extract_page_text_lines(
   // merging adjacent rows (which are typically separated by 10+pt).
   const SAME_ROW_TOL: f32 = 3.0;
 
+  // Page body left margin — the leftmost x of any line on the page.
+  // We derive per-row leading whitespace from the offset between each row
+  // and this margin so cli-justify's code-block / shell-session detector
+  // still sees indentation as a signal (it was tuned against pdf-extract
+  // output that preserves it). Without this, code blocks lose the
+  // indentation cue, prose and code can't be distinguished, and the
+  // downstream justifier either treats everything as preserved layout or
+  // inserts spurious blank lines around short "code-shaped" rows like
+  // `|/` and `|\`.
+  let page_left = lines
+    .iter()
+    .map(|l| l.bbox.left())
+    .fold(f32::INFINITY, f32::min);
+  // ~5 pt per char is a rough monospace approximation that lands within
+  // a column or two of correct on body fonts in the PDFs we test against.
+  // Cap the resulting indent so an outlier x-coordinate can't produce a
+  // multi-line waste of whitespace.
+  const PT_PER_CHAR: f32 = 5.0;
+  const MAX_INDENT_CHARS: usize = 20;
+
   // Build rows first as (anchor_y, joined_text) so we can post-process
-  // before producing the final string (specifically: drop isolated page-
-  // number rows at the top and bottom of the page).
+  // before producing the final string (drop isolated page-number rows,
+  // insert paragraph-break blank lines, etc.).
   let mut rows: Vec<(f32, String)> = Vec::new();
   let mut row_start = 0usize;
   let mut row_anchor_y = lines[0].bbox.top();
@@ -132,9 +152,23 @@ fn extract_page_text_lines(
           .partial_cmp(&b.bbox.left())
           .unwrap_or(std::cmp::Ordering::Equal)
       });
+      let row_left = row
+        .iter()
+        .map(|l| l.bbox.left())
+        .fold(f32::INFINITY, f32::min);
+      let indent_chars = (((row_left - page_left) / PT_PER_CHAR).round())
+        .max(0.0) as usize;
+      let indent_chars = indent_chars.min(MAX_INDENT_CHARS);
       let joined: Vec<&str> =
         row.iter().map(|l| l.text.as_str()).collect();
-      rows.push((row_anchor_y, joined.join(" ")));
+      let mut text = String::with_capacity(
+        indent_chars + joined.iter().map(|s| s.len() + 1).sum::<usize>(),
+      );
+      for _ in 0..indent_chars {
+        text.push(' ');
+      }
+      text.push_str(&joined.join(" "));
+      rows.push((row_anchor_y, text));
       row_start = i;
       if i < lines.len() {
         row_anchor_y = lines[i].bbox.top();

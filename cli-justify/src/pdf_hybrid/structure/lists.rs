@@ -1,5 +1,6 @@
 use crate::text_utils::{char_len, leading_whitespace};
 
+use super::layout_signals::looks_like_git_log_graph_line;
 use super::should_keep_pdf_line_layout;
 
 pub(crate) fn parse_list_marker(
@@ -7,6 +8,14 @@ pub(crate) fn parse_list_marker(
 ) -> Option<(String, String, String)> {
   let indent = leading_whitespace(line).to_string();
   let trimmed = line.trim_start_matches([' ', '\t']);
+
+  // `git log --graph` rows start with `*` too but mean something different
+  // — bail out before the `*` bullet branch below so the whole graph
+  // stays a single code block instead of getting reformatted line-by-
+  // line as a bullet list.
+  if looks_like_git_log_graph_line(trimmed) {
+    return None;
+  }
 
   for bullet in ["•", "-", "*", "◦"] {
     let marker = format!("{bullet} ");
