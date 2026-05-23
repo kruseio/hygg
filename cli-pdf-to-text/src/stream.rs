@@ -114,17 +114,16 @@ fn extract_page_text_lines(
   // merging adjacent rows (which are typically separated by 10+pt).
   const SAME_ROW_TOL: f32 = 3.0;
 
-  let mut output = String::new();
+  // Build rows first as (anchor_y, joined_text) so we can post-process
+  // before producing the final string (specifically: drop isolated page-
+  // number rows at the top and bottom of the page).
+  let mut rows: Vec<(f32, String)> = Vec::new();
   let mut row_start = 0usize;
   let mut row_anchor_y = lines[0].bbox.top();
-
   for i in 1..=lines.len() {
     let break_row = i == lines.len()
       || (row_anchor_y - lines[i].bbox.top()).abs() > SAME_ROW_TOL;
     if break_row {
-      // Flush rows[row_start..i] sorted by x ascending (already roughly so
-      // because of the secondary sort, but re-sort defensively in case
-      // floating-point ties were broken the other way).
       let mut row: Vec<&pdf_oxide::layout::TextLine> =
         lines[row_start..i].iter().collect();
       row.sort_by(|a, b| {
@@ -135,8 +134,7 @@ fn extract_page_text_lines(
       });
       let joined: Vec<&str> =
         row.iter().map(|l| l.text.as_str()).collect();
-      output.push_str(&joined.join(" "));
-      output.push('\n');
+      rows.push((row_anchor_y, joined.join(" ")));
       row_start = i;
       if i < lines.len() {
         row_anchor_y = lines[i].bbox.top();
@@ -144,7 +142,90 @@ fn extract_page_text_lines(
     }
   }
 
+  // Drop isolated page-number headers/footers. Heuristic: a row whose text
+  // (after trimming) is just digits, separated from its neighbour by a
+  // ~30pt+ vertical gap, is almost always the page number — the previous
+  // sanitize.rs filter required `>=20` leading whitespace to flag these,
+  // which doesn't survive positional extraction since we strip the per-
+  // line indent. Doing it here, with bbox in hand, is reliable and keeps
+  // legitimate digit-only lines inside body text (they'd be inside the
+  // dense run of rows with small gaps).
+  const ISOLATED_GAP: f32 = 30.0;
+  if rows.len() >= 2
+    && is_digits_only(&rows[0].1)
+    && (rows[0].0 - rows[1].0).abs() > ISOLATED_GAP
+  {
+    rows.remove(0);
+  }
+  if rows.len() >= 2 {
+    let last = rows.len() - 1;
+    if is_digits_only(&rows[last].1)
+      && (rows[last - 1].0 - rows[last].0).abs() > ISOLATED_GAP
+    {
+      rows.remove(last);
+    }
+  }
+
+  // Paragraph / code-block boundaries: pdf_oxide gives us no signal for
+  // these — adjacent rows just have their y values, and runs of body text
+  // sit ~13-16pt apart while a paragraph break or heading-to-prose
+  // transition leaves a 25-35pt gap. Emit a blank line at every gap
+  // that's noticeably larger than the page's *typical* line gap, so
+  // downstream re-justification (and the reader visually) gets the same
+  // paragraph shape pdf-extract used to produce.
+  //
+  // "Typical" here is the *mode* of the gap distribution bucketed at 2pt,
+  // not the median or mean — within-block line spacing is by far the most
+  // common gap (most rows are body text on most pages), so the mode tracks
+  // it directly. Mean and median both pick up an upward bias from the few
+  // legitimate paragraph breaks they're trying to detect.
+  let gaps: Vec<f32> = rows
+    .windows(2)
+    .map(|w| (w[0].0 - w[1].0).max(0.0))
+    .collect();
+  let para_threshold = paragraph_gap_threshold(&gaps);
+
+  let mut output = String::with_capacity(
+    rows.iter().map(|(_, s)| s.len() + 1).sum(),
+  );
+  for i in 0..rows.len() {
+    if i > 0 && gaps[i - 1] > para_threshold {
+      output.push('\n');
+    }
+    output.push_str(&rows[i].1);
+    output.push('\n');
+  }
   Some(output)
+}
+
+fn is_digits_only(s: &str) -> bool {
+  let t = s.trim();
+  !t.is_empty() && t.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Returns "anything bigger than this is a paragraph / block break"
+/// derived from the distribution of gaps on the page.
+///
+/// Strategy: bucket gaps at 2pt resolution, take the most-popular bucket
+/// as the within-block line spacing, then return 1.7× that. We ignore
+/// gaps under 5pt (intra-row noise from the row-grouping tolerance) when
+/// computing the mode. Clamped to [20, 50] pt so a degenerate page (one
+/// row, all-equal gaps, etc.) still produces a sane threshold.
+fn paragraph_gap_threshold(gaps: &[f32]) -> f32 {
+  let mut buckets: std::collections::HashMap<i32, usize> =
+    std::collections::HashMap::new();
+  for &g in gaps {
+    if g >= 5.0 {
+      let key = (g / 2.0).round() as i32;
+      *buckets.entry(key).or_insert(0) += 1;
+    }
+  }
+  let mode_gap = buckets
+    .iter()
+    .max_by_key(|(_, c)| *c)
+    .map(|(k, _)| (*k as f32) * 2.0)
+    .unwrap_or(14.0);
+  (mode_gap * 1.7).clamp(20.0, 50.0)
 }
 
 /// Convenience wrapper so callers can hold a cheap shared handle.
@@ -181,6 +262,59 @@ mod tests {
     assert!(
       any_non_empty,
       "at least one of the first {scan_upto} pages should extract non-empty text"
+    );
+  }
+
+  /// Regression: progit page 43 (the "Skipping the Staging Area" page)
+  /// used to lose all paragraph breaks because pdf_oxide's text-line API
+  /// doesn't signal them — and the standalone "37" page-number footer
+  /// used to leak into content because the existing sanitize.rs heuristic
+  /// for footer numbers requires ≥20 chars of leading whitespace, which
+  /// our positional row builder strips. Verify both stay fixed.
+  #[test]
+  fn progit_paragraph_breaks_and_page_footer() {
+    let pdf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+      .join("../test-data/pdf/progit.pdf");
+    if !pdf_path.exists() {
+      return;
+    }
+    let stream = PdfStream::open(pdf_path.to_str().expect("utf-8 path"))
+      .expect("PdfStream should open progit");
+    let text = stream
+      .extract_page(43)
+      .expect("progit page 43 should produce text");
+
+    // Page-number footer must not leak through.
+    let lines: Vec<&str> = text.lines().collect();
+    assert!(
+      !lines.iter().any(|l| l.trim() == "37"),
+      "isolated page-number footer '37' should be stripped, got:\n{text}"
+    );
+
+    // The "Alternatively, you can type your commit message" sentence
+    // starts a new paragraph after "and diff stripped out)." — there
+    // should be a blank line between them so the reflowed output keeps
+    // paragraph structure.
+    let alt_pos = text
+      .find("Alternatively, you can type your commit message")
+      .expect("expected sentence on page 43");
+    let before = &text[..alt_pos];
+    assert!(
+      before.trim_end().ends_with("and diff stripped out)."),
+      "text immediately before 'Alternatively…' should end the previous \
+       paragraph, got:\n…{}…",
+      &before[before.len().saturating_sub(80)..]
+    );
+    let trailing_newlines = before
+      .as_bytes()
+      .iter()
+      .rev()
+      .take_while(|&&b| b == b'\n')
+      .count();
+    assert!(
+      trailing_newlines >= 2,
+      "expected at least one blank line before 'Alternatively…' \
+       (a paragraph break), got {trailing_newlines} trailing newlines"
     );
   }
 
