@@ -1,5 +1,57 @@
 use super::core::Editor;
 
+// Emit OSC 52 so the outermost terminal (e.g. Alacritty on a local machine
+// driving an SSH session) also receives the copied text. arboard only writes
+// to the local NSPasteboard/X11/Wayland clipboard; OSC 52 rides the TTY
+// stream and is honored by whichever terminal emulator sits at the end of
+// the chain. Combined, both clipboards get the text.
+fn osc52_copy(text: &str) {
+  use std::io::{IsTerminal, Write};
+  let mut stdout = std::io::stdout();
+  if !stdout.is_terminal() {
+    return;
+  }
+  let encoded = base64_encode(text.as_bytes());
+  let seq = format!("\x1b]52;c;{}\x07", encoded);
+  let _ = stdout.write_all(seq.as_bytes());
+  let _ = stdout.flush();
+}
+
+fn base64_encode(input: &[u8]) -> String {
+  const ALPHABET: &[u8; 64] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+  let mut chunks = input.chunks_exact(3);
+  for chunk in &mut chunks {
+    let n = ((chunk[0] as u32) << 16)
+      | ((chunk[1] as u32) << 8)
+      | (chunk[2] as u32);
+    out.push(ALPHABET[((n >> 18) & 0x3F) as usize] as char);
+    out.push(ALPHABET[((n >> 12) & 0x3F) as usize] as char);
+    out.push(ALPHABET[((n >> 6) & 0x3F) as usize] as char);
+    out.push(ALPHABET[(n & 0x3F) as usize] as char);
+  }
+  let rem = chunks.remainder();
+  match rem.len() {
+    1 => {
+      let n = (rem[0] as u32) << 16;
+      out.push(ALPHABET[((n >> 18) & 0x3F) as usize] as char);
+      out.push(ALPHABET[((n >> 12) & 0x3F) as usize] as char);
+      out.push('=');
+      out.push('=');
+    }
+    2 => {
+      let n = ((rem[0] as u32) << 16) | ((rem[1] as u32) << 8);
+      out.push(ALPHABET[((n >> 18) & 0x3F) as usize] as char);
+      out.push(ALPHABET[((n >> 12) & 0x3F) as usize] as char);
+      out.push(ALPHABET[((n >> 6) & 0x3F) as usize] as char);
+      out.push('=');
+    }
+    _ => {}
+  }
+  out
+}
+
 impl Editor {
   // Yank selected text to buffer and system clipboard
   pub fn yank_selection(&mut self) {
@@ -11,6 +63,7 @@ impl Editor {
       if let Some(clipboard) = &mut self.clipboard {
         let _ = clipboard.set_text(&selected_text);
       }
+      osc52_copy(&selected_text);
 
       // Track yank for tutorial
       if self.tutorial_active {
@@ -55,6 +108,7 @@ impl Editor {
           "no system clipboard",
         );
       }
+      osc52_copy(&self.editor_state.yank_buffer);
 
       // Track yank for tutorial
       if self.tutorial_active {
@@ -104,6 +158,7 @@ impl Editor {
           if let Some(clipboard) = &mut self.clipboard {
             let _ = clipboard.set_text(&self.editor_state.yank_buffer);
           }
+          osc52_copy(&self.editor_state.yank_buffer);
 
           // Track yank for tutorial
           if self.tutorial_active {
