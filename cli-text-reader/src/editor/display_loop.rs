@@ -28,11 +28,16 @@ impl Editor {
     Ok(())
   }
 
-  /// Render a centered "Loading <file>… (Xs)" message on top of the splash
-  /// buffer while `pdf_pending` is set. Without this the user just sees an
-  /// empty screen with a cursor for the entire `Document::load` duration —
-  /// 30-60 s on large PDFs — and assumes hygg has frozen.
-  fn draw_pdf_loading_splash_buffered(
+  /// Render a "Loading …" indicator in the bottom-right corner — the same
+  /// row/column the progress percentage normally occupies — while the PDF
+  /// is either being opened (`pdf_pending`) or having its pages streamed
+  /// in (`pdf_streaming` with `!fully_loaded`). Anchoring it next to the
+  /// status line keeps the message visible across the full load cycle:
+  /// the centered splash used to vanish the instant `pdf_pending` cleared,
+  /// and the inline `[ loading page X of Y … ]` placeholders get
+  /// overwritten by real content as each page streams in. Pinning the
+  /// indicator outside the content area means it survives both transitions.
+  fn draw_pdf_loading_indicator_buffered(
     &self,
     buffer: &mut Vec<u8>,
   ) -> IoResult<()> {
@@ -40,33 +45,34 @@ impl Editor {
     use crossterm::cursor::MoveTo;
     use crossterm::terminal::{Clear, ClearType};
 
-    let Some(pending) = self.pdf_pending.as_ref() else {
+    let message = if let Some(pending) = self.pdf_pending.as_ref() {
+      let file_name = std::path::Path::new(&pending.canonical_path_display)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&pending.canonical_path_display);
+      let elapsed = pending.started_at.elapsed().as_secs_f32();
+      format!("Loading {file_name}… ({elapsed:.1}s)")
+    } else if let Some(state) = self.pdf_streaming.as_ref()
+      && !state.fully_loaded
+    {
+      let total = state.pages.len();
+      let loaded = state.pages.iter().filter(|p| p.is_loaded()).count();
+      format!("Loading {loaded}/{total} pages…")
+    } else {
       return Ok(());
     };
-
-    let file_name = std::path::Path::new(&pending.canonical_path_display)
-      .file_name()
-      .and_then(|n| n.to_str())
-      .unwrap_or(&pending.canonical_path_display);
-    let elapsed = pending.started_at.elapsed().as_secs_f32();
-    let message = format!("  Loading {file_name}… ({elapsed:.1}s)  ");
 
     if self.height < 2 || self.width == 0 {
       return Ok(());
     }
 
-    let row = (self.height.saturating_sub(1) / 2) as u16;
     let msg_width = message.chars().count();
-    let col = if self.width > msg_width {
-      ((self.width - msg_width) / 2) as u16
-    } else {
-      0
-    };
+    let x = self.width.saturating_sub(msg_width).saturating_sub(2) as u16;
+    let y = self.height.saturating_sub(2) as u16;
 
-    buffer.queue(MoveTo(0, row))?;
-    buffer.queue(Clear(ClearType::CurrentLine))?;
-    buffer.queue(MoveTo(col, row))?;
+    buffer.queue(MoveTo(x, y))?;
     write!(buffer, "{message}")?;
+    buffer.queue(Clear(ClearType::UntilNewLine))?;
 
     Ok(())
   }
@@ -204,13 +210,19 @@ impl Editor {
           // Show status line and position info
           self.draw_status_line_buffered(&mut render_buffer)?;
 
-          // While the PDF is still being parsed in the background, draw a
-          // centered "Loading <file> (Xs)" splash on top of the blank
-          // splash buffer so the user can see hygg is actually working
-          // instead of staring at an empty screen for tens of seconds on
-          // large PDFs.
-          if self.pdf_pending.is_some() {
-            self.draw_pdf_loading_splash_buffered(&mut render_buffer)?;
+          // While the PDF is still being opened or streamed in the
+          // background, draw a "Loading …" indicator in the bottom-right
+          // corner so the user can see hygg is actually working instead of
+          // staring at an empty screen (during open) or watching the inline
+          // page placeholders get overwritten without any aggregate signal
+          // of how much is left (during streaming).
+          let streaming_loading = self
+            .pdf_streaming
+            .as_ref()
+            .map(|s| !s.fully_loaded)
+            .unwrap_or(false);
+          if self.pdf_pending.is_some() || streaming_loading {
+            self.draw_pdf_loading_indicator_buffered(&mut render_buffer)?;
           }
 
           // Render demo hint if active
