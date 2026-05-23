@@ -172,22 +172,26 @@ pub(crate) fn is_list_continuation_line(
     && trimmed.chars().next().is_some_and(|ch| ch.is_lowercase())
 }
 
-/// Recognises labelled figure / table captions like
+/// Recognises labelled figure / table / plate captions like
 ///   * `Table 2. Common options to git log`
 ///   * `Figure 3.1: Anatomy of a commit`
 ///   * `Table 12 — Numeric type ranges`
+///   * `Plate 14 Radial shading effect …`
 ///
 /// These are typographically separate from the surrounding prose in the
 /// PDF (italic / bold / extra leading), but pdf_extract gives us only the
 /// text. Without forcing a paragraph break here the caption collapses
 /// into the trailing sentence of the previous paragraph — and so does the
-/// table that follows it.
+/// table that follows it. The Plate variant also covers the
+/// list-of-plates section in front-matter, where each entry sits on its
+/// own line and would otherwise get glued into one re-justified
+/// paragraph.
 pub(crate) fn looks_like_table_or_figure_caption(trimmed: &str) -> bool {
   let mut words = trimmed.split_whitespace();
   let Some(label) = words.next() else {
     return false;
   };
-  if !matches!(label, "Table" | "Figure") {
+  if !matches!(label, "Table" | "Figure" | "Plate" | "Diagram") {
     return false;
   }
   let Some(number) = words.next() else {
@@ -220,6 +224,19 @@ pub(crate) fn should_start_new_pdf_paragraph(
 
   let next_indent = leading_whitespace(line);
   if next_indent == current_indent {
+    // Same indent ordinarily means "continuation of the same paragraph",
+    // but a sequence of `( ... )` PDF literal-string examples breaks that
+    // assumption: each example shares the block's indent yet is meant to
+    // be displayed as its own item, not glued into one wrapped paragraph.
+    // Detect this shape — the previous line in the pending paragraph
+    // closes a parenthesised expression and the new line opens a fresh
+    // one with the PDF rendering's leading-space convention — and split
+    // there instead.
+    let prev = previous_line.trim_end();
+    let next_trimmed = line.trim_start();
+    if prev.ends_with(')') && next_trimmed.starts_with("( ") {
+      return true;
+    }
     return false;
   }
 
@@ -227,7 +244,13 @@ pub(crate) fn should_start_new_pdf_paragraph(
   let next_indent_width = char_len(next_indent);
   if next_indent_width > current_indent_width {
     let prev = previous_line.trim_end();
-    if !prev.is_empty() && !prev.ends_with(['.', '?', '!']) {
+    // A trailing colon ends the previous thought just like a period: the
+    // line that follows it ("Examples follow:", "Note the following:") is
+    // virtually never a continuation of the same sentence, even when it
+    // happens to start with '(' or a lowercase letter. Without this the
+    // indent-bump check below would glue a code-like example such as
+    // `( This is a string )` onto the introductory text.
+    if !prev.is_empty() && !prev.ends_with(['.', '?', '!', ':']) {
       let next_trimmed = line.trim_start_matches([' ', '\t']);
       if next_trimmed.is_empty() {
         return true;

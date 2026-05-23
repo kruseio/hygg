@@ -5,9 +5,9 @@ use crate::text_utils::{
 
 use super::looks_like_toc_entry;
 use super::toc_patterns::{
-  looks_like_caption_prefix, looks_like_named_toc_heading,
-  looks_like_toc_entry_prefix, looks_like_toc_section_marker,
-  merge_counter_into_prefix_if_needed,
+  TocPrefixKind, classify_toc_entry_prefix, looks_like_caption_prefix,
+  looks_like_named_toc_heading, looks_like_toc_entry_prefix,
+  looks_like_toc_section_marker, merge_counter_into_prefix_if_needed,
 };
 
 pub(crate) struct AlignedTocRow {
@@ -128,6 +128,22 @@ pub(crate) fn parse_aligned_toc_row_start(
 
   if entry_prefix.trim_end().chars().count() > 24
     || !looks_like_toc_entry_prefix(&entry_prefix)
+  {
+    return None;
+  }
+
+  // TitleNumberLabel prefixes (`Plate N`, `Diagram N`, …) are ambiguous
+  // without a clean trailing page number: a real TOC entry has the number
+  // alone at the right margin (`Plate 14 … 313`), but a list-of-plates
+  // section has them embedded inline ("page 313") with parens or quotes
+  // afterwards. The latter would otherwise start a pending TOC row that
+  // greedily absorbs every following `Plate N+1` line as continuation,
+  // collapsing the whole list into one re-justified paragraph.
+  if page_number.is_none()
+    && matches!(
+      classify_toc_entry_prefix(&entry_prefix),
+      Some(TocPrefixKind::TitleNumberLabel)
+    )
   {
     return None;
   }
