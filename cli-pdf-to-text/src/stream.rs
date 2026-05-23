@@ -114,19 +114,6 @@ fn extract_page_text_lines(
   // merging adjacent rows (which are typically separated by 10+pt).
   const SAME_ROW_TOL: f32 = 3.0;
 
-  // Page body left margin — the leftmost x of any line on the page.
-  // We derive per-row leading whitespace from the offset between each row
-  // and this margin so cli-justify's code-block / shell-session detector
-  // still sees indentation as a signal (it was tuned against pdf-extract
-  // output that preserves it). Without this, code blocks lose the
-  // indentation cue, prose and code can't be distinguished, and the
-  // downstream justifier either treats everything as preserved layout or
-  // inserts spurious blank lines around short "code-shaped" rows like
-  // `|/` and `|\`.
-  let page_left = lines
-    .iter()
-    .map(|l| l.bbox.left())
-    .fold(f32::INFINITY, f32::min);
   // ~5 pt per char is a rough monospace approximation that lands within
   // a column or two of correct on body fonts in the PDFs we test against.
   // Cap the resulting indent so an outlier x-coordinate can't produce a
@@ -134,10 +121,14 @@ fn extract_page_text_lines(
   const PT_PER_CHAR: f32 = 5.0;
   const MAX_INDENT_CHARS: usize = 20;
 
-  // Build rows first as (anchor_y, joined_text) so we can post-process
-  // before producing the final string (drop isolated page-number rows,
-  // insert paragraph-break blank lines, etc.).
-  let mut rows: Vec<(f32, String)> = Vec::new();
+  // Build rows first as `(anchor_y, row_left, body_text)` so we can
+  // post-process before producing the final string (drop isolated
+  // page-number rows, drop running headers, recompute page_left after
+  // dropping outliers, insert paragraph-break blank lines, etc.).
+  // `body_text` is the row content WITHOUT its leading indent — the indent
+  // is applied later from `(row_left - page_left)` once page_left has been
+  // settled.
+  let mut rows: Vec<(f32, f32, String)> = Vec::new();
   let mut row_start = 0usize;
   let mut row_anchor_y = lines[0].bbox.top();
   for i in 1..=lines.len() {
@@ -156,19 +147,29 @@ fn extract_page_text_lines(
         .iter()
         .map(|l| l.bbox.left())
         .fold(f32::INFINITY, f32::min);
-      let indent_chars = (((row_left - page_left) / PT_PER_CHAR).round())
-        .max(0.0) as usize;
-      let indent_chars = indent_chars.min(MAX_INDENT_CHARS);
-      let joined: Vec<&str> =
-        row.iter().map(|l| l.text.as_str()).collect();
-      let mut text = String::with_capacity(
-        indent_chars + joined.iter().map(|s| s.len() + 1).sum::<usize>(),
-      );
-      for _ in 0..indent_chars {
-        text.push(' ');
+      // Walk every word across every TextLine in this row left-to-right
+      // and insert spacing proportional to the bbox gap between adjacent
+      // words. `TextLine::text` joins words with a single space and so
+      // collapses the wide column gaps that TOC pages depend on — without
+      // those gaps `parse_aligned_toc_row_start` can't split a row like
+      // `1.1     About This Book     25` into prefix/title/page-number.
+      let mut body = String::with_capacity(64);
+      let mut prev_right: Option<f32> = None;
+      for line in row.iter() {
+        for word in &line.words {
+          if let Some(pr) = prev_right {
+            let gap_pt = (word.bbox.left() - pr).max(0.0);
+            let gap_chars =
+              ((gap_pt / PT_PER_CHAR).round() as usize).max(1);
+            for _ in 0..gap_chars {
+              body.push(' ');
+            }
+          }
+          body.push_str(&word.text);
+          prev_right = Some(word.bbox.right());
+        }
       }
-      text.push_str(&joined.join(" "));
-      rows.push((row_anchor_y, text));
+      rows.push((row_anchor_y, row_left, body));
       row_start = i;
       if i < lines.len() {
         row_anchor_y = lines[i].bbox.top();
@@ -176,29 +177,61 @@ fn extract_page_text_lines(
     }
   }
 
-  // Drop isolated page-number headers/footers. Heuristic: a row whose text
-  // (after trimming) is just digits, separated from its neighbour by a
-  // ~30pt+ vertical gap, is almost always the page number — the previous
-  // sanitize.rs filter required `>=20` leading whitespace to flag these,
-  // which doesn't survive positional extraction since we strip the per-
-  // line indent. Doing it here, with bbox in hand, is reliable and keeps
-  // legitimate digit-only lines inside body text (they'd be inside the
-  // dense run of rows with small gaps).
+  // Drop the top/bottom row if it's an isolated digits-only run — almost
+  // certainly the page-number header/footer. The old `>=20 leading ws`
+  // sanitize rule didn't survive positional extraction (we recompute
+  // indents ourselves), so this is the only thing standing between the
+  // page-number "5" / "6" / "7" rows and the reader.
+  //
+  // We deliberately do NOT drop short alphabetic running headers
+  // (`Contents`, `Figures`, etc.) here — on some pages those same words
+  // are the actual centered chapter title, and we can't tell them apart
+  // by isolation alone. The sanitize pass dedups them by exact text after
+  // the first occurrence is registered as a centered heading.
   const ISOLATED_GAP: f32 = 30.0;
-  if rows.len() >= 2
-    && is_digits_only(&rows[0].1)
+  // Loop so a page that has BOTH a "6" page-number AND a centered title
+  // above the body still strips the page number; the title stays.
+  while rows.len() >= 2
+    && is_digits_only(&rows[0].2)
     && (rows[0].0 - rows[1].0).abs() > ISOLATED_GAP
   {
     rows.remove(0);
   }
-  if rows.len() >= 2 {
+  while rows.len() >= 2 {
     let last = rows.len() - 1;
-    if is_digits_only(&rows[last].1)
+    if is_digits_only(&rows[last].2)
       && (rows[last - 1].0 - rows[last].0).abs() > ISOLATED_GAP
     {
       rows.remove(last);
+    } else {
+      break;
     }
   }
+
+  // Page body left margin. We need a value that's stable across pages so
+  // facing-page TOCs (where the running header lives in a different x
+  // column than body content) don't produce different indents for the
+  // same logical content. Strategy: take the leftmost x that's "popular"
+  // — bucket every row's left edge at 1pt resolution and use the smallest
+  // bucket that has more than one row. Singleton positions (centered
+  // titles, lone running headers, isolated captions) get filtered out and
+  // can no longer pull the margin to the left.
+  let mut buckets: std::collections::HashMap<i32, usize> =
+    std::collections::HashMap::new();
+  for (_, row_left, _) in &rows {
+    let key = row_left.round() as i32;
+    *buckets.entry(key).or_insert(0) += 1;
+  }
+  let popular_min = buckets
+    .iter()
+    .filter(|(_, count)| **count >= 2)
+    .map(|(k, _)| *k as f32)
+    .fold(f32::INFINITY, f32::min);
+  let page_left = if popular_min.is_finite() {
+    popular_min
+  } else {
+    rows.iter().map(|(_, x, _)| *x).fold(f32::INFINITY, f32::min)
+  };
 
   // Paragraph / code-block boundaries: pdf_oxide gives us no signal for
   // these — adjacent rows just have their y values, and runs of body text
@@ -220,13 +253,20 @@ fn extract_page_text_lines(
   let para_threshold = paragraph_gap_threshold(&gaps);
 
   let mut output = String::with_capacity(
-    rows.iter().map(|(_, s)| s.len() + 1).sum(),
+    rows.iter().map(|(_, _, s)| s.len() + 8).sum(),
   );
   for i in 0..rows.len() {
     if i > 0 && gaps[i - 1] > para_threshold {
       output.push('\n');
     }
-    output.push_str(&rows[i].1);
+    let (_, row_left, body) = &rows[i];
+    let indent_chars =
+      (((row_left - page_left) / PT_PER_CHAR).round()).max(0.0) as usize;
+    let indent_chars = indent_chars.min(MAX_INDENT_CHARS);
+    for _ in 0..indent_chars {
+      output.push(' ');
+    }
+    output.push_str(body);
     output.push('\n');
   }
   Some(output)
@@ -371,12 +411,20 @@ mod tests {
       .extract_page(5)
       .expect("page 5 should produce text");
     let lines: Vec<&str> = text.lines().collect();
+    // Word-bbox-derived spacing now preserves the wide TOC gap between the
+    // section title and its trailing page number, so the trimmed row keeps
+    // multiple spaces between them. Match either spacing shape.
+    let normalize_spaces = |s: &str| {
+      s.split_whitespace().collect::<Vec<_>>().join(" ")
+    };
     assert!(
-      lines.iter().any(|l| l.trim() == "1.3 Related Publications 31"),
+      lines.iter().any(|l| normalize_spaces(l.trim())
+        == "1.3 Related Publications 31"),
       "section 1.3 should be on its own line, got:\n{text}"
     );
     assert!(
-      lines.iter().any(|l| l.trim() == "1.4 Intellectual Property 32"),
+      lines.iter().any(|l| normalize_spaces(l.trim())
+        == "1.4 Intellectual Property 32"),
       "section 1.4 should be on its own line, got:\n{text}"
     );
     // The collapsing bug previously produced this run-on string.

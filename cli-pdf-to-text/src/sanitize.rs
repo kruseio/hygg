@@ -367,6 +367,17 @@ pub(crate) fn sanitize_layout_text(text: &str) -> String {
         continue;
       }
       seen_centered_headings.insert(label.to_string());
+    } else {
+      // Also drop later un-centered occurrences of a label we've already
+      // seen as a centered heading. The positional extractor can land a
+      // running header at column 0 on facing pages (the verso margin sits
+      // left of the recto body), so the leading-whitespace check above
+      // misses it — but the literal text still matches the title we
+      // already kept, and the duplicate would otherwise leak through.
+      let trimmed = line.trim();
+      if seen_centered_headings.contains(trimmed) {
+        continue;
+      }
     }
 
     if line.trim().is_empty() {
