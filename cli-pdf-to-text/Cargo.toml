@@ -43,3 +43,4 @@ rayon = "1"
 # path, which trades latency for better layout fidelity on TOC / tables.
 pdf_oxide = { version = "0.3", default-features = false }
 flate2 = { version = "1", optional = true }
+image = { version = "0.25.10", default-features = false, features = ["png"] }

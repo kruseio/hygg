@@ -134,6 +134,10 @@ fn test_redirected_pdf_output_includes_inline_ansi_images() {
     stdout.contains("Pro Git"),
     "redirected PDF output should preserve extracted text"
   );
+  assert!(
+    stdout.contains("Figure 1. Local version control diagram"),
+    "redirected PDF output should include early Pro Git figure labels"
+  );
   for line in stdout.lines() {
     let visible = strip_ansi_escapes(line).chars().count();
     assert!(

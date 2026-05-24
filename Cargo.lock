@@ -513,6 +513,7 @@ dependencies = [
  "flate2",
  "getopts",
  "hygg-shared",
+ "image",
  "lopdf 0.40.0",
  "pdf-extract",
  "pdf_oxide",

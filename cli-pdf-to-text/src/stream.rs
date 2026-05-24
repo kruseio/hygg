@@ -110,11 +110,21 @@ impl PdfStream {
     .and_then(Result::ok)
     .unwrap_or_default();
 
-    let image_rows =
+    let mut image_rows =
       render_pdf_images(&self.doc, page_0based, col, images.as_slice());
+    image_rows.extend(render_vector_diagram_regions(
+      &self.doc,
+      page_0based,
+      col,
+    ));
+
+    let text_rows = positioned_visual_text_rows(&self.doc, page_0based);
     if image_rows.is_empty() {
-      let PdfPageForAnsi { lines, line_kinds } =
-        text_only_page_lines(&raw_text, col);
+      let PdfPageForAnsi { lines, line_kinds } = if text_rows.is_empty() {
+        text_only_page_lines(&raw_text, col)
+      } else {
+        compose_visual_page(text_rows, Vec::new(), col)
+      };
       return Some(PdfRenderedPage {
         raw_text,
         lines,
@@ -122,8 +132,6 @@ impl PdfStream {
         contains_images: false,
       });
     }
-
-    let text_rows = positioned_visual_text_rows(&self.doc, page_0based);
 
     let PdfPageForAnsi { lines, line_kinds } =
       compose_visual_page(text_rows, image_rows, col);
@@ -147,6 +155,20 @@ struct VisualImageRows {
   top: f32,
   left_cells: usize,
   lines: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PdfRegion {
+  left: f32,
+  bottom: f32,
+  width: f32,
+  height: f32,
+}
+
+impl PdfRegion {
+  fn top(&self) -> f32 {
+    self.bottom + self.height
+  }
 }
 
 fn text_only_page_lines(raw_text: &str, col: usize) -> PdfPageForAnsi {
@@ -182,25 +204,161 @@ fn render_pdf_images(
     let Ok(dynamic_image) = image.to_dynamic_image() else {
       continue;
     };
-    let left_cells = pdf_x_to_cells(bbox.left(), page_left, page_width, col);
-    let left_cells = left_cells.min(col.saturating_sub(1));
-    let width_cells = pdf_width_to_cells(bbox.width, page_width, col);
-    let width_cells = width_cells.max(1).min(col.saturating_sub(left_cells));
-    if width_cells == 0 {
-      continue;
-    }
-    let height_rows =
-      pdf_image_height_rows(bbox.width, bbox.height, width_cells);
-    let lines = render_half_block(
+    if let Some(rows) = render_dynamic_image_region(
       &dynamic_image,
-      RenderConfig::new(Some(width_cells as u32), Some(height_rows as u32)),
-    );
-    if lines.is_empty() {
-      continue;
+      PdfRegion {
+        left: bbox.left(),
+        bottom: bbox.top(),
+        width: bbox.width,
+        height: bbox.height,
+      },
+      page_left,
+      page_width,
+      col,
+    ) {
+      out.push(rows);
     }
-    out.push(VisualImageRows { top: bbox.top(), left_cells, lines });
   }
   out
+}
+
+fn render_dynamic_image_region(
+  dynamic_image: &image::DynamicImage,
+  region: PdfRegion,
+  page_left: f32,
+  page_width: f32,
+  col: usize,
+) -> Option<VisualImageRows> {
+  let left_cells = pdf_x_to_cells(region.left, page_left, page_width, col);
+  let left_cells = left_cells.min(col.saturating_sub(1));
+  let width_cells = pdf_width_to_cells(region.width, page_width, col);
+  let width_cells = width_cells.max(1).min(col.saturating_sub(left_cells));
+  if width_cells == 0 {
+    return None;
+  }
+  let height_rows =
+    pdf_image_height_rows(region.width, region.height, width_cells);
+  let lines = render_half_block(
+    dynamic_image,
+    RenderConfig::new(Some(width_cells as u32), Some(height_rows as u32)),
+  );
+  if lines.is_empty() {
+    return None;
+  }
+  Some(VisualImageRows { top: region.top(), left_cells, lines })
+}
+
+#[cfg(feature = "pdf-rendering")]
+fn render_vector_diagram_regions(
+  doc: &pdf_oxide::PdfDocument,
+  page_0based: usize,
+  col: usize,
+) -> Vec<VisualImageRows> {
+  if col == 0 {
+    return Vec::new();
+  }
+
+  let (page_left, page_width, page_height) = doc
+    .get_page_media_box(page_0based)
+    .ok()
+    .map(|(llx, lly, urx, ury)| (llx, (urx - llx).abs(), (ury - lly).abs()))
+    .filter(|(_, w, h)| *w > 0.0 && *h > 0.0)
+    .unwrap_or((0.0, 612.0, 792.0));
+  let paths = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    doc.extract_paths(page_0based)
+  }))
+  .ok()
+  .and_then(Result::ok)
+  .unwrap_or_default();
+  let regions = detect_vector_diagram_regions(&paths, page_width, page_height);
+
+  let options = pdf_oxide::rendering::RenderOptions::with_dpi(120);
+  let mut out = Vec::new();
+  for region in regions {
+    let rendered = pdf_oxide::rendering::render_page_region(
+      doc,
+      page_0based,
+      (region.left, region.bottom, region.width, region.height),
+      &options,
+    );
+    let Ok(rendered) = rendered else {
+      continue;
+    };
+    let Ok(dynamic_image) = image::load_from_memory(&rendered.data) else {
+      continue;
+    };
+    if let Some(rows) = render_dynamic_image_region(
+      &dynamic_image,
+      region,
+      page_left,
+      page_width,
+      col,
+    ) {
+      out.push(rows);
+    }
+  }
+  out
+}
+
+#[cfg(not(feature = "pdf-rendering"))]
+fn render_vector_diagram_regions(
+  _doc: &pdf_oxide::PdfDocument,
+  _page_0based: usize,
+  _col: usize,
+) -> Vec<VisualImageRows> {
+  Vec::new()
+}
+
+#[cfg(any(feature = "pdf-rendering", test))]
+fn detect_vector_diagram_regions(
+  paths: &[pdf_oxide::elements::PathContent],
+  page_width: f32,
+  page_height: f32,
+) -> Vec<PdfRegion> {
+  let mut count = 0usize;
+  let mut left = f32::INFINITY;
+  let mut bottom = f32::INFINITY;
+  let mut right: f32 = 0.0;
+  let mut top: f32 = 0.0;
+
+  for path in paths {
+    let bbox = path.bbox;
+    if !path.is_table_primitive()
+      || !bbox.x.is_finite()
+      || !bbox.y.is_finite()
+      || !bbox.width.is_finite()
+      || !bbox.height.is_finite()
+      || (bbox.width <= 0.0 && bbox.height <= 0.0)
+      || bbox.width > page_width * 0.95
+      || bbox.height > page_height * 0.95
+    {
+      continue;
+    }
+
+    count += 1;
+    left = left.min(bbox.left());
+    bottom = bottom.min(bbox.top());
+    right = right.max(bbox.right());
+    top = top.max(bbox.bottom());
+  }
+
+  if count < 3 || !left.is_finite() || !bottom.is_finite() {
+    return Vec::new();
+  }
+
+  let pad = 4.0;
+  let region = PdfRegion {
+    left: (left - pad).max(0.0),
+    bottom: (bottom - pad).max(0.0),
+    width: (right - left + pad * 2.0).min(page_width),
+    height: (top - bottom + pad * 2.0).min(page_height),
+  };
+
+  if region.width < 24.0 || region.height < 24.0 {
+    Vec::new()
+  } else {
+    vec![region]
+  }
 }
 
 fn pdf_x_to_cells(
@@ -927,6 +1085,20 @@ mod tests {
   }
 
   #[test]
+  fn visual_page_without_art_uses_native_rows_before_sanitized_fallback() {
+    let text_rows = vec![VisualTextRow {
+      top: 100.0,
+      left: 20.0,
+      text: "diagram label".to_string(),
+    }];
+
+    let page = compose_visual_page(text_rows, Vec::new(), 80);
+
+    assert_eq!(page.lines, vec!["diagram label"]);
+    assert_eq!(page.line_kinds, vec![PdfLineKind::Text]);
+  }
+
+  #[test]
   fn sanitized_text_rows_keep_pdf_position_anchors() {
     let pdf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
       .join("../test-data/pdf/progit-1-50.pdf");
@@ -987,6 +1159,38 @@ mod tests {
       ]
     );
     assert!(filtered.iter().all(|row| row.text.trim() != "\u{f05a}"));
+  }
+
+  #[test]
+  fn detects_vector_diagram_region_from_box_primitives() {
+    let paths = vec![
+      pdf_oxide::elements::PathContent::new(pdf_oxide::geometry::Rect::new(
+        100.0, 200.0, 80.0, 40.0,
+      )),
+      pdf_oxide::elements::PathContent::new(pdf_oxide::geometry::Rect::new(
+        220.0, 200.0, 80.0, 40.0,
+      )),
+      pdf_oxide::elements::PathContent::new(pdf_oxide::geometry::Rect::new(
+        160.0, 280.0, 80.0, 40.0,
+      )),
+    ];
+
+    let regions = detect_vector_diagram_regions(&paths, 612.0, 792.0);
+
+    assert_eq!(regions.len(), 1);
+    assert!(regions[0].left <= 100.0);
+    assert!(regions[0].bottom <= 200.0);
+    assert!(regions[0].width >= 200.0);
+    assert!(regions[0].height >= 120.0);
+  }
+
+  #[test]
+  fn ignores_single_full_width_vector_rule() {
+    let paths = vec![pdf_oxide::elements::PathContent::new(
+      pdf_oxide::geometry::Rect::new(0.0, 700.0, 612.0, 1.0),
+    )];
+
+    assert!(detect_vector_diagram_regions(&paths, 612.0, 792.0).is_empty());
   }
 
   #[test]
