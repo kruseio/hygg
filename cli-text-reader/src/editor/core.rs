@@ -7,6 +7,7 @@ use crate::editor::streaming::PdfStreamingState;
 use crate::highlights::HighlightData;
 use crate::progress::generate_hash;
 use arboard::Clipboard;
+use cli_pdf_to_text::PdfLineKind;
 use crossterm::terminal;
 
 /// Map a flat line index back to (page_index, line_within_page) using the
@@ -95,6 +96,7 @@ impl Editor {
 
     Self {
       lines,
+      line_kinds: vec![PdfLineKind::Text; total_lines],
       col,
       offset: 0,
       width,
@@ -293,12 +295,34 @@ impl Editor {
       return;
     };
     let new_lines = state.flat_lines();
+    let new_line_kinds = state.flat_line_kinds();
     self.lines = new_lines.clone();
+    self.line_kinds = new_line_kinds.clone();
     self.total_lines = self.lines.len();
     if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
       buffer.lines = new_lines;
+      buffer.line_kinds = new_line_kinds;
     }
     self.needs_redraw = true;
+  }
+
+  pub fn is_ansi_art_line(&self, line_idx: usize) -> bool {
+    self
+      .line_kinds
+      .get(line_idx)
+      .is_some_and(|kind| *kind == PdfLineKind::AnsiArt)
+  }
+
+  pub fn is_buffer_ansi_art_line(
+    &self,
+    buffer_idx: usize,
+    line_idx: usize,
+  ) -> bool {
+    self
+      .buffers
+      .get(buffer_idx)
+      .and_then(|buffer| buffer.line_kinds.get(line_idx))
+      .is_some_and(|kind| *kind == PdfLineKind::AnsiArt)
   }
 
   /// Poll the background "open PDF" thread; if it has finished, install
@@ -322,9 +346,11 @@ impl Editor {
           "  Failed to open PDF (background opener exited unexpectedly)."
             .into(),
         ];
+        self.line_kinds = vec![PdfLineKind::Text; self.lines.len()];
         self.total_lines = self.lines.len();
         if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
           buffer.lines = self.lines.clone();
+          buffer.line_kinds = self.line_kinds.clone();
         }
         self.pdf_pending = None;
         self.needs_redraw = true;
@@ -345,9 +371,11 @@ impl Editor {
     match message {
       StreamReady::Err(err) => {
         self.lines = vec![format!("  {err}")];
+        self.line_kinds = vec![PdfLineKind::Text; self.lines.len()];
         self.total_lines = self.lines.len();
         if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
           buffer.lines = self.lines.clone();
+          buffer.line_kinds = self.line_kinds.clone();
         }
         self.needs_redraw = true;
       }
@@ -362,11 +390,11 @@ impl Editor {
         let total_pages = stream.total_pages();
         let mut pages: Vec<PageSlot> =
           (0..total_pages).map(|_| PageSlot::Loading).collect();
-        for (page_1based, raw_text) in preloaded_pages {
+        for (page_1based, rendered_page) in preloaded_pages {
           if page_1based == 0 || page_1based > total_pages {
             continue;
           }
-          let loaded = LoadedPage::from_raw(raw_text, self.col);
+          let loaded = LoadedPage::from_rendered(rendered_page, self.col);
           pages[page_1based - 1] = PageSlot::Loaded(loaded);
         }
 
@@ -458,7 +486,7 @@ impl Editor {
       if let PageSlot::Loaded(_) = state.pages[idx] {
         continue;
       }
-      let loaded = LoadedPage::from_raw(msg.raw_text, col);
+      let loaded = LoadedPage::from_rendered(msg.rendered_page, col);
       state.pages[idx] = PageSlot::Loaded(loaded);
       applied += 1;
     }

@@ -1,6 +1,7 @@
 use super::core::{Editor, EditorMode, ViewMode};
 use crate::demo_registry::{get_demo_by_id, get_demo_content_by_id};
 use crate::demo_script::{DemoAction, DemoScript};
+use cli_pdf_to_text::PdfLineKind;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::time::{Duration, Instant};
 
@@ -40,7 +41,9 @@ impl Editor {
     // Apply justification to the demo content
     let justified_lines = cli_justify::justify(&demo_text, self.col);
     self.lines = justified_lines;
+    self.line_kinds = vec![PdfLineKind::Text; self.lines.len()];
     self.buffers[0].lines = self.lines.clone();
+    self.buffers[0].line_kinds = self.line_kinds.clone();
     self.total_lines = self.lines.len();
     self.offset = 0;
     self.cursor_y = self.height / 2;

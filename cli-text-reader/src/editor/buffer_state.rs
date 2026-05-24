@@ -1,4 +1,5 @@
 use super::core::{BufferState, Editor};
+use cli_pdf_to_text::PdfLineKind;
 
 impl Editor {
   // Save current editor state to the active buffer
@@ -6,6 +7,8 @@ impl Editor {
     let active_idx = self.active_buffer;
     if let Some(buffer) = self.buffers.get_mut(active_idx) {
       // Save position and display state
+      buffer.lines = self.lines.clone();
+      buffer.line_kinds = self.line_kinds.clone();
       buffer.offset = self.offset;
       buffer.cursor_x = self.cursor_x;
       buffer.cursor_y = self.cursor_y;
@@ -68,10 +71,15 @@ impl Editor {
           "".to_string(),
           "Press :q to exit".to_string(),
         ];
+        self.line_kinds = vec![PdfLineKind::Text; self.lines.len()];
         self.total_lines = self.lines.len();
       } else {
         // Load document content
         self.lines = buffer.lines.clone();
+        self.line_kinds = buffer.line_kinds.clone();
+        if self.line_kinds.len() != self.lines.len() {
+          self.line_kinds = vec![PdfLineKind::Text; self.lines.len()];
+        }
         self.total_lines = buffer.lines.len();
       }
 
@@ -201,6 +209,7 @@ impl Editor {
         "".to_string(),
         "This is likely a bug. Press :q to exit".to_string(),
       ];
+      self.line_kinds = vec![PdfLineKind::Text; self.lines.len()];
       self.total_lines = self.lines.len();
       self.offset = 0;
       self.cursor_x = 0;
@@ -222,6 +231,7 @@ impl Editor {
         "  CRITICAL: Lines still empty after load, adding final fallback",
       );
       self.lines = vec!["[Empty]".to_string()];
+      self.line_kinds = vec![PdfLineKind::Text];
       self.total_lines = 1;
     }
 

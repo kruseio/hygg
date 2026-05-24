@@ -6,7 +6,7 @@ use cli_justify::{
   PartialParagraph, PdfPageJustified, inter_page_blank_count, justify_pdf_page,
   justify_pdf_seam,
 };
-use cli_pdf_to_text::SharedPdfStream;
+use cli_pdf_to_text::{PdfLineKind, PdfRenderedPage, SharedPdfStream};
 
 /// Lines reserved for a Loading slot in the flat editor buffer.
 pub const PLACEHOLDER_LINES_PER_PAGE: usize = 1;
@@ -15,6 +15,92 @@ pub const PLACEHOLDER_LINES_PER_PAGE: usize = 1;
 pub enum PageSlot {
   Loading,
   Loaded(LoadedPage),
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use cli_pdf_to_text::PdfStream;
+  use std::sync::atomic::AtomicBool;
+  use std::sync::{Arc, mpsc};
+
+  fn rendered_image_page() -> PdfRenderedPage {
+    PdfRenderedPage {
+      raw_text: "caption text".to_string(),
+      lines: vec![
+        "caption text".to_string(),
+        "\x1b[38;2;1;2;3m\x1b[48;2;4;5;6m▀\x1b[0m".to_string(),
+      ],
+      line_kinds: vec![PdfLineKind::Text, PdfLineKind::AnsiArt],
+      contains_images: true,
+    }
+  }
+
+  #[test]
+  fn rendered_image_pages_keep_fixed_lines_and_disable_partials() {
+    let loaded = LoadedPage::from_rendered(rendered_image_page(), 80);
+
+    assert!(loaded.contains_images);
+    assert_eq!(loaded.standalone_lines.len(), 2);
+    assert_eq!(
+      loaded.line_kinds,
+      vec![PdfLineKind::Text, PdfLineKind::AnsiArt]
+    );
+    assert!(loaded.head_partial.is_none());
+    assert!(loaded.tail_partial.is_none());
+  }
+
+  #[test]
+  fn image_page_boundaries_use_separator_not_seam_stitching() {
+    let before =
+      LoadedPage::from_raw("This sentence continues".to_string(), 80);
+    let image = LoadedPage::from_rendered(rendered_image_page(), 80);
+    let after = LoadedPage::from_raw("afterward text".to_string(), 80);
+
+    let before_count =
+      before.rendered_line_count(None, Some(&image), false, 80);
+    assert_eq!(before_count, before.standalone_lines.len() + 1);
+
+    let image_count =
+      image.rendered_line_count(Some(&before), Some(&after), false, 80);
+    assert_eq!(image_count, image.standalone_lines.len() + 1);
+  }
+
+  #[test]
+  fn flat_line_kinds_track_art_rows() {
+    let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+      .join("../test-data/pdf/progit-1-50.pdf");
+    if !pdf_path.exists() {
+      return;
+    }
+    let stream = Arc::new(
+      PdfStream::open(pdf_path.to_str().expect("utf-8 path"))
+        .expect("PdfStream should open valid test PDF"),
+    );
+    let (_tx, rx) = mpsc::channel();
+    let state = PdfStreamingState {
+      stream,
+      col: 80,
+      pages: vec![
+        PageSlot::Loaded(LoadedPage::from_raw("plain text".to_string(), 80)),
+        PageSlot::Loaded(LoadedPage::from_rendered(rendered_image_page(), 80)),
+      ],
+      receiver: rx,
+      cancel: Arc::new(AtomicBool::new(false)),
+      fully_loaded: true,
+      worker: None,
+    };
+
+    let lines = state.flat_lines();
+    let kinds = state.flat_line_kinds();
+
+    assert_eq!(lines.len(), kinds.len());
+    assert!(kinds.contains(&PdfLineKind::AnsiArt));
+    assert_eq!(
+      state.page_line_count(0) + state.page_line_count(1),
+      lines.len()
+    );
+  }
 }
 
 #[derive(Clone)]
@@ -27,6 +113,8 @@ pub struct LoadedPage {
   /// Standalone justified output for the page. Kept immutable so seam
   /// stitching can be recomputed idempotently as neighbours load.
   pub standalone_lines: Vec<String>,
+  pub line_kinds: Vec<PdfLineKind>,
+  pub contains_images: bool,
   /// Leading partial paragraph (if it looks like a continuation from the
   /// previous page).
   pub head_partial: Option<StoredPartial>,
@@ -51,6 +139,13 @@ impl LoadedPage {
     col: usize,
   ) -> usize {
     let mut count = self.standalone_lines.len();
+
+    if self.contains_images || next.is_some_and(|p| p.contains_images) {
+      if next.is_some() || next_loading {
+        count += 1;
+      }
+      return count.max(1);
+    }
 
     if let Some(head) = &self.head_partial
       && prev.is_some_and(|p| p.tail_partial.is_some())
@@ -79,8 +174,10 @@ impl LoadedPage {
     // crosses a list / caption continuation.
     if !emitted_seam {
       if let Some(next_page) = next {
-        count +=
-          inter_page_blank_count(&self.standalone_lines, &next_page.standalone_lines);
+        count += inter_page_blank_count(
+          &self.standalone_lines,
+          &next_page.standalone_lines,
+        );
       } else if next_loading {
         // Default to one separator when the next page hasn't loaded —
         // matches the placeholder spacing in `flat_lines`.
@@ -107,11 +204,34 @@ impl LoadedPage {
   pub fn from_raw(raw_text: String, col: usize) -> Self {
     let PdfPageJustified { lines, head_partial, tail_partial } =
       justify_pdf_page(&raw_text, col);
+    let line_kinds = vec![PdfLineKind::Text; lines.len()];
     Self {
       raw_text,
       standalone_lines: lines,
+      line_kinds,
+      contains_images: false,
       head_partial: head_partial.map(Into::into),
       tail_partial: tail_partial.map(Into::into),
+    }
+  }
+
+  pub fn from_rendered(page: PdfRenderedPage, col: usize) -> Self {
+    if !page.contains_images {
+      return Self::from_raw(page.raw_text, col);
+    }
+
+    let mut line_kinds = page.line_kinds;
+    if line_kinds.len() != page.lines.len() {
+      line_kinds = vec![PdfLineKind::Text; page.lines.len()];
+    }
+
+    Self {
+      raw_text: page.raw_text,
+      standalone_lines: page.lines,
+      line_kinds,
+      contains_images: true,
+      head_partial: None,
+      tail_partial: None,
     }
   }
 }
@@ -131,7 +251,7 @@ impl PageSlot {
 /// message is drained.
 pub struct PageLoaded {
   pub page_index: usize,
-  pub raw_text: String,
+  pub rendered_page: PdfRenderedPage,
 }
 
 /// Result of the background "open the PDF + extract initial pages" job.
@@ -145,7 +265,7 @@ pub enum StreamReady {
     /// the editor's first render. Includes the target page and a window
     /// of neighbours so the viewport is stable from the very first frame.
     /// Entries are `(page_1based, raw_text)`.
-    preloaded_pages: Vec<(usize, String)>,
+    preloaded_pages: Vec<(usize, PdfRenderedPage)>,
     pages_receiver: Receiver<PageLoaded>,
     cancel: Arc<AtomicBool>,
     worker: std::thread::JoinHandle<()>,
@@ -263,6 +383,69 @@ impl PdfStreamingState {
     out
   }
 
+  pub fn flat_line_kinds(&self) -> Vec<PdfLineKind> {
+    let total_pages = self.pages.len();
+    let mut out = Vec::new();
+    let mut last_emit_was_seam = false;
+    for idx in 0..total_pages {
+      if idx > 0 && !last_emit_was_seam {
+        let separators = self.separator_before_page(idx);
+        for _ in 0..separators {
+          out.push(PdfLineKind::Text);
+        }
+      }
+      last_emit_was_seam = false;
+
+      match &self.pages[idx] {
+        PageSlot::Loading => {
+          for _ in 0..PLACEHOLDER_LINES_PER_PAGE {
+            out.push(PdfLineKind::Text);
+          }
+        }
+        PageSlot::Loaded(page) => {
+          let prev =
+            if idx == 0 { None } else { self.pages[idx - 1].as_loaded() };
+          let next = self.pages.get(idx + 1).and_then(PageSlot::as_loaded);
+
+          let head_skip = if let Some(head) = &page.head_partial
+            && prev.is_some_and(|p| p.tail_partial.is_some())
+          {
+            head.line_count
+          } else {
+            0
+          };
+
+          let (tail_skip, seam_lines) = if let Some(tail) = &page.tail_partial
+            && let Some(next_page) = next
+            && let Some(next_head) = next_page.head_partial.as_ref()
+          {
+            let seam =
+              justify_pdf_seam(&tail.raw_text, &next_head.raw_text, self.col);
+            (tail.line_count, Some(seam))
+          } else {
+            (0, None)
+          };
+
+          if !page.standalone_lines.is_empty() {
+            let end = page.standalone_lines.len().saturating_sub(tail_skip);
+            let start = head_skip.min(end);
+            for kind in &page.line_kinds[start..end] {
+              out.push(*kind);
+            }
+          }
+          if let Some(seam) = seam_lines {
+            out.extend(std::iter::repeat_n(PdfLineKind::Text, seam.len()));
+            last_emit_was_seam = true;
+          }
+        }
+      }
+    }
+    if out.is_empty() {
+      out.push(PdfLineKind::Text);
+    }
+    out
+  }
+
   /// Decide the number of separator blanks `flat_lines` should insert
   /// directly before page `idx`. Returns 0 when the prior page already
   /// emitted a seam into this one (the seam is the connection), or when
@@ -278,6 +461,9 @@ impl PdfStreamingState {
     let this_loaded = this_slot.as_loaded();
     match (prev_loaded, this_loaded) {
       (Some(prev), Some(this)) => {
+        if prev.contains_images || this.contains_images {
+          return 1;
+        }
         inter_page_blank_count(&prev.standalone_lines, &this.standalone_lines)
       }
       _ => 1,
@@ -291,8 +477,7 @@ impl PdfStreamingState {
       return 0;
     }
     let next_slot = self.pages.get(page_index + 1);
-    let next_loading =
-      matches!(next_slot, Some(PageSlot::Loading));
+    let next_loading = matches!(next_slot, Some(PageSlot::Loading));
     match &self.pages[page_index] {
       PageSlot::Loading => {
         // A loading slot contributes its placeholder lines plus the

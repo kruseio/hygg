@@ -120,8 +120,10 @@ pub fn run_cli_text_reader_pdf_path(
             let target_page = saved_target_page.clamp(1, total_pages);
             let lo = target_page.saturating_sub(PRELOAD_RADIUS).max(1);
             let hi = (target_page + PRELOAD_RADIUS).min(total_pages);
-            let preloaded_pages: Vec<(usize, String)> = (lo..=hi)
-              .map(|p| (p, stream.extract_page(p).unwrap_or_default()))
+            let preloaded_pages: Vec<_> = (lo..=hi)
+              .filter_map(|p| {
+                stream.extract_page_with_images(p, col).map(|page| (p, page))
+              })
               .collect();
             let preloaded_indices: Vec<usize> =
               preloaded_pages.iter().map(|(p, _)| *p).collect();
@@ -130,6 +132,7 @@ pub fn run_cli_text_reader_pdf_path(
             let (pages_rx, worker) = spawn_loader(
               Arc::clone(&shared),
               target_page,
+              col,
               preloaded_indices,
               Arc::clone(&cancel),
             );

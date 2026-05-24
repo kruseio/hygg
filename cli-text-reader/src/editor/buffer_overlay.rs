@@ -1,4 +1,5 @@
 use super::core::{BufferState, Editor, EditorMode, ViewMode};
+use cli_pdf_to_text::PdfLineKind;
 
 impl Editor {
   // Create or update the single overlay buffer
@@ -103,6 +104,8 @@ impl Editor {
         let prev_lines_count = overlay_buffer.lines.len();
 
         overlay_buffer.lines = validated_lines;
+        overlay_buffer.line_kinds =
+          vec![PdfLineKind::Text; overlay_buffer.lines.len()];
         overlay_buffer.command = Some(cmd.to_string());
         overlay_buffer.offset = 0;
 

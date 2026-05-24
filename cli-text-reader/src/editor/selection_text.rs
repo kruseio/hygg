@@ -14,13 +14,20 @@ impl Editor {
       if self.editor_state.mode == super::core::EditorMode::VisualLine {
         // In line mode, select entire lines
         if start_line < self.lines.len() && end_line < self.lines.len() {
-          return self.lines[start_line..=end_line].join("\n");
+          return (start_line..=end_line)
+            .filter(|line| !self.is_ansi_art_line(*line))
+            .map(|line| self.lines[line].as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
         }
       } else {
         // In character mode, select parts of lines
         if start_line == end_line {
           // Single line selection
           if start_line < self.lines.len() {
+            if self.is_ansi_art_line(start_line) {
+              return String::new();
+            }
             let line = &self.lines[start_line];
             let start_col = start_col.min(line.len());
             let end_col = end_col.min(line.len());
@@ -36,15 +43,17 @@ impl Editor {
 
           // First line (partial)
           if start_line < self.lines.len() {
-            let line = &self.lines[start_line];
-            let start_col = start_col.min(line.len());
-            result.push_str(&line[start_col..]);
-            result.push('\n');
+            if !self.is_ansi_art_line(start_line) {
+              let line = &self.lines[start_line];
+              let start_col = start_col.min(line.len());
+              result.push_str(&line[start_col..]);
+              result.push('\n');
+            }
           }
 
           // Middle lines (full)
           for i in start_line + 1..end_line {
-            if i < self.lines.len() {
+            if i < self.lines.len() && !self.is_ansi_art_line(i) {
               result.push_str(&self.lines[i]);
               result.push('\n');
             }
@@ -52,9 +61,11 @@ impl Editor {
 
           // Last line (partial)
           if end_line < self.lines.len() {
-            let line = &self.lines[end_line];
-            let end_col = end_col.min(line.len());
-            result.push_str(&line[..end_col]);
+            if !self.is_ansi_art_line(end_line) {
+              let line = &self.lines[end_line];
+              let end_col = end_col.min(line.len());
+              result.push_str(&line[..end_col]);
+            }
           }
 
           return result;

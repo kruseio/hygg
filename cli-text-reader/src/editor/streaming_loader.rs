@@ -29,6 +29,7 @@ const BLOCK: usize = 10;
 pub fn spawn_loader(
   stream: SharedPdfStream,
   start_page: usize,
+  col: usize,
   already_loaded: Vec<usize>,
   cancel: Arc<AtomicBool>,
 ) -> (Receiver<PageLoaded>, JoinHandle<()>) {
@@ -38,7 +39,15 @@ pub fn spawn_loader(
   let handle = thread::Builder::new()
     .name("hygg-pdf-loader".into())
     .spawn(move || {
-      run_loader(stream, start_page, already_loaded, total_pages, tx, cancel);
+      run_loader(
+        stream,
+        start_page,
+        col,
+        already_loaded,
+        total_pages,
+        tx,
+        cancel,
+      );
     })
     .expect("spawning pdf loader thread");
 
@@ -48,6 +57,7 @@ pub fn spawn_loader(
 fn run_loader(
   stream: SharedPdfStream,
   start_page: usize,
+  col: usize,
   already_loaded: Vec<usize>,
   total_pages: usize,
   tx: SyncSender<PageLoaded>,
@@ -67,8 +77,15 @@ fn run_loader(
     if skip.contains(&page_1based) {
       continue;
     }
-    let raw_text = stream.extract_page(page_1based).unwrap_or_default();
-    let message = PageLoaded { page_index: page_1based - 1, raw_text };
+    let rendered_page = stream
+      .extract_page_with_images(page_1based, col)
+      .unwrap_or_else(|| cli_pdf_to_text::PdfRenderedPage {
+        raw_text: String::new(),
+        lines: vec![String::new()],
+        line_kinds: vec![cli_pdf_to_text::PdfLineKind::Text],
+        contains_images: false,
+      });
+    let message = PageLoaded { page_index: page_1based - 1, rendered_page };
 
     // Use a small spin so we honour cancellation while the channel is full.
     let mut payload = Some(message);

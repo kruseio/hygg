@@ -1,4 +1,5 @@
 use arboard::Clipboard;
+use cli_pdf_to_text::PdfLineKind;
 use crossterm::cursor::SetCursorStyle;
 use crossterm::event::KeyEvent;
 use std::collections::HashMap;
@@ -12,6 +13,7 @@ use crate::interactive_tutorial_buffer::TutorialSuccessCondition;
 
 pub struct Editor {
   pub lines: Vec<String>,
+  pub line_kinds: Vec<PdfLineKind>,
   pub col: usize,
   pub offset: usize,
   pub width: usize,

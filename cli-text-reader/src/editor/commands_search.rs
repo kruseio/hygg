@@ -25,7 +25,7 @@ impl Editor {
 
     if forward {
       // First check current line from cursor position onward
-      if search_line < self.lines.len() {
+      if search_line < self.lines.len() && !self.is_ansi_art_line(search_line) {
         let line = &self.lines[search_line];
         if search_x < line.len() {
           let remaining = &line[search_x..];
@@ -46,6 +46,9 @@ impl Editor {
 
       // Then search forward from next line
       for i in search_line + 1..self.lines.len() {
+        if self.is_ansi_art_line(i) {
+          continue;
+        }
         if let Some((start, end)) = find_in_line(&self.lines[i], &query_lower) {
           self.editor_state.search_preview_match = Some((i, start, end));
           // Also store in active buffer for split view
@@ -58,6 +61,9 @@ impl Editor {
       }
       // Wrap around to beginning
       for i in 0..=search_line {
+        if self.is_ansi_art_line(i) {
+          continue;
+        }
         if let Some((start, end)) = find_in_line(&self.lines[i], &query_lower) {
           self.editor_state.search_preview_match = Some((i, start, end));
           // Also store in active buffer for split view
@@ -70,7 +76,10 @@ impl Editor {
       }
     } else {
       // Backward search logic
-      if search_line < self.lines.len() && search_x > 0 {
+      if search_line < self.lines.len()
+        && search_x > 0
+        && !self.is_ansi_art_line(search_line)
+      {
         let line = &self.lines[search_line];
         let before_cursor = &line[..search_x];
         if let Some(pos) = before_cursor.to_lowercase().rfind(&query_lower) {
@@ -88,6 +97,9 @@ impl Editor {
 
       // Then search backward from previous line
       for i in (0..search_line).rev() {
+        if self.is_ansi_art_line(i) {
+          continue;
+        }
         if let Some((start, end)) = find_in_line(&self.lines[i], &query_lower) {
           self.editor_state.search_preview_match = Some((i, start, end));
           // Also store in active buffer for split view
@@ -100,6 +112,9 @@ impl Editor {
       }
       // Wrap around to end
       for i in (search_line..self.lines.len()).rev() {
+        if self.is_ansi_art_line(i) {
+          continue;
+        }
         if let Some((start, end)) = find_in_line(&self.lines[i], &query_lower) {
           self.editor_state.search_preview_match = Some((i, start, end));
           // Also store in active buffer for split view
@@ -147,7 +162,8 @@ impl Editor {
 
     if forward {
       // First check current line from cursor position onward
-      if current_line < self.lines.len() {
+      if current_line < self.lines.len() && !self.is_ansi_art_line(current_line)
+      {
         let line = &self.lines[current_line];
         if self.cursor_x < line.len() {
           let remaining = &line[self.cursor_x..];
@@ -162,6 +178,9 @@ impl Editor {
 
       // Then search forward from next line
       for i in current_line + 1..self.lines.len() {
+        if self.is_ansi_art_line(i) {
+          continue;
+        }
         if let Some((start, end)) = find_in_line(&self.lines[i], &query) {
           self.editor_state.current_match = Some((i, start, end));
           // Also update active buffer's current_match
@@ -173,6 +192,9 @@ impl Editor {
       }
       // Wrap around to beginning
       for i in 0..=current_line {
+        if self.is_ansi_art_line(i) {
+          continue;
+        }
         if let Some((start, end)) = find_in_line(&self.lines[i], &query) {
           self.editor_state.current_match = Some((i, start, end));
           // Also update active buffer's current_match
@@ -184,7 +206,10 @@ impl Editor {
       }
     } else {
       // First check current line from cursor position backward
-      if current_line < self.lines.len() && self.cursor_x > 0 {
+      if current_line < self.lines.len()
+        && self.cursor_x > 0
+        && !self.is_ansi_art_line(current_line)
+      {
         let line = &self.lines[current_line];
         let before_cursor = &line[..self.cursor_x];
         if let Some(pos) = before_cursor.to_lowercase().rfind(&query) {
@@ -196,6 +221,9 @@ impl Editor {
 
       // Then search backward from previous line
       for i in (0..current_line).rev() {
+        if self.is_ansi_art_line(i) {
+          continue;
+        }
         if let Some((start, end)) = find_in_line(&self.lines[i], &query) {
           self.editor_state.current_match = Some((i, start, end));
           // Also update active buffer's current_match
@@ -207,6 +235,9 @@ impl Editor {
       }
       // Wrap around to end
       for i in (current_line..self.lines.len()).rev() {
+        if self.is_ansi_art_line(i) {
+          continue;
+        }
         if let Some((start, end)) = find_in_line(&self.lines[i], &query) {
           self.editor_state.current_match = Some((i, start, end));
           // Also update active buffer's current_match
@@ -244,6 +275,9 @@ impl Editor {
     if forward {
       // Forward search
       for i in start_idx + 1..self.lines.len() {
+        if self.is_ansi_art_line(i) {
+          continue;
+        }
         if let Some((start, end)) = find_in_line(&self.lines[i], &query) {
           self.editor_state.current_match = Some((i, start, end));
           // Also update active buffer's current_match
@@ -255,6 +289,9 @@ impl Editor {
       }
       // Wrap around to beginning
       for i in 0..=start_idx {
+        if self.is_ansi_art_line(i) {
+          continue;
+        }
         if let Some((start, end)) = find_in_line(&self.lines[i], &query) {
           self.editor_state.current_match = Some((i, start, end));
           // Also update active buffer's current_match
@@ -267,6 +304,9 @@ impl Editor {
     } else {
       // Backward search - use rfind to get last occurrence in each line
       for i in (0..start_idx).rev() {
+        if self.is_ansi_art_line(i) {
+          continue;
+        }
         if let Some((start, end)) =
           find_in_line_backward(&self.lines[i], &query)
         {
@@ -280,6 +320,9 @@ impl Editor {
       }
       // Wrap around to end
       for i in (start_idx..self.lines.len()).rev() {
+        if self.is_ansi_art_line(i) {
+          continue;
+        }
         if let Some((start, end)) =
           find_in_line_backward(&self.lines[i], &query)
         {
@@ -337,5 +380,34 @@ impl Editor {
       self.cursor_x = col_idx;
       self.cursor_moved = true;
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use cli_pdf_to_text::PdfLineKind;
+
+  #[test]
+  fn search_skips_ansi_art_rows() {
+    let mut editor = Editor::new(
+      vec![
+        "alpha".to_string(),
+        "\x1b[38;2;1;2;3m▀\x1b[0m".to_string(),
+        "omega".to_string(),
+      ],
+      80,
+    );
+    editor.line_kinds =
+      vec![PdfLineKind::Text, PdfLineKind::AnsiArt, PdfLineKind::Text];
+    editor.cursor_y = 0;
+
+    editor.editor_state.search_query = "38;2".to_string();
+    editor.find_first_match(true);
+    assert!(editor.editor_state.current_match.is_none());
+
+    editor.editor_state.search_query = "omega".to_string();
+    editor.find_first_match(true);
+    assert_eq!(editor.editor_state.current_match, Some((2, 0, 5)));
   }
 }

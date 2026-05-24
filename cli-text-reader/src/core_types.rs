@@ -1,4 +1,5 @@
 // Core type definitions for the editor
+use cli_pdf_to_text::PdfLineKind;
 
 // Split position for split buffers
 #[derive(Clone, Debug, PartialEq)]
@@ -33,6 +34,7 @@ pub enum EditorMode {
 #[derive(Clone)]
 pub struct BufferState {
   pub lines: Vec<String>,
+  pub line_kinds: Vec<PdfLineKind>,
   pub offset: usize,
   pub cursor_x: usize,
   pub cursor_y: usize,
@@ -56,8 +58,10 @@ pub struct BufferState {
 
 impl BufferState {
   pub fn new(lines: Vec<String>) -> Self {
+    let line_kinds = vec![PdfLineKind::Text; lines.len()];
     Self {
       lines,
+      line_kinds,
       offset: 0,
       cursor_x: 0,
       cursor_y: 0,

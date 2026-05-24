@@ -172,6 +172,19 @@ impl Editor {
   ) -> IoResult<()> {
     // Apply centering if needed
     if let Some(_pane_buffer) = self.buffers.get(buffer_idx) {
+      let actual_line_idx = if buffer_idx == self.active_buffer {
+        self.offset + viewport_line_idx
+      } else if let Some(pane_buffer) = self.buffers.get(buffer_idx) {
+        pane_buffer.offset + viewport_line_idx
+      } else {
+        0
+      };
+      if self.is_buffer_ansi_art_line(buffer_idx, actual_line_idx) {
+        write!(stdout, "{center_offset_string}{line}")?;
+        execute!(stdout, ResetColor, Clear(ClearType::UntilNewLine))?;
+        return Ok(());
+      }
+
       // Check if this line has visual selection
       let has_selection =
         self.has_pane_selection_on_line(buffer_idx, viewport_line_idx);
@@ -249,14 +262,6 @@ impl Editor {
 
       // Check if this line has the match
       if let Some((match_line_idx, start, end)) = match_to_highlight {
-        let actual_line_idx = if buffer_idx == self.active_buffer {
-          self.offset + viewport_line_idx
-        } else if let Some(pane_buffer) = self.buffers.get(buffer_idx) {
-          pane_buffer.offset + viewport_line_idx
-        } else {
-          0
-        };
-
         if match_line_idx == actual_line_idx && !is_current_line {
           // Render with match highlighting
           write!(stdout, "{center_offset_string}")?;
@@ -468,6 +473,20 @@ impl Editor {
   ) -> IoResult<()> {
     // Apply centering if needed
     if let Some(_pane_buffer) = self.buffers.get(buffer_idx) {
+      let actual_line_idx = if buffer_idx == self.active_buffer {
+        self.offset + viewport_line_idx
+      } else if let Some(pane_buffer) = self.buffers.get(buffer_idx) {
+        pane_buffer.offset + viewport_line_idx
+      } else {
+        0
+      };
+      if self.is_buffer_ansi_art_line(buffer_idx, actual_line_idx) {
+        write!(buffer, "{center_offset_string}{line}")?;
+        buffer.queue(ResetColor)?;
+        buffer.queue(Clear(ClearType::UntilNewLine))?;
+        return Ok(());
+      }
+
       // Check if this line has visual selection
       let _start_row = if buffer_idx == 0 {
         0
@@ -553,15 +572,6 @@ impl Editor {
 
       // Check if this line has the match
       if let Some((match_line_idx, start, end)) = match_to_highlight {
-        // Calculate the actual line index in the buffer
-        let actual_line_idx = if buffer_idx == self.active_buffer {
-          self.offset + viewport_line_idx
-        } else if let Some(pane_buffer) = self.buffers.get(buffer_idx) {
-          pane_buffer.offset + viewport_line_idx
-        } else {
-          0
-        };
-
         if match_line_idx == actual_line_idx && !is_current_line {
           // Render with match highlighting
           write!(buffer, "{center_offset_string}")?;
