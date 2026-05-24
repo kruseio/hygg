@@ -284,6 +284,9 @@ pub struct PendingPdfStream {
   /// Saved cursor row within the target page's rendered output, if any.
   /// Restored as cursor position once the preloaded pages are installed.
   pub restore_line_in_page: Option<usize>,
+  /// Saved screen row for the cursor. Used during PDF restore so the
+  /// first rendered frame lands on the same row as the previous session.
+  pub restore_cursor_y: Option<usize>,
 }
 
 pub struct PdfStreamingState {

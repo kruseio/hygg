@@ -617,7 +617,7 @@ mod tests {
       started_at: Instant::now(),
       canonical_path_display: "pending.pdf".to_string(),
       restore_line_in_page: None,
-
+      restore_cursor_y: None,
     });
 
     let mut buffer = Vec::new();

@@ -29,6 +29,41 @@ fn page_and_offset_for_line(
   (last_idx, last_count.saturating_sub(1))
 }
 
+#[cfg(test)]
+mod tests {
+  use super::restored_pdf_viewport;
+
+  #[test]
+  fn pdf_restore_uses_saved_cursor_screen_row() {
+    assert_eq!(restored_pdf_viewport(42, 24, Some(14)), (28, 14));
+  }
+
+  #[test]
+  fn pdf_restore_clamps_saved_cursor_row_near_top() {
+    assert_eq!(restored_pdf_viewport(3, 24, Some(14)), (0, 3));
+  }
+
+  #[test]
+  fn pdf_restore_falls_back_to_center_without_saved_cursor_row() {
+    assert_eq!(restored_pdf_viewport(42, 24, None), (30, 12));
+  }
+}
+
+fn restored_pdf_viewport(
+  document_line: usize,
+  content_height: usize,
+  restore_cursor_y: Option<usize>,
+) -> (usize, usize) {
+  let landing_y = restore_cursor_y
+    .unwrap_or(content_height / 2)
+    .min(content_height.saturating_sub(1));
+  if document_line < landing_y {
+    (0, document_line)
+  } else {
+    (document_line - landing_y, landing_y)
+  }
+}
+
 impl Editor {
   pub fn new(lines: Vec<String>, col: usize) -> Self {
     Self::new_internal(lines, col, None)
@@ -359,6 +394,8 @@ impl Editor {
     };
     let restore_line_in_page =
       self.pdf_pending.as_ref().and_then(|p| p.restore_line_in_page);
+    let restore_cursor_y =
+      self.pdf_pending.as_ref().and_then(|p| p.restore_cursor_y);
     let pending_info = self.pdf_pending.as_ref().map(|p| {
       let filename = std::path::Path::new(&p.canonical_path_display)
         .file_name()
@@ -426,14 +463,10 @@ impl Editor {
         // falls back to clamping near the top, matching center_cursor's
         // overscroll handling.
         let content_height = self.height.saturating_sub(1);
-        let center_y = content_height / 2;
-        if document_line < center_y {
-          self.offset = 0;
-          self.cursor_y = document_line;
-        } else {
-          self.offset = document_line - center_y;
-          self.cursor_y = center_y;
-        }
+        let (offset, cursor_y) =
+          restored_pdf_viewport(document_line, content_height, restore_cursor_y);
+        self.offset = offset;
+        self.cursor_y = cursor_y;
         self.last_offset = document_line;
         self.last_saved_viewport_offset = self.offset;
         self.needs_redraw = true;

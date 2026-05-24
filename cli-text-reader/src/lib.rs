@@ -96,10 +96,14 @@ pub fn run_cli_text_reader_pdf_path(
   // can paint a "Loading…" splash immediately.
   let (ready_tx, ready_rx) = std::sync::mpsc::channel::<StreamReady>();
   let path_for_thread = canonical_str.clone();
-  let (saved_target_page, saved_line_in_page) =
+  let (saved_target_page, saved_line_in_page, saved_cursor_y) =
     match load_progress(document_hash) {
-      Ok(p) => (p.page.map(|n| n as usize).unwrap_or(1), p.line_in_page),
-      Err(_) => (1, None),
+      Ok(p) => (
+        p.page.map(|n| n as usize).unwrap_or(1),
+        p.line_in_page,
+        p.cursor_y,
+      ),
+      Err(_) => (1, None, None),
     };
 
   // Size of the synchronous preload window around the cursor's saved page.
@@ -165,7 +169,7 @@ pub fn run_cli_text_reader_pdf_path(
     started_at: std::time::Instant::now(),
     canonical_path_display: canonical_str,
     restore_line_in_page: saved_line_in_page,
-
+    restore_cursor_y: saved_cursor_y,
   });
 
   // Mirror the cursor placement that `poll_pending_pdf_stream` will do once
@@ -178,11 +182,12 @@ pub fn run_cli_text_reader_pdf_path(
   let content_height = editor.height.saturating_sub(1);
   let center_y = content_height / 2;
   let line_in_page_hint = saved_line_in_page.unwrap_or(0);
+  let restore_cursor_y = saved_cursor_y.unwrap_or(center_y);
   let predicted_cursor_y =
-    if saved_target_page == 1 && line_in_page_hint < center_y {
+    if saved_target_page == 1 && line_in_page_hint < restore_cursor_y {
       line_in_page_hint
     } else {
-      center_y
+      restore_cursor_y.min(content_height.saturating_sub(1))
     };
   editor.cursor_y = predicted_cursor_y;
 
