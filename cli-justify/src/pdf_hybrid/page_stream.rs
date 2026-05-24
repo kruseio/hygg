@@ -1,5 +1,8 @@
 use super::engine::justify_pdf_hybrid;
-use super::structure::{looks_like_table_or_figure_caption, parse_list_marker};
+use super::structure::{
+  looks_like_git_log_graph_line, looks_like_table_or_figure_caption,
+  parse_list_marker,
+};
 use crate::text_utils::char_len;
 
 // Same lookback window the per-page engine uses when reasoning about
@@ -115,6 +118,15 @@ pub fn inter_page_blank_count(
   }
   if looks_like_table_or_figure_caption(first_next.trim())
     && prior_is_caption(this_lines)
+  {
+    return 0;
+  }
+  if looks_like_git_log_graph_line(first_next.trim())
+    && this_lines
+      .iter()
+      .rev()
+      .find(|l| !l.is_empty())
+      .is_some_and(|l| looks_like_git_log_graph_line(l.trim()))
   {
     return 0;
   }
@@ -418,5 +430,17 @@ mod tests {
     let this = vec!["• Final list item on prior page.".to_string()];
     let next = vec!["A fresh prose paragraph on the next page.".to_string()];
     assert_eq!(inter_page_blank_count(&this, &next), 1);
+  }
+
+  #[test]
+  fn inter_page_blank_count_drops_blanks_between_git_graph_rows() {
+    let this = vec![
+      "  * 2d3acf9 Ignore errors from SIGCHLD on trap".to_string(),
+      "  * | 30e367c Timeout code and tests".to_string(),
+    ];
+    let next = vec![
+      "  * | 5a09431 Add timeout protection to grit".to_string(),
+    ];
+    assert_eq!(inter_page_blank_count(&this, &next), 0);
   }
 }
