@@ -4,6 +4,18 @@ rustflags = [
   # "-C", "target-cpu=native",
 ]
 
+[patch.crates-io.cli-image-to-ascii]
+path = "cli-image-to-ascii"
+
+[patch.crates-io.cli-justify]
+path = "cli-justify"
+
+[patch.crates-io.hygg-shared]
+path = "hygg-shared"
+
+[patch.crates-io.redirect-stderr]
+path = "redirect-stderr"
+
 [profile.dev]
 opt-level = 0
 debug = true
