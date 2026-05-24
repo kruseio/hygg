@@ -123,8 +123,7 @@ impl PdfStream {
       });
     }
 
-    let text_rows =
-      positioned_sanitized_text_rows(&self.doc, page_0based, &raw_text, col);
+    let text_rows = positioned_visual_text_rows(&self.doc, page_0based);
 
     let PdfPageForAnsi { lines, line_kinds } =
       compose_visual_page(text_rows, image_rows, col);
@@ -308,6 +307,7 @@ fn compose_visual_page(
   PdfPageForAnsi { lines, line_kinds }
 }
 
+#[cfg(test)]
 fn positioned_sanitized_text_rows(
   doc: &pdf_oxide::PdfDocument,
   page_0based: usize,
@@ -342,6 +342,136 @@ fn positioned_sanitized_text_rows(
       VisualTextRow { top: anchor.top - extra, left: anchor.left, text }
     })
     .collect()
+}
+
+fn positioned_visual_text_rows(
+  doc: &pdf_oxide::PdfDocument,
+  page_0based: usize,
+) -> Vec<VisualTextRow> {
+  std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    extract_visual_text_rows(doc, page_0based)
+  }))
+  .ok()
+  .flatten()
+  .map(filter_visual_text_rows)
+  .unwrap_or_default()
+}
+
+fn filter_visual_text_rows(rows: Vec<VisualTextRow>) -> Vec<VisualTextRow> {
+  let mut rows: Vec<VisualTextRow> = rows
+    .into_iter()
+    .filter_map(|mut row| {
+      row.text = normalize_visual_text_row(&row.text);
+      if row.text.trim().is_empty() || is_visual_running_header(&row.text) {
+        None
+      } else {
+        Some(row)
+      }
+    })
+    .collect();
+
+  const ISOLATED_GAP: f32 = 30.0;
+  while rows.len() >= 2
+    && is_digits_only(&rows[0].text)
+    && (rows[0].top - rows[1].top).abs() > ISOLATED_GAP
+  {
+    rows.remove(0);
+  }
+  while rows.len() >= 2 {
+    let last = rows.len() - 1;
+    if is_digits_only(&rows[last].text)
+      && (rows[last - 1].top - rows[last].top).abs() > ISOLATED_GAP
+    {
+      rows.remove(last);
+    } else {
+      break;
+    }
+  }
+
+  rows
+}
+
+fn normalize_visual_text_row(text: &str) -> String {
+  let mut normalized = String::with_capacity(text.len());
+  for ch in text.chars() {
+    if is_private_use_or_format_char(ch) {
+      continue;
+    }
+    if ch == '\u{00A0}' {
+      normalized.push(' ');
+    } else {
+      normalized.push(ch);
+    }
+  }
+  normalized
+}
+
+fn is_private_use_or_format_char(ch: char) -> bool {
+  matches!(
+    ch,
+    '\u{E000}'..='\u{F8FF}'
+      | '\u{F0000}'..='\u{FFFFD}'
+      | '\u{100000}'..='\u{10FFFD}'
+      | '\u{FEFF}'
+      | '\u{200B}'..='\u{200D}'
+      | '\u{2060}'
+  )
+}
+
+fn is_visual_running_header(text: &str) -> bool {
+  let trimmed = text.trim();
+  if trimmed.is_empty() {
+    return false;
+  }
+
+  is_chapter_section_visual_header(trimmed)
+}
+
+fn is_chapter_section_visual_header(trimmed: &str) -> bool {
+  let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+  if tokens.len() < 3 || tokens.len() > 6 {
+    return false;
+  }
+
+  let label = tokens[0];
+  if !matches!(label, "CHAPTER" | "SECTION" | "APPENDIX" | "PART") {
+    return false;
+  }
+
+  let number = tokens[1];
+  if number.is_empty() || number.len() > 8 {
+    return false;
+  }
+  if !number.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '.') {
+    return false;
+  }
+
+  let looks_like_section_id = number.chars().any(|ch| ch.is_ascii_digit())
+    || number.chars().all(|ch| ch.is_ascii_uppercase());
+  if !looks_like_section_id {
+    return false;
+  }
+
+  let last = tokens[tokens.len() - 1];
+  if last.chars().all(|ch| ch.is_ascii_digit()) {
+    return false;
+  }
+
+  has_visual_wide_gap_between(trimmed, number, last)
+}
+
+fn has_visual_wide_gap_between(trimmed: &str, first: &str, last: &str) -> bool {
+  let Some(first_idx) = trimmed.find(first) else {
+    return false;
+  };
+  let first_end = first_idx + first.len();
+  let Some(last_start) = trimmed.rfind(last) else {
+    return false;
+  };
+  if last_start <= first_end {
+    return false;
+  }
+  trimmed[first_end..last_start].chars().filter(|ch| *ch == ' ').count() >= 10
 }
 
 fn extract_visual_text_rows(
@@ -813,6 +943,50 @@ mod tests {
     assert!(!rows.is_empty());
     assert_eq!(rows[0].top, anchors[0].top);
     assert_eq!(rows[0].left, anchors[0].left);
+  }
+
+  #[test]
+  fn visual_text_rows_preserve_native_diagram_labels() {
+    let rows = vec![
+      VisualTextRow { top: 800.0, left: 300.0, text: "12".to_string() },
+      VisualTextRow {
+        top: 700.0,
+        left: 72.0,
+        text: "Body text before figure.".to_string(),
+      },
+      VisualTextRow { top: 660.0, left: 250.0, text: "Acrobat".to_string() },
+      VisualTextRow {
+        top: 645.0,
+        left: 90.0,
+        text: "Macintosh application Windows application".to_string(),
+      },
+      VisualTextRow { top: 630.0, left: 275.0, text: "Adobe PDF".to_string() },
+      VisualTextRow { top: 615.0, left: 320.0, text: "printer".to_string() },
+      VisualTextRow { top: 600.0, left: 72.0, text: "\u{f05a}".to_string() },
+      VisualTextRow {
+        top: 560.0,
+        left: 72.0,
+        text: "Body text after figure.".to_string(),
+      },
+      VisualTextRow { top: 40.0, left: 300.0, text: "13".to_string() },
+    ];
+
+    let filtered = filter_visual_text_rows(rows);
+    let texts: Vec<&str> =
+      filtered.iter().map(|row| row.text.as_str()).collect();
+
+    assert_eq!(
+      texts,
+      vec![
+        "Body text before figure.",
+        "Acrobat",
+        "Macintosh application Windows application",
+        "Adobe PDF",
+        "printer",
+        "Body text after figure.",
+      ]
+    );
+    assert!(filtered.iter().all(|row| row.text.trim() != "\u{f05a}"));
   }
 
   #[test]
