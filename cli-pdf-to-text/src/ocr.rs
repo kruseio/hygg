@@ -32,8 +32,8 @@ fn bundled_ocr_config() -> pdf_oxide::ocr::OcrConfig {
 }
 
 #[cfg(feature = "pdf-ocr-bundled")]
-pub(crate) fn bundled_ocr_engine(
-) -> Result<pdf_oxide::ocr::OcrEngine, Box<dyn std::error::Error>> {
+pub(crate) fn bundled_ocr_engine()
+-> Result<pdf_oxide::ocr::OcrEngine, Box<dyn std::error::Error>> {
   let det_model = decompress_gzip(DET_MODEL_GZ)?;
   let rec_model = decompress_gzip(REC_MODEL_GZ)?;
   pdf_oxide::ocr::OcrEngine::from_bytes(
@@ -149,6 +149,33 @@ mod tests {
     assert_eq!(
       super::merge_native_and_ocr_text("Hello World", "hello world"),
       "Hello World"
+    );
+  }
+
+  #[test]
+  #[cfg(feature = "pdf-ocr-bundled")]
+  fn hybrid_merge_uses_ocr_when_native_text_is_empty() {
+    assert_eq!(super::merge_native_and_ocr_text("", "Scan Text"), "Scan Text");
+  }
+
+  #[test]
+  #[cfg(feature = "pdf-ocr-bundled")]
+  fn hybrid_merge_appends_distinct_ocr_text() {
+    assert_eq!(
+      super::merge_native_and_ocr_text("Native label", "Scanned label"),
+      "Native label\nScanned label"
+    );
+  }
+
+  #[test]
+  #[cfg(feature = "pdf-ocr-bundled")]
+  fn hybrid_merge_deduplicates_case_and_punctuation_variants() {
+    assert_eq!(
+      super::merge_native_and_ocr_text(
+        "Figure 2-1: Version control",
+        "figure 21 version control"
+      ),
+      "Figure 2-1: Version control"
     );
   }
 }

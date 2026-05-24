@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 fn strip_ansi_escapes(input: &str) -> String {
@@ -17,6 +18,61 @@ fn strip_ansi_escapes(input: &str) -> String {
     output.push(ch);
   }
   output
+}
+
+#[cfg(feature = "pdf-ocr-bundled")]
+fn write_native_text_pdf(path: &Path, text: &str) {
+  let stream = format!("BT\n/F1 18 Tf\n40 90 Td\n({text}) Tj\nET\n");
+  let objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".to_string(),
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+    format!("<< /Length {} >>\nstream\n{stream}endstream", stream.len()),
+  ];
+
+  let mut pdf = String::from("%PDF-1.4\n");
+  let mut offsets = vec![0usize];
+  for (index, object) in objects.iter().enumerate() {
+    offsets.push(pdf.len());
+    pdf.push_str(&format!("{} 0 obj\n{object}\nendobj\n", index + 1));
+  }
+
+  let xref_offset = pdf.len();
+  pdf.push_str("xref\n");
+  pdf.push_str(&format!("0 {}\n", objects.len() + 1));
+  pdf.push_str("0000000000 65535 f \n");
+  for offset in offsets.iter().skip(1) {
+    pdf.push_str(&format!("{offset:010} 00000 n \n"));
+  }
+  pdf.push_str(&format!(
+    "trailer\n<< /Root 1 0 R /Size {} >>\nstartxref\n{xref_offset}\n%%EOF\n",
+    objects.len() + 1
+  ));
+
+  fs::write(path, pdf).expect("failed to write test PDF");
+}
+
+#[cfg(feature = "pdf-ocr-bundled")]
+fn prepend_fake_ocrmypdf_to_path(dir: &Path) -> PathBuf {
+  let fake_bin = dir.join("bin");
+  fs::create_dir(&fake_bin).expect("failed to create fake bin directory");
+  let fake_ocrmypdf = fake_bin.join("ocrmypdf");
+  let marker = dir.join("ocrmypdf-was-invoked");
+  fs::write(
+    &fake_ocrmypdf,
+    format!("#!/bin/sh\ntouch '{}'\nexit 42\n", marker.display()),
+  )
+  .expect("failed to write fake ocrmypdf");
+
+  #[cfg(unix)]
+  {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(&fake_ocrmypdf, fs::Permissions::from_mode(0o755))
+      .expect("failed to make fake ocrmypdf executable");
+  }
+
+  fake_bin
 }
 
 #[test]
@@ -115,6 +171,54 @@ fn test_ocr_without_bundled_feature_gives_clear_error() {
   assert!(
     stderr.contains("--features pdf-ocr-bundled"),
     "expected feature guidance in stderr, got: {stderr}"
+  );
+}
+
+#[test]
+#[cfg(feature = "pdf-ocr-bundled")]
+fn test_ocr_with_bundled_feature_does_not_invoke_ocrmypdf() {
+  let temp_dir = std::env::temp_dir().join(format!(
+    "hygg-bundled-ocr-{}-{}",
+    std::process::id(),
+    std::thread::current().name().unwrap_or("test")
+  ));
+  let _ = fs::remove_dir_all(&temp_dir);
+  fs::create_dir(&temp_dir).expect("failed to create test temp directory");
+
+  let pdf_path = temp_dir.join("native-text.pdf");
+  write_native_text_pdf(&pdf_path, "Bundled OCR smoke text");
+  let fake_bin = prepend_fake_ocrmypdf_to_path(&temp_dir);
+  let marker = temp_dir.join("ocrmypdf-was-invoked");
+
+  let old_path = std::env::var_os("PATH").unwrap_or_default();
+  let mut paths = vec![fake_bin];
+  paths.extend(std::env::split_paths(&old_path));
+  let path =
+    std::env::join_paths(paths).expect("failed to construct test PATH");
+
+  let output = Command::new(env!("CARGO_BIN_EXE_hygg"))
+    .arg("--ocr")
+    .arg(pdf_path.to_str().unwrap())
+    .env("PATH", path)
+    .output()
+    .expect("Failed to execute hygg");
+
+  let stdout = String::from_utf8_lossy(&output.stdout);
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  let ocrmypdf_was_invoked = marker.exists();
+  let _ = fs::remove_dir_all(&temp_dir);
+
+  assert!(
+    output.status.success(),
+    "hygg --ocr should succeed with bundled OCR; stdout: {stdout}; stderr: {stderr}"
+  );
+  assert!(
+    stdout.contains("Bundled OCR smoke text"),
+    "expected bundled OCR path to preserve native text, got: {stdout}"
+  );
+  assert!(
+    !ocrmypdf_was_invoked,
+    "hygg --ocr invoked ocrmypdf even though bundled OCR was enabled"
   );
 }
 
