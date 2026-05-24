@@ -155,6 +155,8 @@ impl Editor {
       buffer_just_switched: false,
       pdf_streaming: None,
       pdf_pending: None,
+      pdf_load_started_at: None,
+      pdf_load_finished: None,
     }
   }
 
@@ -331,6 +333,14 @@ impl Editor {
     };
     let restore_line_in_page =
       self.pdf_pending.as_ref().and_then(|p| p.restore_line_in_page);
+    let pending_info = self.pdf_pending.as_ref().map(|p| {
+      let filename = std::path::Path::new(&p.canonical_path_display)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&p.canonical_path_display)
+        .to_string();
+      (p.started_at, filename)
+    });
     self.pdf_pending = None;
     match message {
       StreamReady::Err(err) => {
@@ -399,6 +409,17 @@ impl Editor {
         self.last_offset = document_line;
         self.last_saved_viewport_offset = self.offset;
         self.needs_redraw = true;
+        if fully_loaded {
+          if let Some((started, name)) = pending_info {
+            self.pdf_load_finished = Some((
+              std::time::Instant::now(),
+              started.elapsed().as_secs_f32(),
+              name,
+            ));
+          }
+        } else if let Some(info) = pending_info {
+          self.pdf_load_started_at = Some(info);
+        }
       }
     }
     true
@@ -445,12 +466,23 @@ impl Editor {
       return 0;
     }
     state.fully_loaded = state.pages.iter().all(|p| p.is_loaded());
+    let just_finished = state.fully_loaded;
 
     // Snapshot per-page line counts AFTER applying the swaps. Used below
     // to re-anchor the viewport on the same (page, line-in-page) the
     // cursor was on prior to the swap.
     let pages_snapshot: Vec<usize> =
       (0..state.pages.len()).map(|i| state.page_line_count(i)).collect();
+
+    if just_finished {
+      if let Some((started, name)) = self.pdf_load_started_at.take() {
+        self.pdf_load_finished = Some((
+          std::time::Instant::now(),
+          started.elapsed().as_secs_f32(),
+          name,
+        ));
+      }
+    }
 
     self.rebuild_lines_from_pdf_stream();
 

@@ -45,19 +45,24 @@ impl Editor {
     use crossterm::cursor::MoveTo;
     use crossterm::terminal::{Clear, ClearType};
 
-    let message = if let Some(pending) = self.pdf_pending.as_ref() {
-      let file_name = std::path::Path::new(&pending.canonical_path_display)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(&pending.canonical_path_display);
-      let elapsed = pending.started_at.elapsed().as_secs_f32();
-      format!("Loading {file_name}… ({elapsed:.1}s)")
+    let message = if self.pdf_pending.is_some() {
+      "Loading page 1…".to_string()
     } else if let Some(state) = self.pdf_streaming.as_ref()
       && !state.fully_loaded
     {
-      let total = state.pages.len();
       let loaded = state.pages.iter().filter(|p| p.is_loaded()).count();
-      format!("Loading {loaded}/{total} pages…")
+      format!("Loading page {loaded}…")
+    } else if let Some((finished_at, _, _)) = self.pdf_load_finished.as_ref() {
+      let age = finished_at.elapsed().as_secs_f32();
+      if age > 3.0 || age >= 0.5 {
+        return Ok(());
+      }
+      if let Some(state) = self.pdf_streaming.as_ref() {
+        let total = state.pages.len();
+        format!("Loading page {total}…")
+      } else {
+        return Ok(());
+      }
     } else {
       return Ok(());
     };
@@ -66,8 +71,10 @@ impl Editor {
       return Ok(());
     }
 
-    let msg_width = message.chars().count();
-    let x = self.width.saturating_sub(msg_width).saturating_sub(2) as u16;
+    // "Loading page 9999…" = 18 chars — fix the position so the
+    // indicator doesn't shift as the page number grows.
+    const MAX_WIDTH: usize = 18;
+    let x = self.width.saturating_sub(MAX_WIDTH).saturating_sub(2) as u16;
     let y = self.height.saturating_sub(2) as u16;
 
     buffer.queue(MoveTo(x, y))?;
@@ -88,6 +95,7 @@ impl Editor {
       // If the PDF is still being opened in the background, see if the
       // opener has finished and install the streaming state when it has.
       if self.pdf_pending.is_some() {
+        self.pdf_load_finished = None;
         let _ = self.poll_pending_pdf_stream();
         // Repaint each tick so the elapsed-time counter in the loading
         // splash actually advances while we wait on the opener thread.
@@ -100,6 +108,23 @@ impl Editor {
       // redraw if anything new arrived.
       if self.pdf_streaming.is_some() {
         let _ = self.drain_pdf_stream();
+      }
+
+      // Manage the "Loaded in X.Xs" indicator: tick through the 500 ms
+      // hold so the message appears promptly, then expire after 3 s.
+      {
+        let load_age = self
+          .pdf_load_finished
+          .as_ref()
+          .map(|(t, _, _)| t.elapsed().as_secs_f32());
+        if let Some(age) = load_age {
+          if age >= 3.0 {
+            self.pdf_load_finished = None;
+            self.mark_dirty();
+          } else if age < 0.55 {
+            self.mark_dirty();
+          }
+        }
       }
 
       self.debug_log(&format!(
@@ -221,7 +246,10 @@ impl Editor {
             .as_ref()
             .map(|s| !s.fully_loaded)
             .unwrap_or(false);
-          if self.pdf_pending.is_some() || streaming_loading {
+          if self.pdf_pending.is_some()
+            || streaming_loading
+            || self.pdf_load_finished.is_some()
+          {
             self.draw_pdf_loading_indicator_buffered(&mut render_buffer)?;
           }
 
@@ -333,10 +361,16 @@ impl Editor {
         let streaming_active =
           self.pdf_streaming.as_ref().map(|s| !s.fully_loaded).unwrap_or(false);
         let pending_pdf = self.pdf_pending.is_some();
+        let load_transitioning = self
+          .pdf_load_finished
+          .as_ref()
+          .map(|(t, _, _)| t.elapsed().as_secs_f32() < 0.55)
+          .unwrap_or(false);
         let timeout = if self.needs_redraw
           || self.tutorial_demo_mode
           || streaming_active
           || pending_pdf
+          || load_transitioning
         {
           std::time::Duration::from_millis(16) // ~60fps when animating, in demo, streaming, or opening PDF
         } else {
@@ -583,6 +617,7 @@ mod tests {
       started_at: Instant::now(),
       canonical_path_display: "pending.pdf".to_string(),
       restore_line_in_page: None,
+
     });
 
     let mut buffer = Vec::new();

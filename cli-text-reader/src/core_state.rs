@@ -84,4 +84,6 @@ pub struct Editor {
   pub pdf_streaming: Option<PdfStreamingState>,
   // Background-opening PDF state; held while we wait for the doc to parse.
   pub pdf_pending: Option<PendingPdfStream>,
+  pub pdf_load_started_at: Option<(Instant, String)>,
+  pub pdf_load_finished: Option<(Instant, f32, String)>,
 }

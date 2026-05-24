@@ -162,6 +162,7 @@ pub fn run_cli_text_reader_pdf_path(
     started_at: std::time::Instant::now(),
     canonical_path_display: canonical_str,
     restore_line_in_page: saved_line_in_page,
+
   });
 
   // Mirror the cursor placement that `poll_pending_pdf_stream` will do once
