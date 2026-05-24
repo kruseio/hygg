@@ -79,6 +79,21 @@ pub fn run_cli_text_reader_pdf_path(
   pdf_path: String,
   col: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
+  run_cli_text_reader_pdf_path_inner(pdf_path, col, false)
+}
+
+pub fn run_cli_text_reader_pdf_path_with_bundled_ocr(
+  pdf_path: String,
+  col: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+  run_cli_text_reader_pdf_path_inner(pdf_path, col, true)
+}
+
+fn run_cli_text_reader_pdf_path_inner(
+  pdf_path: String,
+  col: usize,
+  bundled_ocr: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
   debug::init_debug_logging()?;
   debug::debug_log(
     "main",
@@ -115,7 +130,12 @@ pub fn run_cli_text_reader_pdf_path(
 
   std::thread::Builder::new().name("hygg-pdf-opener".into()).spawn(
     move || {
-      let message = match cli_pdf_to_text::PdfStream::open(&path_for_thread) {
+      let opened = if bundled_ocr {
+        cli_pdf_to_text::PdfStream::open_with_bundled_ocr(&path_for_thread)
+      } else {
+        cli_pdf_to_text::PdfStream::open(&path_for_thread)
+      };
+      let message = match opened {
         Ok(stream) => {
           let total_pages = stream.total_pages();
           if total_pages == 0 {

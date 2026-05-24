@@ -127,6 +127,21 @@ pub fn pdf_to_ansi_text(
   col: usize,
 ) -> Result<String, Box<dyn std::error::Error>> {
   let stream = PdfStream::open(pdf_path)?;
+  pdf_stream_to_ansi_text(&stream, col)
+}
+
+pub fn pdf_to_ansi_text_with_bundled_ocr(
+  pdf_path: &str,
+  col: usize,
+) -> Result<String, Box<dyn std::error::Error>> {
+  let stream = PdfStream::open_with_bundled_ocr(pdf_path)?;
+  pdf_stream_to_ansi_text(&stream, col)
+}
+
+fn pdf_stream_to_ansi_text(
+  stream: &PdfStream,
+  col: usize,
+) -> Result<String, Box<dyn std::error::Error>> {
   let mut output = Vec::new();
   for page in 1..=stream.total_pages() {
     let Some(rendered) = stream.extract_page_with_images(page, col) else {

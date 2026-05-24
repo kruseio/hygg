@@ -19,27 +19,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     return Ok(());
   }
 
-  // Streaming path: terminal output, a PDF file, no OCR, no stdin.
+  // Streaming path: terminal output, a PDF file, no stdin.
   if std::io::stdout().is_terminal()
     && stdin_content.is_none()
-    && !args.ocr
     && let Some(pdf_path) = resolve_pdf_path(&args)
   {
     if let Err(e) = redirect_stderr::redirect_stderr() {
       eprintln!("Warning: Failed to redirect stderr: {e}");
     }
-    cli_text_reader::run_cli_text_reader_pdf_path(pdf_path, args.col)?;
+    if args.ocr {
+      cli_text_reader::run_cli_text_reader_pdf_path_with_bundled_ocr(
+        pdf_path,
+        args.col,
+      )?;
+    } else {
+      cli_text_reader::run_cli_text_reader_pdf_path(pdf_path, args.col)?;
+    }
     return Ok(());
   }
 
-  // Redirected non-OCR PDFs keep the extracted text and include inline
-  // truecolor image art. OCR output remains text-only.
+  // Redirected PDFs keep the extracted text and include inline truecolor image
+  // art. With OCR enabled, OCR text is overlaid onto those rendered regions.
   if !std::io::stdout().is_terminal()
     && stdin_content.is_none()
-    && !args.ocr
     && let Some(pdf_path) = resolve_pdf_path(&args)
   {
-    match cli_pdf_to_text::pdf_to_ansi_text(&pdf_path, args.col) {
+    let rendered = if args.ocr {
+      cli_pdf_to_text::pdf_to_ansi_text_with_bundled_ocr(&pdf_path, args.col)
+    } else {
+      cli_pdf_to_text::pdf_to_ansi_text(&pdf_path, args.col)
+    };
+    match rendered {
       Ok(content) => println!("{content}"),
       Err(e) => {
         eprintln!("Error:\nUnable to read PDF file '{pdf_path}'\n");

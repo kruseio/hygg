@@ -311,14 +311,18 @@ fn detect_vector_diagram_regions(
   doc: &pdf_oxide::PdfDocument,
   page: usize,
 ) -> Vec<TextRegion> {
-  let Ok((_, _, page_right, page_top)) = doc.get_page_media_box(page) else {
+  let Ok((llx, lly, urx, ury)) = doc.get_page_media_box(page) else {
     return Vec::new();
   };
-  let page_width = page_right.abs();
-  let page_height = page_top.abs();
+  let page_left = llx.min(urx);
+  let page_top = lly.min(ury);
+  let page_width = (urx - llx).abs();
+  let page_height = (ury - lly).abs();
   if page_width <= 0.0 || page_height <= 0.0 {
     return Vec::new();
   }
+  let page_right = page_left + page_width;
+  let page_bottom = page_top + page_height;
   let Ok(paths) = doc.extract_paths(page) else {
     return Vec::new();
   };
@@ -326,8 +330,8 @@ fn detect_vector_diagram_regions(
   let mut count = 0usize;
   let mut left = f32::INFINITY;
   let mut bottom = f32::INFINITY;
-  let mut right: f32 = 0.0;
-  let mut top: f32 = 0.0;
+  let mut right = f32::NEG_INFINITY;
+  let mut top = f32::NEG_INFINITY;
 
   for path in paths {
     let bbox = path.bbox;
@@ -355,11 +359,15 @@ fn detect_vector_diagram_regions(
   }
 
   let pad = 4.0;
+  let padded_left = (left - pad).max(page_left);
+  let padded_bottom = (bottom - pad).max(page_top);
+  let padded_right = (right + pad).min(page_right);
+  let padded_top = (top + pad).min(page_bottom);
   let region = TextRegion {
-    left: (left - pad).max(0.0),
-    bottom: (bottom - pad).max(0.0),
-    right: (right + pad).min(page_width),
-    top: (top + pad).min(page_height),
+    left: padded_left,
+    bottom: padded_bottom,
+    right: padded_right,
+    top: padded_top,
   };
 
   if region.width() < 24.0 || region.height() < 24.0 {
