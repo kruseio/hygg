@@ -138,6 +138,15 @@ fn test_redirected_pdf_output_includes_inline_ansi_images() {
     stdout.contains("Figure 1. Local version control diagram"),
     "redirected PDF output should include early Pro Git figure labels"
   );
+  for needle in ["$ git status", "$ git config", "Changes to be committed"] {
+    assert!(
+      !stdout.lines().any(|line| {
+        let stripped = strip_ansi_escapes(line);
+        stripped.contains('\u{2580}') && stripped.contains(needle)
+      }),
+      "code/preformatted text should remain plaintext, not ANSI art: {needle}"
+    );
+  }
   for line in stdout.lines() {
     let visible = strip_ansi_escapes(line).chars().count();
     assert!(

@@ -144,15 +144,22 @@ impl PdfStream {
     .and_then(Result::ok)
     .unwrap_or_default();
 
+    let text_rows = positioned_visual_text_rows(&self.doc, page_0based);
+    #[cfg(feature = "pdf-ocr-bundled")]
+    let allow_unlabeled_vector_regions = self.ocr_engine.is_some();
+    #[cfg(not(feature = "pdf-ocr-bundled"))]
+    let allow_unlabeled_vector_regions = false;
+
     let mut image_rows =
       render_pdf_images(&self.doc, page_0based, col, images.as_slice());
     image_rows.extend(render_vector_diagram_regions(
       &self.doc,
       page_0based,
       col,
+      &text_rows,
+      allow_unlabeled_vector_regions,
     ));
 
-    let text_rows = positioned_visual_text_rows(&self.doc, page_0based);
     #[cfg(feature = "pdf-ocr-bundled")]
     let text_rows = {
       let mut text_rows = text_rows;
@@ -341,7 +348,9 @@ fn ocr_visual_text_rows(
     out.extend(ocr_dynamic_image_text_rows(engine, &dynamic_image, region));
   }
 
-  for (region, dynamic_image) in render_vector_diagram_images(doc, page_0based) {
+  for (region, dynamic_image) in
+    render_vector_diagram_images(doc, page_0based, native_rows)
+  {
     if native_text_is_sufficient_in_region(native_rows, region) {
       continue;
     }
@@ -365,7 +374,7 @@ fn native_text_is_sufficient_in_region(
   normalized_visual_text(&text).len() >= 8
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(any(feature = "pdf-rendering", feature = "pdf-ocr-bundled", test))]
 fn visual_text_row_overlaps_region(
   row: &VisualTextRow,
   region: PdfRegion,
@@ -433,6 +442,7 @@ fn ocr_polygon_pdf_anchor(
 fn render_vector_diagram_images(
   doc: &pdf_oxide::PdfDocument,
   page_0based: usize,
+  native_rows: &[VisualTextRow],
 ) -> Vec<(PdfRegion, image::DynamicImage)> {
   let (page_left, page_top, page_width, page_height) =
     page_metrics(doc, page_0based);
@@ -448,6 +458,8 @@ fn render_vector_diagram_images(
     page_top,
     page_width,
     page_height,
+    native_rows,
+    true,
   );
   let options = pdf_oxide::rendering::RenderOptions::with_dpi(120);
 
@@ -472,6 +484,8 @@ fn render_vector_diagram_regions(
   doc: &pdf_oxide::PdfDocument,
   page_0based: usize,
   col: usize,
+  native_rows: &[VisualTextRow],
+  allow_missing_native_text: bool,
 ) -> Vec<VisualImageRows> {
   if col == 0 {
     return Vec::new();
@@ -491,6 +505,8 @@ fn render_vector_diagram_regions(
     page_top,
     page_width,
     page_height,
+    native_rows,
+    allow_missing_native_text,
   );
 
   let options = pdf_oxide::rendering::RenderOptions::with_dpi(120);
@@ -541,6 +557,8 @@ fn render_vector_diagram_regions(
   _doc: &pdf_oxide::PdfDocument,
   _page_0based: usize,
   _col: usize,
+  _native_rows: &[VisualTextRow],
+  _allow_missing_native_text: bool,
 ) -> Vec<VisualImageRows> {
   Vec::new()
 }
@@ -552,12 +570,10 @@ fn detect_vector_diagram_regions(
   page_top: f32,
   page_width: f32,
   page_height: f32,
+  native_rows: &[VisualTextRow],
+  allow_missing_native_text: bool,
 ) -> Vec<PdfRegion> {
-  let mut count = 0usize;
-  let mut left = f32::INFINITY;
-  let mut bottom = f32::INFINITY;
-  let mut right = f32::NEG_INFINITY;
-  let mut top = f32::NEG_INFINITY;
+  let mut clusters: Vec<VectorPathCluster> = Vec::new();
 
   for path in paths {
     let bbox = path.bbox;
@@ -573,35 +589,207 @@ fn detect_vector_diagram_regions(
       continue;
     }
 
-    count += 1;
-    left = left.min(bbox.left());
-    bottom = bottom.min(bbox.top());
-    right = right.max(bbox.right());
-    top = top.max(bbox.bottom());
+    let bounds = VectorPathBounds {
+      left: bbox.left(),
+      bottom: bbox.top(),
+      right: bbox.right(),
+      top: bbox.bottom(),
+    };
+    add_vector_path_to_clusters(&mut clusters, bounds);
   }
 
-  if count < 3 || !left.is_finite() || !bottom.is_finite() {
-    return Vec::new();
-  }
-
-  let pad = 4.0;
   let page_right = page_left + page_width;
   let page_bottom = page_top + page_height;
-  let padded_left = (left - pad).max(page_left);
-  let padded_bottom = (bottom - pad).max(page_top);
-  let padded_right = (right + pad).min(page_right);
-  let padded_top = (top + pad).min(page_bottom);
-  let region = PdfRegion {
-    left: padded_left,
-    bottom: padded_bottom,
-    width: (padded_right - padded_left).max(0.0),
-    height: (padded_top - padded_bottom).max(0.0),
+  clusters
+    .into_iter()
+    .filter(|cluster| cluster.count >= 3)
+    .filter_map(|cluster| {
+      cluster.region_with_padding(page_left, page_top, page_right, page_bottom)
+    })
+    .filter(|region| region.width >= 24.0 && region.height >= 24.0)
+    .filter(|region| {
+      should_render_vector_diagram_region(
+        *region,
+        native_rows,
+        allow_missing_native_text,
+      )
+    })
+    .collect()
+}
+
+#[cfg(any(feature = "pdf-rendering", test))]
+#[derive(Clone, Copy, Debug)]
+struct VectorPathBounds {
+  left: f32,
+  bottom: f32,
+  right: f32,
+  top: f32,
+}
+
+#[cfg(any(feature = "pdf-rendering", test))]
+#[derive(Clone, Copy, Debug)]
+struct VectorPathCluster {
+  count: usize,
+  left: f32,
+  bottom: f32,
+  right: f32,
+  top: f32,
+}
+
+#[cfg(any(feature = "pdf-rendering", test))]
+impl VectorPathCluster {
+  fn new(bounds: VectorPathBounds) -> Self {
+    Self {
+      count: 1,
+      left: bounds.left,
+      bottom: bounds.bottom,
+      right: bounds.right,
+      top: bounds.top,
+    }
+  }
+
+  fn is_near(&self, bounds: VectorPathBounds) -> bool {
+    const CLUSTER_TOLERANCE: f32 = 48.0;
+    bounds.left <= self.right + CLUSTER_TOLERANCE
+      && bounds.right >= self.left - CLUSTER_TOLERANCE
+      && bounds.bottom <= self.top + CLUSTER_TOLERANCE
+      && bounds.top >= self.bottom - CLUSTER_TOLERANCE
+  }
+
+  fn merge_bounds(&mut self, bounds: VectorPathBounds) {
+    self.count += 1;
+    self.left = self.left.min(bounds.left);
+    self.bottom = self.bottom.min(bounds.bottom);
+    self.right = self.right.max(bounds.right);
+    self.top = self.top.max(bounds.top);
+  }
+
+  fn merge_cluster(&mut self, other: Self) {
+    self.count += other.count;
+    self.left = self.left.min(other.left);
+    self.bottom = self.bottom.min(other.bottom);
+    self.right = self.right.max(other.right);
+    self.top = self.top.max(other.top);
+  }
+
+  fn region_with_padding(
+    &self,
+    page_left: f32,
+    page_top: f32,
+    page_right: f32,
+    page_bottom: f32,
+  ) -> Option<PdfRegion> {
+    if !self.left.is_finite() || !self.bottom.is_finite() {
+      return None;
+    }
+    let pad = 4.0;
+    let padded_left = (self.left - pad).max(page_left);
+    let padded_bottom = (self.bottom - pad).max(page_top);
+    let padded_right = (self.right + pad).min(page_right);
+    let padded_top = (self.top + pad).min(page_bottom);
+    Some(PdfRegion {
+      left: padded_left,
+      bottom: padded_bottom,
+      width: (padded_right - padded_left).max(0.0),
+      height: (padded_top - padded_bottom).max(0.0),
+    })
+  }
+}
+
+#[cfg(any(feature = "pdf-rendering", test))]
+fn add_vector_path_to_clusters(
+  clusters: &mut Vec<VectorPathCluster>,
+  bounds: VectorPathBounds,
+) {
+  let Some(mut cluster_idx) =
+    clusters.iter().position(|cluster| cluster.is_near(bounds))
+  else {
+    clusters.push(VectorPathCluster::new(bounds));
+    return;
   };
 
-  if region.width < 24.0 || region.height < 24.0 {
-    Vec::new()
+  clusters[cluster_idx].merge_bounds(bounds);
+  let mut idx = 0;
+  while idx < clusters.len() {
+    if idx != cluster_idx && clusters[cluster_idx].is_near(VectorPathBounds {
+      left: clusters[idx].left,
+      bottom: clusters[idx].bottom,
+      right: clusters[idx].right,
+      top: clusters[idx].top,
+    }) {
+      let other = clusters.remove(idx);
+      if idx < cluster_idx {
+        cluster_idx -= 1;
+      }
+      clusters[cluster_idx].merge_cluster(other);
+    } else {
+      idx += 1;
+    }
+  }
+}
+
+#[cfg(any(feature = "pdf-rendering", test))]
+fn should_render_vector_diagram_region(
+  region: PdfRegion,
+  native_rows: &[VisualTextRow],
+  allow_missing_native_text: bool,
+) -> bool {
+  if !has_nearby_figure_caption(region, native_rows) {
+    return false;
+  }
+  allow_missing_native_text || has_native_text_inside_region(region, native_rows)
+}
+
+#[cfg(any(feature = "pdf-rendering", test))]
+fn has_nearby_figure_caption(
+  region: PdfRegion,
+  native_rows: &[VisualTextRow],
+) -> bool {
+  native_rows.iter().any(|row| {
+    is_figure_caption(&row.text)
+      && row.left <= region.left + region.width + 80.0
+      && row.left + row.text.chars().count() as f32 * 5.0 >= region.left - 80.0
+      && vertical_distance_to_region(region, row.top) <= 90.0
+  })
+}
+
+#[cfg(any(feature = "pdf-rendering", test))]
+fn has_native_text_inside_region(
+  region: PdfRegion,
+  native_rows: &[VisualTextRow],
+) -> bool {
+  native_rows.iter().any(|row| {
+    !is_figure_caption(&row.text)
+      && visual_alnum_len(&row.text) >= 2
+      && visual_text_row_overlaps_region(row, region)
+  })
+}
+
+#[cfg(any(feature = "pdf-rendering", test))]
+fn visual_alnum_len(text: &str) -> usize {
+  text.chars().filter(|ch| ch.is_alphanumeric()).count()
+}
+
+#[cfg(any(feature = "pdf-rendering", test))]
+fn is_figure_caption(text: &str) -> bool {
+  let trimmed = text.trim_start();
+  let Some(rest) = trimmed.strip_prefix("Figure ") else {
+    return false;
+  };
+  rest
+    .chars()
+    .next()
+    .is_some_and(|ch| ch.is_ascii_digit())
+}
+
+#[cfg(any(feature = "pdf-rendering", test))]
+fn vertical_distance_to_region(region: PdfRegion, y: f32) -> f32 {
+  if y < region.bottom {
+    region.bottom - y
+  } else if y > region.top() {
+    y - region.top()
   } else {
-    vec![region]
+    0.0
   }
 }
 
@@ -1677,7 +1865,13 @@ mod tests {
       )),
     ];
 
-    let regions = detect_vector_diagram_regions(&paths, 0.0, 0.0, 612.0, 792.0);
+    let text_rows = vec![VisualTextRow {
+      top: 180.0,
+      left: 100.0,
+      text: "Figure 1. Test diagram".to_string(),
+    }];
+    let regions =
+      detect_vector_diagram_regions(&paths, 0.0, 0.0, 612.0, 792.0, &text_rows, true);
 
     assert_eq!(regions.len(), 1);
     assert!(regions[0].left <= 100.0);
@@ -1693,8 +1887,94 @@ mod tests {
     )];
 
     assert!(
-      detect_vector_diagram_regions(&paths, 0.0, 0.0, 612.0, 792.0).is_empty()
+      detect_vector_diagram_regions(&paths, 0.0, 0.0, 612.0, 792.0, &[], true)
+        .is_empty()
     );
+  }
+
+  #[test]
+  fn ignores_vector_regions_without_nearby_figure_caption() {
+    let paths = vec![
+      pdf_oxide::elements::PathContent::new(pdf_oxide::geometry::Rect::new(
+        100.0, 200.0, 80.0, 40.0,
+      )),
+      pdf_oxide::elements::PathContent::new(pdf_oxide::geometry::Rect::new(
+        220.0, 200.0, 80.0, 40.0,
+      )),
+      pdf_oxide::elements::PathContent::new(pdf_oxide::geometry::Rect::new(
+        160.0, 280.0, 80.0, 40.0,
+      )),
+    ];
+
+    assert!(
+      detect_vector_diagram_regions(&paths, 0.0, 0.0, 612.0, 792.0, &[], true)
+        .is_empty()
+    );
+  }
+
+  #[test]
+  fn ignores_unlabeled_vector_regions_without_ocr() {
+    let paths = vec![
+      pdf_oxide::elements::PathContent::new(pdf_oxide::geometry::Rect::new(
+        100.0, 200.0, 80.0, 40.0,
+      )),
+      pdf_oxide::elements::PathContent::new(pdf_oxide::geometry::Rect::new(
+        220.0, 200.0, 80.0, 40.0,
+      )),
+      pdf_oxide::elements::PathContent::new(pdf_oxide::geometry::Rect::new(
+        160.0, 280.0, 80.0, 40.0,
+      )),
+    ];
+    let text_rows = vec![VisualTextRow {
+      top: 180.0,
+      left: 100.0,
+      text: "Figure 1. Test diagram".to_string(),
+    }];
+
+    assert!(
+      detect_vector_diagram_regions(
+        &paths,
+        0.0,
+        0.0,
+        612.0,
+        792.0,
+        &text_rows,
+        false,
+      )
+      .is_empty()
+    );
+  }
+
+  #[test]
+  fn keeps_vector_regions_with_native_overlay_text_without_ocr() {
+    let paths = vec![
+      pdf_oxide::elements::PathContent::new(pdf_oxide::geometry::Rect::new(
+        100.0, 200.0, 80.0, 40.0,
+      )),
+      pdf_oxide::elements::PathContent::new(pdf_oxide::geometry::Rect::new(
+        220.0, 200.0, 80.0, 40.0,
+      )),
+      pdf_oxide::elements::PathContent::new(pdf_oxide::geometry::Rect::new(
+        160.0, 280.0, 80.0, 40.0,
+      )),
+    ];
+    let text_rows = vec![
+      VisualTextRow {
+        top: 180.0,
+        left: 100.0,
+        text: "Figure 1. Test diagram".to_string(),
+      },
+      VisualTextRow {
+        top: 220.0,
+        left: 120.0,
+        text: "Native label".to_string(),
+      },
+    ];
+
+    let regions =
+      detect_vector_diagram_regions(&paths, 0.0, 0.0, 612.0, 792.0, &text_rows, false);
+
+    assert_eq!(regions.len(), 1);
   }
 
   #[test]
@@ -1711,8 +1991,20 @@ mod tests {
       )),
     ];
 
-    let regions =
-      detect_vector_diagram_regions(&paths, 100.0, 200.0, 500.0, 500.0);
+    let text_rows = vec![VisualTextRow {
+      top: 206.0,
+      left: 110.0,
+      text: "Figure 1. Test diagram".to_string(),
+    }];
+    let regions = detect_vector_diagram_regions(
+      &paths,
+      100.0,
+      200.0,
+      500.0,
+      500.0,
+      &text_rows,
+      true,
+    );
 
     assert_eq!(regions.len(), 1);
     assert!(regions[0].left >= 100.0);
@@ -1735,8 +2027,20 @@ mod tests {
       )),
     ];
 
-    let regions =
-      detect_vector_diagram_regions(&paths, -300.0, -200.0, 500.0, 500.0);
+    let text_rows = vec![VisualTextRow {
+      top: -194.0,
+      left: -290.0,
+      text: "Figure 1. Test diagram".to_string(),
+    }];
+    let regions = detect_vector_diagram_regions(
+      &paths,
+      -300.0,
+      -200.0,
+      500.0,
+      500.0,
+      &text_rows,
+      true,
+    );
 
     assert_eq!(regions.len(), 1);
     assert!(regions[0].left >= -300.0);
