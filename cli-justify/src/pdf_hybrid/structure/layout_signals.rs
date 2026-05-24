@@ -134,6 +134,16 @@ fn symbol_density_looks_like_code(trimmed: &str) -> bool {
     return false;
   }
 
+  // A wrap-tail fragment like `241)` or `(241` is digits plus a single
+  // paren. Punct-density would flag it as a code block (one `)` out of
+  // four chars is the 0.25 boundary), so the engine inserts code-block
+  // padding above and below — splitting `Plate 1 … page` from the `241)`
+  // continuation. Pure numeric/single-punct fragments are wrap leftovers,
+  // not code.
+  if alpha == 0 && punctuation <= 1 {
+    return false;
+  }
+
   let alpha_ratio = alpha as f64 / non_space as f64;
   let punct_ratio = punctuation as f64 / non_space as f64;
   punct_ratio >= 0.25 && alpha_ratio <= 0.80
@@ -196,6 +206,16 @@ pub(crate) fn looks_like_git_log_graph_line(trimmed: &str) -> bool {
 pub(crate) fn looks_like_code_block_line(line: &str) -> bool {
   let trimmed = line.trim();
   if trimmed.is_empty() {
+    return false;
+  }
+
+  // PDF Reference literal-string examples ("( This is a string )", or
+  // multi-line `( These \` … `are the same . )`) render with a leading
+  // `( ` and read as prose, not code. Without this exception the high
+  // punctuation density of opener lines like `( These \` and bare
+  // closers like `)` makes them code blocks, which inserts blank-line
+  // padding above/below and splits the multi-line example apart.
+  if looks_like_pdf_literal_string_line(trimmed) {
     return false;
   }
 
@@ -262,6 +282,24 @@ fn has_strong_code_marker_signal(trimmed: &str) -> bool {
     return true;
   }
   marker_hits >= 2 && word_count <= 8
+}
+
+fn looks_like_pdf_literal_string_line(trimmed: &str) -> bool {
+  // Match PDF Reference literal-string multi-line CONTINUATION patterns
+  // only, where the existing code-block padding inserts blank lines in
+  // the middle of one logical example:
+  //   * `( ... \` — opener with backslash continuation
+  //   * bare `)` — standalone closer of a multi-line example
+  //   * bare `(` — rare standalone opener
+  // Single-line complete examples like `( This is a string )` and
+  // `( \0053 )` stay classified as code blocks: there the surrounding
+  // blank-line padding helpfully isolates each example from the prose
+  // around it (otherwise the example collapses inline into a
+  // mid-sentence paragraph join).
+  if trimmed == "(" || trimmed == ")" {
+    return true;
+  }
+  trimmed.starts_with("( ") && trimmed.ends_with('\\')
 }
 
 pub(crate) fn looks_like_toc_entry(trimmed: &str) -> bool {

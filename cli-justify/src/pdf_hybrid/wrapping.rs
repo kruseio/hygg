@@ -343,12 +343,30 @@ pub(super) fn flush_pending_pdf_block(
 
   match block {
     PendingPdfBlock::Paragraph { indent, lines } => {
+      let is_caption = lines
+        .first()
+        .map(|first| {
+          super::structure::looks_like_table_or_figure_caption(first.trim())
+        })
+        .unwrap_or(false);
       let paragraph = collapse_pdf_paragraph_lines(lines);
       let capped_indent = capped_paragraph_indent_width(&paragraph, &indent);
       let indent = capped_indent.map_or(indent, |width| " ".repeat(width));
-      out.extend(wrap_paragraph_with_prefix(
-        &paragraph, line_width, &indent, &indent,
-      ));
+      // Caption-style paragraphs (Plate / Table / Figure / Diagram
+      // entries in a front-matter list) read as labeled items, not
+      // prose. Justifying them inserts extra inter-word spacing that
+      // makes a tight list look double-spaced and ragged. Plain wrap
+      // gives the expected `Plate 1 … long title …` shape with the
+      // overflow word on a continuation line.
+      if is_caption {
+        out.extend(wrap_plain_with_prefix(
+          &paragraph, line_width, &indent, &indent,
+        ));
+      } else {
+        out.extend(wrap_paragraph_with_prefix(
+          &paragraph, line_width, &indent, &indent,
+        ));
+      }
       capped_indent
     }
     PendingPdfBlock::ListItem { indent, marker, lines } => {

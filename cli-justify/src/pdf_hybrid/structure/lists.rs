@@ -237,6 +237,20 @@ pub(crate) fn should_start_new_pdf_paragraph(
     if prev.ends_with(')') && next_trimmed.starts_with("( ") {
       return true;
     }
+    // Multi-line literal-string examples — `( These \` continued by
+    // `two strings \` and closed by `are the same . )` on the next
+    // line, or `( ... .` closed by a bare `)` underneath — must keep
+    // each source line on its own output line. Break the paragraph
+    // when the new line opens or closes a `( ... )` example, or when
+    // the previous line ended with a backslash continuation.
+    if next_trimmed.starts_with("( ")
+      || matches!(next_trimmed, "(" | ")" | "( )")
+    {
+      return true;
+    }
+    if prev.ends_with('\\') {
+      return true;
+    }
     return false;
   }
 

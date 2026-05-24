@@ -79,6 +79,29 @@ fn is_running_header_or_footer_line(line: &str) -> bool {
     return true;
   }
 
+  // Per-page running headers in the PDF Reference look like
+  //   `CHAPTER 3                                                Syntax`
+  //   `SECTION 3.2                                              Objects`
+  // — an uppercase label, a section number, a wide gap, then a short
+  // title. pdf_oxide preserves them at the top of every page within the
+  // chapter, where they otherwise inject a stray heading mid-paragraph
+  // once page text is concatenated. The trailing-page branches below
+  // can't see them because the last token is a word, not a digit run.
+  if is_chapter_section_running_header(trimmed) {
+    return true;
+  }
+
+  // Front-matter sections ("Figures", "Tables", "Contents") have a
+  // single-word centered heading on their first page and a left-
+  // aligned single-word running head on each subsequent page. The
+  // centered version is preserved as the actual section title via
+  // `centered_heading_label`; this branch drops the left-aligned
+  // running head so it doesn't wedge itself between adjacent list
+  // entries when pages are concatenated.
+  if is_left_aligned_section_running_head(line, trimmed) {
+    return true;
+  }
+
   let trailing_page = trimmed
     .split_whitespace()
     .last()
@@ -106,6 +129,93 @@ fn is_running_header_or_footer_line(line: &str) -> bool {
   }
 
   false
+}
+
+fn is_left_aligned_section_running_head(line: &str, trimmed: &str) -> bool {
+  let leading_ws = line.chars().take_while(|ch| ch.is_whitespace()).count();
+  if leading_ws >= 12 {
+    return false;
+  }
+  let mut words = trimmed.split_whitespace();
+  let Some(only) = words.next() else {
+    return false;
+  };
+  if words.next().is_some() {
+    return false;
+  }
+  matches!(
+    only,
+    "Figures"
+      | "Tables"
+      | "Contents"
+      | "Plates"
+      | "Bibliography"
+      | "Index"
+      | "Preface"
+      | "Glossary"
+  )
+}
+
+fn is_chapter_section_running_header(trimmed: &str) -> bool {
+  let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+  if tokens.len() < 3 || tokens.len() > 6 {
+    return false;
+  }
+
+  let label = tokens[0];
+  if !matches!(label, "CHAPTER" | "SECTION" | "APPENDIX" | "PART") {
+    return false;
+  }
+
+  let number = tokens[1];
+  if number.is_empty() || number.len() > 8 {
+    return false;
+  }
+  if !number
+    .chars()
+    .all(|ch| ch.is_ascii_alphanumeric() || ch == '.')
+  {
+    return false;
+  }
+  // Accept "3", "3.2", "A", "A.1" — anything with a digit, or a short
+  // all-uppercase token (appendix numbering uses A/B/C without digits).
+  let looks_like_section_id = number.chars().any(|ch| ch.is_ascii_digit())
+    || number.chars().all(|ch| ch.is_ascii_uppercase());
+  if !looks_like_section_id {
+    return false;
+  }
+
+  let last = tokens[tokens.len() - 1];
+  if last.chars().all(|ch| ch.is_ascii_digit()) {
+    return false;
+  }
+  if !last.chars().next().is_some_and(char::is_uppercase) {
+    return false;
+  }
+
+  has_wide_gap_between_tokens(trimmed, number, last)
+}
+
+fn has_wide_gap_between_tokens(
+  trimmed: &str,
+  first: &str,
+  last: &str,
+) -> bool {
+  let Some(first_idx) = trimmed.find(first) else {
+    return false;
+  };
+  let first_end = first_idx + first.len();
+  let Some(last_start) = trimmed.rfind(last) else {
+    return false;
+  };
+  if last_start <= first_end {
+    return false;
+  }
+  trimmed[first_end..last_start]
+    .chars()
+    .filter(|ch| *ch == ' ')
+    .count()
+    >= 10
 }
 
 fn centered_heading_label(line: &str) -> Option<&str> {
@@ -599,6 +709,64 @@ mod tests {
         .contains("Preface                                                 24")
     );
     assert!(output.contains("Body paragraph line"));
+  }
+
+  #[test]
+  fn drops_per_page_chapter_section_running_headers() {
+    // pdf_oxide preserves these at the top of every page within a
+    // chapter / section. Without filtering, "SECTION 3.2 Objects"
+    // shows up wedged between the previous page's last line and the
+    // current page's first line, breaking a paragraph that crossed
+    // the page boundary.
+    let chapter = "CHAPTER 3                                                    Syntax";
+    let section = "SECTION 3.2                                                   Objects";
+    let appendix = "APPENDIX A                                                   Notes";
+    assert!(is_running_header_or_footer_line(chapter), "expected chapter running header to be dropped");
+    assert!(is_running_header_or_footer_line(section), "expected section running header to be dropped");
+    assert!(is_running_header_or_footer_line(appendix), "expected appendix running header to be dropped");
+  }
+
+  #[test]
+  fn drops_left_aligned_front_matter_running_heads() {
+    // "Figures" at column 0 on every page after the actual centered
+    // heading is a running head that must be filtered. The centered
+    // version on the first page survives via `centered_heading_label`.
+    assert!(is_running_header_or_footer_line("Figures"));
+    assert!(is_running_header_or_footer_line("Tables"));
+    assert!(is_running_header_or_footer_line("Contents"));
+  }
+
+  #[test]
+  fn keeps_centered_section_heading() {
+    // The actual section heading is centered (≥12 leading spaces) and
+    // must survive — only the left-aligned variant is a running head.
+    assert!(
+      !is_running_header_or_footer_line(
+        "                    Figures"
+      )
+    );
+  }
+
+  #[test]
+  fn keeps_real_chapter_title_lines() {
+    // The actual chapter title page in PDF Reference uses "3 Syntax"
+    // (number + title, no CHAPTER prefix). It must survive the filter.
+    let chapter_title = "                    3 Syntax";
+    assert!(
+      !is_running_header_or_footer_line(chapter_title),
+      "real chapter title should not be dropped"
+    );
+  }
+
+  #[test]
+  fn keeps_sentence_mentioning_section_uppercase() {
+    // A sentence that happens to start with SECTION but lacks the wide
+    // gap shouldn't be reclassified as a running header.
+    let prose = "SECTION 3 lists the operators in detail.";
+    assert!(
+      !is_running_header_or_footer_line(prose),
+      "narrow-spaced prose should not be dropped"
+    );
   }
 
   #[test]

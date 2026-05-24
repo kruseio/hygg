@@ -3,7 +3,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Receiver;
 
 use cli_justify::{
-  PartialParagraph, PdfPageJustified, justify_pdf_page, justify_pdf_seam,
+  PartialParagraph, PdfPageJustified, inter_page_blank_count, justify_pdf_page,
+  justify_pdf_seam,
 };
 use cli_pdf_to_text::SharedPdfStream;
 
@@ -37,10 +38,16 @@ pub struct LoadedPage {
 impl LoadedPage {
   /// Number of lines this page will contribute to the flat line buffer
   /// taking neighbour-driven stitching into account.
+  ///
+  /// `next_loading` is `true` when a slot follows this page in the page
+  /// table but isn't loaded yet, so the per-page count agrees with what
+  /// `flat_lines` will emit for the not-yet-known next page (a single
+  /// blank separator placeholder).
   pub fn rendered_line_count(
     &self,
     prev: Option<&LoadedPage>,
     next: Option<&LoadedPage>,
+    next_loading: bool,
     col: usize,
   ) -> usize {
     let mut count = self.standalone_lines.len();
@@ -51,6 +58,8 @@ impl LoadedPage {
       count = count.saturating_sub(head.line_count);
     }
 
+    let emitted_seam = self.tail_partial.is_some()
+      && next.is_some_and(|n| n.head_partial.is_some());
     if let Some(tail) = &self.tail_partial
       && let Some(next_page) = next
       && let Some(next_head) = next_page.head_partial.as_ref()
@@ -58,6 +67,25 @@ impl LoadedPage {
       count = count.saturating_sub(tail.line_count);
       let seam = justify_pdf_seam(&tail.raw_text, &next_head.raw_text, col);
       count += seam.len();
+    }
+
+    // Inter-page separator. With edge blanks trimmed in
+    // `justify_pdf_page`, every page's standalone_lines starts and ends
+    // with content, so `flat_lines` is the one place that decides how
+    // many blanks sit between two adjacent pages. Mirror that decision
+    // here so summed per-page counts stay in lock-step with
+    // `flat_lines.len()` — otherwise `line_start_for_page` walks the
+    // cursor to the wrong row whenever a streamed PDF page boundary
+    // crosses a list / caption continuation.
+    if !emitted_seam {
+      if let Some(next_page) = next {
+        count +=
+          inter_page_blank_count(&self.standalone_lines, &next_page.standalone_lines);
+      } else if next_loading {
+        // Default to one separator when the next page hasn't loaded —
+        // matches the placeholder spacing in `flat_lines`.
+        count += 1;
+      }
     }
     count.max(1)
   }
@@ -165,7 +193,23 @@ impl PdfStreamingState {
   pub fn flat_lines(&self) -> Vec<String> {
     let total_pages = self.pages.len();
     let mut out: Vec<String> = Vec::new();
+    // True when the most recently emitted lines were a seam that
+    // stitches the previous page into the next — no separator should
+    // be inserted in that case because the seam IS the connection.
+    let mut last_emit_was_seam = false;
     for idx in 0..total_pages {
+      // Insert the inter-page separator BEFORE pushing this page's
+      // content. The amount is decided by the same `inter_page_blank_count`
+      // that `rendered_line_count` uses, so per-page line counts stay
+      // in sync with `out.len()`.
+      if idx > 0 && !last_emit_was_seam {
+        let separators = self.separator_before_page(idx);
+        for _ in 0..separators {
+          out.push(String::new());
+        }
+      }
+      last_emit_was_seam = false;
+
       match &self.pages[idx] {
         PageSlot::Loading => {
           for _ in 0..PLACEHOLDER_LINES_PER_PAGE {
@@ -197,9 +241,7 @@ impl PdfStreamingState {
           };
 
           let standalone = &page.standalone_lines;
-          if standalone.is_empty() {
-            out.push(String::new());
-          } else {
+          if !standalone.is_empty() {
             let end = standalone.len().saturating_sub(tail_skip);
             let start = head_skip.min(end);
             for line in &standalone[start..end] {
@@ -210,6 +252,7 @@ impl PdfStreamingState {
             for line in seam {
               out.push(line);
             }
+            last_emit_was_seam = true;
           }
         }
       }
@@ -220,22 +263,56 @@ impl PdfStreamingState {
     out
   }
 
+  /// Decide the number of separator blanks `flat_lines` should insert
+  /// directly before page `idx`. Returns 0 when the prior page already
+  /// emitted a seam into this one (the seam is the connection), or when
+  /// the two pages share a sibling list / caption that should read
+  /// continuously. Otherwise 1, the normal paragraph break.
+  fn separator_before_page(&self, idx: usize) -> usize {
+    if idx == 0 {
+      return 0;
+    }
+    let prev_slot = &self.pages[idx - 1];
+    let this_slot = &self.pages[idx];
+    let prev_loaded = prev_slot.as_loaded();
+    let this_loaded = this_slot.as_loaded();
+    match (prev_loaded, this_loaded) {
+      (Some(prev), Some(this)) => {
+        inter_page_blank_count(&prev.standalone_lines, &this.standalone_lines)
+      }
+      _ => 1,
+    }
+  }
+
   /// Number of flat lines a given page index will contribute, taking
   /// neighbour-driven stitching into account.
   pub fn page_line_count(&self, page_index: usize) -> usize {
     if page_index >= self.pages.len() {
       return 0;
     }
+    let next_slot = self.pages.get(page_index + 1);
+    let next_loading =
+      matches!(next_slot, Some(PageSlot::Loading));
     match &self.pages[page_index] {
-      PageSlot::Loading => PLACEHOLDER_LINES_PER_PAGE,
+      PageSlot::Loading => {
+        // A loading slot contributes its placeholder lines plus the
+        // 1-blank default separator before the next page (matching
+        // what `flat_lines` will emit). The separator is omitted when
+        // there is no next page.
+        let mut count = PLACEHOLDER_LINES_PER_PAGE;
+        if next_slot.is_some() {
+          count += 1;
+        }
+        count
+      }
       PageSlot::Loaded(page) => {
         let prev = if page_index == 0 {
           None
         } else {
           self.pages[page_index - 1].as_loaded()
         };
-        let next = self.pages.get(page_index + 1).and_then(PageSlot::as_loaded);
-        page.rendered_line_count(prev, next, self.col)
+        let next = next_slot.and_then(PageSlot::as_loaded);
+        page.rendered_line_count(prev, next, next_loading, self.col)
       }
     }
   }
