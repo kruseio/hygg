@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::editor::core::{BufferState, Editor, EditorMode};
+  use crate::editor::core::{Editor, EditorMode};
   use cli_pdf_to_text::PdfLineKind;
 
   #[test]
@@ -70,5 +70,33 @@ mod tests {
     let highlight = &editor.highlights.highlights[0];
     assert_eq!(highlight.start, 11);
     assert_eq!(highlight.end, 16);
+  }
+
+  #[test]
+  fn persistent_highlight_lookup_skips_ansi_art_rows() {
+    let lines = vec![
+      "First line".to_string(),
+      "\x1b[38;2;1;2;3m▀\x1b[0m".to_string(),
+      "Third line".to_string(),
+    ];
+
+    let mut editor = Editor::new(lines.clone(), 80);
+    editor.line_kinds =
+      vec![PdfLineKind::Text, PdfLineKind::AnsiArt, PdfLineKind::Text];
+    editor.buffers[0].line_kinds = editor.line_kinds.clone();
+    editor.highlights.add_highlight(11, 16);
+
+    assert!(!editor.has_persistent_highlights_on_line(1));
+    assert!(editor.has_persistent_highlights_on_line(2));
+
+    let mut buffer = Vec::new();
+    assert!(
+      editor
+        .highlight_persistent_buffered(&mut buffer, 2, &lines[2], "")
+        .unwrap()
+    );
+    let output = String::from_utf8(buffer).unwrap();
+    assert!(output.contains("Third"));
+    assert!(output.contains(" line"));
   }
 }

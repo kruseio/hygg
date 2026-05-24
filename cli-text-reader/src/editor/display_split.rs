@@ -1,3 +1,4 @@
+use cli_pdf_to_text::PdfLineKind;
 use crossterm::{
   QueueableCommand, execute,
   style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
@@ -133,8 +134,9 @@ impl Editor {
             i, // Pass viewport line index
             center_offset_string,
             is_current_line,
-            offset,        // Pass the offset
-            &buffer.lines, // Pass buffer lines
+            offset,             // Pass the offset
+            &buffer.lines,      // Pass buffer lines
+            &buffer.line_kinds, // Pass buffer line kinds
           )?;
 
           // Clear to end of line to prevent bleeding
@@ -169,6 +171,7 @@ impl Editor {
     is_current_line: bool,
     offset: usize, // Offset to use for highlight calculations
     buffer_lines: &[String], // Lines from the buffer being rendered
+    buffer_line_kinds: &[PdfLineKind],
   ) -> IoResult<()> {
     // Apply centering if needed
     if let Some(_pane_buffer) = self.buffers.get(buffer_idx) {
@@ -191,10 +194,11 @@ impl Editor {
 
       // Check if this line has persistent highlights (only for main buffer)
       let has_persistent = if buffer_idx == 0 {
-        self.has_persistent_highlights_on_line_with_offset_and_lines(
+        self.has_persistent_highlights_on_line_with_offset_lines_and_kinds(
           viewport_line_idx,
           offset,
           buffer_lines,
+          buffer_line_kinds,
         )
       } else {
         false
@@ -212,6 +216,7 @@ impl Editor {
             center_offset_string,
             offset,
             buffer_lines,
+            buffer_line_kinds,
           )? {
             return Ok(());
           }
@@ -236,6 +241,7 @@ impl Editor {
             center_offset_string,
             offset,
             buffer_lines,
+            buffer_line_kinds,
           )? {
             return Ok(());
           }
@@ -435,8 +441,9 @@ impl Editor {
             i, // Pass viewport line index, not display row
             center_offset_string,
             is_current_line,
-            offset,             // Pass the offset
-            &pane_buffer.lines, // Pass buffer lines
+            offset,                  // Pass the offset
+            &pane_buffer.lines,      // Pass buffer lines
+            &pane_buffer.line_kinds, // Pass buffer line kinds
           )?;
 
           // Clear to end of line
@@ -470,6 +477,7 @@ impl Editor {
     is_current_line: bool,
     offset: usize, // Offset to use for highlight calculations
     buffer_lines: &[String], // Lines from the buffer being rendered
+    buffer_line_kinds: &[PdfLineKind],
   ) -> IoResult<()> {
     // Apply centering if needed
     if let Some(_pane_buffer) = self.buffers.get(buffer_idx) {
@@ -501,10 +509,11 @@ impl Editor {
 
       // Check if this line has persistent highlights (only for main buffer)
       let has_persistent = if buffer_idx == 0 {
-        self.has_persistent_highlights_on_line_with_offset_and_lines(
+        self.has_persistent_highlights_on_line_with_offset_lines_and_kinds(
           viewport_line_idx,
           offset,
           buffer_lines,
+          buffer_line_kinds,
         )
       } else {
         false
@@ -522,6 +531,7 @@ impl Editor {
             center_offset_string,
             offset,
             buffer_lines,
+            buffer_line_kinds,
           )? {
             return Ok(());
           }
@@ -546,6 +556,7 @@ impl Editor {
             center_offset_string,
             offset,
             buffer_lines,
+            buffer_line_kinds,
           )? {
             return Ok(());
           }
@@ -628,6 +639,7 @@ impl Editor {
     center_offset_string: &str,
     offset: usize,
     buffer_lines: &[String],
+    buffer_line_kinds: &[PdfLineKind],
   ) -> IoResult<bool> {
     // Only main buffer has persistent highlights
     if buffer_idx != 0 {
@@ -683,13 +695,15 @@ impl Editor {
     }
 
     // Add persistent highlight ranges
-    let mut abs_line_start = 0;
-    for i in 0..current_line_idx {
-      if i < buffer_lines.len() {
-        abs_line_start += buffer_lines[i].len() + 1;
-      }
-    }
-    let abs_line_end = abs_line_start + line.len();
+    let Some((abs_line_start, abs_line_end)) =
+      Self::persistent_highlight_line_range(
+        current_line_idx,
+        buffer_lines,
+        buffer_line_kinds,
+      )
+    else {
+      return Ok(false);
+    };
 
     let line_highlights =
       self.highlights.get_highlights_for_range(abs_line_start, abs_line_end);
@@ -783,6 +797,7 @@ impl Editor {
     center_offset_string: &str,
     offset: usize,
     buffer_lines: &[String],
+    buffer_line_kinds: &[PdfLineKind],
   ) -> IoResult<bool> {
     // Only main buffer has persistent highlights
     if buffer_idx != 0 {
@@ -838,13 +853,15 @@ impl Editor {
     }
 
     // Add persistent highlight ranges
-    let mut abs_line_start = 0;
-    for i in 0..current_line_idx {
-      if i < buffer_lines.len() {
-        abs_line_start += buffer_lines[i].len() + 1;
-      }
-    }
-    let abs_line_end = abs_line_start + line.len();
+    let Some((abs_line_start, abs_line_end)) =
+      Self::persistent_highlight_line_range(
+        current_line_idx,
+        buffer_lines,
+        buffer_line_kinds,
+      )
+    else {
+      return Ok(false);
+    };
 
     let line_highlights =
       self.highlights.get_highlights_for_range(abs_line_start, abs_line_end);
@@ -932,6 +949,7 @@ impl Editor {
     center_offset_string: &str,
     offset: usize,
     buffer_lines: &[String],
+    buffer_line_kinds: &[PdfLineKind],
   ) -> IoResult<bool> {
     // Only main buffer has persistent highlights
     if buffer_idx != 0 {
@@ -941,14 +959,15 @@ impl Editor {
     // Get the actual line index in the main buffer
     let current_line_idx = offset + viewport_line_idx;
 
-    // Calculate absolute position range for this line
-    let mut abs_line_start = 0;
-    for i in 0..current_line_idx {
-      if i < buffer_lines.len() {
-        abs_line_start += buffer_lines[i].len() + 1; // +1 for newline
-      }
-    }
-    let abs_line_end = abs_line_start + line.len();
+    let Some((abs_line_start, abs_line_end)) =
+      Self::persistent_highlight_line_range(
+        current_line_idx,
+        buffer_lines,
+        buffer_line_kinds,
+      )
+    else {
+      return Ok(false);
+    };
 
     // Get highlights that overlap with this line
     let line_highlights =
@@ -1044,6 +1063,7 @@ impl Editor {
     center_offset_string: &str,
     offset: usize,
     buffer_lines: &[String],
+    buffer_line_kinds: &[PdfLineKind],
   ) -> IoResult<bool> {
     // Only main buffer has persistent highlights
     if buffer_idx != 0 {
@@ -1053,14 +1073,15 @@ impl Editor {
     // Get the actual line index in the main buffer
     let current_line_idx = offset + viewport_line_idx;
 
-    // Calculate absolute position range for this line
-    let mut abs_line_start = 0;
-    for i in 0..current_line_idx {
-      if i < buffer_lines.len() {
-        abs_line_start += buffer_lines[i].len() + 1; // +1 for newline
-      }
-    }
-    let abs_line_end = abs_line_start + line.len();
+    let Some((abs_line_start, abs_line_end)) =
+      Self::persistent_highlight_line_range(
+        current_line_idx,
+        buffer_lines,
+        buffer_line_kinds,
+      )
+    else {
+      return Ok(false);
+    };
 
     // Get highlights that overlap with this line
     let line_highlights =
