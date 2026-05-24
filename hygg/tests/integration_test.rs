@@ -88,6 +88,37 @@ fn test_redirected_pdf_output_includes_inline_ansi_images() {
 }
 
 #[test]
+#[cfg(not(feature = "pdf-ocr-bundled"))]
+fn test_ocr_without_bundled_feature_gives_clear_error() {
+  let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
+    .parent()
+    .unwrap()
+    .join("test-data/pdf/ocr-0.pdf");
+
+  if !test_file.exists() {
+    eprintln!("OCR PDF test file not found, skipping test");
+    return;
+  }
+
+  let output = Command::new(env!("CARGO_BIN_EXE_hygg"))
+    .arg("--ocr")
+    .arg(test_file.to_str().unwrap())
+    .output()
+    .expect("Failed to execute hygg");
+
+  assert!(
+    !output.status.success(),
+    "hygg --ocr should fail without bundled OCR"
+  );
+
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(
+    stderr.contains("--features pdf-ocr-bundled"),
+    "expected feature guidance in stderr, got: {stderr}"
+  );
+}
+
+#[test]
 fn test_epub_processing() {
   let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
     .parent()

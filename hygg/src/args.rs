@@ -26,9 +26,8 @@ pub(crate) struct Args {
   #[arg(short, long, default_value = "80")]
   pub(crate) col: usize,
 
-  /// Use OCR to extract text from scanned PDF documents
-  /// Depends on ocrmypdf and tesseract-ocr lang e.g.
-  /// sudo apt install ocrmypdf tesseract-ocr-eng
+  /// Use bundled English OCR for scanned PDF documents
+  /// Requires a build with --features pdf-ocr-bundled
   #[arg(short, long, default_value = "false")]
   pub(crate) ocr: bool,
 

@@ -18,6 +18,10 @@ categories.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+pdf-ocr-bundled = ["cli-pdf-to-text/pdf-ocr-bundled"]
+
 [dependencies]
 cli-pdf-to-text = { version = "0.1", path = "../cli-pdf-to-text" }
 cli-epub-to-text = { version = "0.1", path = "../cli-epub-to-text" }

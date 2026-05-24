@@ -88,8 +88,8 @@ fn process_file_input(
     .map(|ext| ext.to_lowercase());
   let is_pdf = extension.as_deref() == Some("pdf") || args.ocr;
 
-  let content = if args.ocr && which("ocrmypdf").is_some() {
-    extract_pdf_text_with_ocr(file, &temp_file)?
+  let content = if args.ocr {
+    extract_pdf_text_with_ocr(file)?
   } else {
     read_content_without_ocr(file, extension.as_deref())?
   };
@@ -115,42 +115,8 @@ fn process_file_input(
 
 fn extract_pdf_text_with_ocr(
   file: &str,
-  temp_file: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-  let canonical_file = match normalize_file_path(file) {
-    Ok(path) => path.to_string_lossy().to_string(),
-    Err(e) => {
-      eprintln!("Error: Invalid file path: {e}");
-      std::process::exit(1);
-    }
-  };
-
-  if temp_file.contains("..")
-    || temp_file.contains(";")
-    || temp_file.contains("|")
-    || temp_file.contains("&")
-  {
-    eprintln!("Error: Invalid temporary file path");
-    std::process::exit(1);
-  }
-
-  let output = Command::new("ocrmypdf")
-    .arg("--force-ocr")
-    .arg("--")
-    .arg(&canonical_file)
-    .arg(temp_file)
-    .stdin(Stdio::null())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .output()
-    .map_err(|e| e.to_string())?;
-
-  if !output.status.success() {
-    eprintln!("OCR processing failed");
-    std::process::exit(1);
-  }
-
-  cli_pdf_to_text::pdf_to_text(temp_file)
+  cli_pdf_to_text::pdf_to_text_with_bundled_ocr(file)
 }
 
 fn read_content_without_ocr(

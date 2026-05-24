@@ -4,6 +4,7 @@ use std::io::{BufWriter, Cursor};
 
 mod heuristics;
 mod layout_text_output;
+mod ocr;
 mod pdf_patch;
 mod sanitize;
 mod stream;
@@ -113,6 +114,12 @@ pub fn pdf_to_text(
   }
 
   Ok(layout_sanitized)
+}
+
+pub fn pdf_to_text_with_bundled_ocr(
+  pdf_path: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+  ocr::pdf_to_text_with_bundled_ocr(pdf_path)
 }
 
 pub fn pdf_to_ansi_text(
