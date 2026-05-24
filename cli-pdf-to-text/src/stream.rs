@@ -123,10 +123,11 @@ impl PdfStream {
       });
     }
 
-    let text_rows = sanitized_visual_text_rows(&raw_text, col);
+    let text_rows =
+      positioned_sanitized_text_rows(&self.doc, page_0based, &raw_text, col);
 
     let PdfPageForAnsi { lines, line_kinds } =
-      compose_visual_page(text_rows, image_rows);
+      compose_visual_page(text_rows, image_rows, col);
     Some(PdfRenderedPage { raw_text, lines, line_kinds, contains_images: true })
   }
 }
@@ -236,6 +237,7 @@ fn pdf_image_height_rows(
 fn compose_visual_page(
   text_rows: Vec<VisualTextRow>,
   image_rows: Vec<VisualImageRows>,
+  col: usize,
 ) -> PdfPageForAnsi {
   enum Event {
     Text(VisualTextRow),
@@ -277,8 +279,16 @@ fn compose_visual_page(
         }
         let indent =
           (((row.left - page_left) / 5.0).round()).max(0.0).min(20.0) as usize;
-        lines.push(format!("{}{}", " ".repeat(indent), row.text));
-        line_kinds.push(PdfLineKind::Text);
+        let text_width = col.saturating_sub(indent).max(1);
+        let wrapped_lines = if row.text.chars().count() <= text_width {
+          vec![row.text]
+        } else {
+          cli_justify::justify(&row.text, text_width)
+        };
+        for wrapped in wrapped_lines {
+          lines.push(format!("{}{}", " ".repeat(indent), wrapped));
+          line_kinds.push(PdfLineKind::Text);
+        }
       }
       Event::Image(row) => {
         let indent = " ".repeat(row.left_cells);
@@ -298,16 +308,112 @@ fn compose_visual_page(
   PdfPageForAnsi { lines, line_kinds }
 }
 
-fn sanitized_visual_text_rows(
+fn positioned_sanitized_text_rows(
+  doc: &pdf_oxide::PdfDocument,
+  page_0based: usize,
   raw_text: &str,
   col: usize,
 ) -> Vec<VisualTextRow> {
-  cli_justify::justify_pdf_page(raw_text, col)
-    .lines
+  let sanitized_lines = cli_justify::justify_pdf_page(raw_text, col).lines;
+  let anchors = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    extract_visual_text_rows(doc, page_0based)
+  }))
+  .ok()
+  .flatten()
+  .unwrap_or_default();
+
+  if anchors.is_empty() {
+    return sanitized_lines
+      .into_iter()
+      .enumerate()
+      .map(|(idx, text)| VisualTextRow { top: -(idx as f32), left: 0.0, text })
+      .collect();
+  }
+
+  sanitized_lines
     .into_iter()
     .enumerate()
-    .map(|(idx, text)| VisualTextRow { top: -(idx as f32), left: 0.0, text })
+    .map(|(idx, text)| {
+      let anchor = anchors
+        .get(idx)
+        .or_else(|| anchors.last())
+        .expect("anchors is non-empty");
+      let extra = idx.saturating_sub(anchors.len().saturating_sub(1)) as f32;
+      VisualTextRow { top: anchor.top - extra, left: anchor.left, text }
+    })
     .collect()
+}
+
+fn extract_visual_text_rows(
+  doc: &pdf_oxide::PdfDocument,
+  page_0based: usize,
+) -> Option<Vec<VisualTextRow>> {
+  let mut lines = doc.extract_text_lines(page_0based).ok()?;
+  if lines.is_empty() {
+    return None;
+  }
+
+  lines.sort_by(|a, b| {
+    b.bbox
+      .top()
+      .partial_cmp(&a.bbox.top())
+      .unwrap_or(std::cmp::Ordering::Equal)
+      .then_with(|| {
+        a.bbox
+          .left()
+          .partial_cmp(&b.bbox.left())
+          .unwrap_or(std::cmp::Ordering::Equal)
+      })
+  });
+
+  const SAME_ROW_TOL: f32 = 3.0;
+  const PT_PER_CHAR: f32 = 5.0;
+
+  let mut rows = Vec::new();
+  let mut row_start = 0usize;
+  let mut row_anchor_y = lines[0].bbox.top();
+  for i in 1..=lines.len() {
+    let break_row = i == lines.len()
+      || (row_anchor_y - lines[i].bbox.top()).abs() > SAME_ROW_TOL;
+    if break_row {
+      let mut row: Vec<&pdf_oxide::layout::TextLine> =
+        lines[row_start..i].iter().collect();
+      row.sort_by(|a, b| {
+        a.bbox
+          .left()
+          .partial_cmp(&b.bbox.left())
+          .unwrap_or(std::cmp::Ordering::Equal)
+      });
+      let row_left =
+        row.iter().map(|l| l.bbox.left()).fold(f32::INFINITY, f32::min);
+      let mut body = String::new();
+      let mut prev_right: Option<f32> = None;
+      for line in row {
+        for word in &line.words {
+          if let Some(pr) = prev_right {
+            let gap_pt = (word.bbox.left() - pr).max(0.0);
+            let gap_chars = ((gap_pt / PT_PER_CHAR).round() as usize).max(1);
+            for _ in 0..gap_chars {
+              body.push(' ');
+            }
+          }
+          body.push_str(&word.text);
+          prev_right = Some(word.bbox.right());
+        }
+      }
+      rows.push(VisualTextRow {
+        top: row_anchor_y,
+        left: row_left,
+        text: body,
+      });
+      row_start = i;
+      if i < lines.len() {
+        row_anchor_y = lines[i].bbox.top();
+      }
+    }
+  }
+
+  Some(rows)
 }
 
 /// Build a text blob from pdf_oxide's positional `TextLine` output.
@@ -670,7 +776,7 @@ mod tests {
       lines: vec!["\x1b[38;2;1;2;3m\x1b[48;2;4;5;6m▀\x1b[0m".into()],
     }];
 
-    let page = compose_visual_page(text_rows, image_rows);
+    let page = compose_visual_page(text_rows, image_rows, 80);
 
     assert_eq!(
       page.line_kinds,
@@ -688,6 +794,25 @@ mod tests {
 
     assert!(!page.lines.is_empty());
     assert_eq!(page.line_kinds, vec![PdfLineKind::Text; page.lines.len()]);
+  }
+
+  #[test]
+  fn sanitized_text_rows_keep_pdf_position_anchors() {
+    let pdf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+      .join("../test-data/pdf/progit-1-50.pdf");
+    if !pdf_path.exists() {
+      return;
+    }
+    let stream = PdfStream::open(pdf_path.to_str().expect("utf-8 path"))
+      .expect("PdfStream should open valid test PDF");
+    let raw_text = stream.extract_page(2).expect("page should produce text");
+    let anchors = extract_visual_text_rows(&stream.doc, 1)
+      .expect("page should produce positioned rows");
+    let rows = positioned_sanitized_text_rows(&stream.doc, 1, &raw_text, 80);
+
+    assert!(!rows.is_empty());
+    assert_eq!(rows[0].top, anchors[0].top);
+    assert_eq!(rows[0].left, anchors[0].left);
   }
 
   #[test]

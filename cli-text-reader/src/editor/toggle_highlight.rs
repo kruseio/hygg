@@ -105,11 +105,16 @@ impl Editor {
 
     for (line_idx, line) in self.lines.iter().enumerate() {
       if line_idx == start.0 {
-        start_pos = Some(pos + start.1);
+        start_pos = Some(if self.is_ansi_art_line(line_idx) {
+          pos
+        } else {
+          pos + start.1
+        });
       }
 
       if line_idx == end.0 {
-        end_pos = Some(pos + end.1);
+        end_pos =
+          Some(if self.is_ansi_art_line(line_idx) { pos } else { pos + end.1 });
       }
 
       // If we've found both positions, we can stop
@@ -117,8 +122,10 @@ impl Editor {
         break;
       }
 
-      // Add line length + 1 for newline
-      pos += line.len() + 1;
+      if !self.is_ansi_art_line(line_idx) {
+        // Add line length + 1 for newline.
+        pos += line.len() + 1;
+      }
     }
 
     match (start_pos, end_pos) {
@@ -136,6 +143,9 @@ impl Editor {
     let mut pos = 0;
 
     for (line_idx, line) in self.lines.iter().enumerate() {
+      if self.is_ansi_art_line(line_idx) {
+        continue;
+      }
       let line_end = pos + line.len();
 
       if abs_pos <= line_end {
