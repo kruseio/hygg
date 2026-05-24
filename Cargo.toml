@@ -2,6 +2,7 @@
 resolver = "2"
 
 members = [
+  "cli-image-to-ascii",
   "cli-pdf-to-text",
   "cli-epub-to-text",
   "cli-justify",

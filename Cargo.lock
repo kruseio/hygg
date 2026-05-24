@@ -446,6 +446,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cli-image-to-ascii"
+version = "0.1.19"
+dependencies = [
+ "image",
+]
+
+[[package]]
 name = "cli-justify"
 version = "0.1.19"
 dependencies = [
