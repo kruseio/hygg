@@ -463,6 +463,8 @@ dependencies = [
 name = "cli-pdf-to-text"
 version = "0.1.19"
 dependencies = [
+ "cli-image-to-ascii",
+ "cli-justify",
  "getopts",
  "hygg-shared",
  "lopdf 0.40.0",

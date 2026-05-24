@@ -18,6 +18,8 @@ categories.workspace = true
 workspace = true
 
 [dependencies]
+cli-image-to-ascii = { version = "0.1", path = "../cli-image-to-ascii" }
+cli-justify = { version = "0.1", path = "../cli-justify" }
 redirect-stderr = { version = "0.1", path = "../redirect-stderr" }
 hygg-shared = { version = "0.1", path = "../hygg-shared" }
 

@@ -9,7 +9,7 @@ mod sanitize;
 mod stream;
 mod stream_recovery;
 
-pub use stream::{PdfStream, SharedPdfStream};
+pub use stream::{PdfLineKind, PdfRenderedPage, PdfStream, SharedPdfStream};
 
 use heuristics::{
   layout_needs_plaintext_fallback, should_prefer_plaintext_output,
@@ -113,6 +113,24 @@ pub fn pdf_to_text(
   }
 
   Ok(layout_sanitized)
+}
+
+pub fn pdf_to_ansi_text(
+  pdf_path: &str,
+  col: usize,
+) -> Result<String, Box<dyn std::error::Error>> {
+  let stream = PdfStream::open(pdf_path)?;
+  let mut output = Vec::new();
+  for page in 1..=stream.total_pages() {
+    let Some(rendered) = stream.extract_page_with_images(page, col) else {
+      continue;
+    };
+    output.extend(rendered.lines);
+    if page < stream.total_pages() {
+      output.push(String::new());
+    }
+  }
+  Ok(output.join("\n"))
 }
 
 #[cfg(test)]

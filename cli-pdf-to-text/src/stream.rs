@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use cli_image_to_ascii::{RenderConfig, render_half_block};
 use hygg_shared::normalize_file_path;
 
 use crate::sanitize::sanitize_layout_text;
@@ -22,6 +23,20 @@ pub struct PdfStream {
   canonical_path: PathBuf,
   doc: pdf_oxide::PdfDocument,
   total_pages: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PdfLineKind {
+  Text,
+  AnsiArt,
+}
+
+#[derive(Clone, Debug)]
+pub struct PdfRenderedPage {
+  pub raw_text: String,
+  pub lines: Vec<String>,
+  pub line_kinds: Vec<PdfLineKind>,
+  pub contains_images: bool,
 }
 
 impl PdfStream {
@@ -76,6 +91,186 @@ impl PdfStream {
     }
     Some(sanitize_layout_text(&raw))
   }
+
+  pub fn extract_page_with_images(
+    &self,
+    page_index: usize,
+    col: usize,
+  ) -> Option<PdfRenderedPage> {
+    if page_index == 0 || page_index > self.total_pages {
+      return None;
+    }
+
+    let raw_text = self.extract_page(page_index).unwrap_or_default();
+    let page_0based = page_index - 1;
+    let images = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      self.doc.extract_images(page_0based)
+    }))
+    .ok()
+    .and_then(Result::ok)
+    .unwrap_or_default();
+
+    let image_rows =
+      render_pdf_images(&self.doc, page_0based, col, images.as_slice());
+    if image_rows.is_empty() {
+      let PdfPageForAnsi { lines, line_kinds } =
+        text_only_page_lines(&raw_text, col);
+      return Some(PdfRenderedPage {
+        raw_text,
+        lines,
+        line_kinds,
+        contains_images: false,
+      });
+    }
+
+    let text_rows =
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        extract_visual_text_rows(&self.doc, page_0based)
+      }))
+      .ok()
+      .flatten()
+      .unwrap_or_default();
+
+    let PdfPageForAnsi { lines, line_kinds } =
+      compose_visual_page(text_rows, image_rows);
+    Some(PdfRenderedPage { raw_text, lines, line_kinds, contains_images: true })
+  }
+}
+
+struct PdfPageForAnsi {
+  lines: Vec<String>,
+  line_kinds: Vec<PdfLineKind>,
+}
+
+#[derive(Clone)]
+struct VisualTextRow {
+  top: f32,
+  left: f32,
+  text: String,
+}
+
+struct VisualImageRows {
+  top: f32,
+  left_cells: usize,
+  lines: Vec<String>,
+}
+
+fn text_only_page_lines(raw_text: &str, col: usize) -> PdfPageForAnsi {
+  let lines = cli_justify::justify_pdf_page(raw_text, col).lines;
+  let line_kinds = vec![PdfLineKind::Text; lines.len()];
+  PdfPageForAnsi { lines, line_kinds }
+}
+
+fn render_pdf_images(
+  doc: &pdf_oxide::PdfDocument,
+  page_0based: usize,
+  col: usize,
+  images: &[pdf_oxide::extractors::PdfImage],
+) -> Vec<VisualImageRows> {
+  if col == 0 {
+    return Vec::new();
+  }
+  let page_width = doc
+    .get_page_media_box(page_0based)
+    .ok()
+    .map(|(llx, _, urx, _)| (urx - llx).abs())
+    .filter(|w| *w > 0.0)
+    .unwrap_or(612.0);
+
+  let mut out = Vec::new();
+  for image in images {
+    let Some(bbox) = image.bbox() else {
+      continue;
+    };
+    if bbox.width <= 0.0 || bbox.height <= 0.0 {
+      continue;
+    }
+    let Ok(dynamic_image) = image.to_dynamic_image() else {
+      continue;
+    };
+    let left_cells =
+      ((bbox.left().max(0.0) / page_width) * col as f32).round() as usize;
+    let left_cells = left_cells.min(col.saturating_sub(1));
+    let width_cells = ((bbox.width / page_width) * col as f32).round() as usize;
+    let width_cells = width_cells.max(1).min(col.saturating_sub(left_cells));
+    if width_cells == 0 {
+      continue;
+    }
+    let lines = render_half_block(
+      &dynamic_image,
+      RenderConfig::new(Some(width_cells as u32), None),
+    );
+    if lines.is_empty() {
+      continue;
+    }
+    out.push(VisualImageRows { top: bbox.top(), left_cells, lines });
+  }
+  out
+}
+
+fn compose_visual_page(
+  text_rows: Vec<VisualTextRow>,
+  image_rows: Vec<VisualImageRows>,
+) -> PdfPageForAnsi {
+  enum Event {
+    Text(VisualTextRow),
+    Image(VisualImageRows),
+  }
+
+  let mut events: Vec<Event> =
+    Vec::with_capacity(text_rows.len() + image_rows.len());
+  events.extend(text_rows.into_iter().map(Event::Text));
+  events.extend(image_rows.into_iter().map(Event::Image));
+  events.sort_by(|a, b| {
+    let a_top = match a {
+      Event::Text(row) => row.top,
+      Event::Image(row) => row.top,
+    };
+    let b_top = match b {
+      Event::Text(row) => row.top,
+      Event::Image(row) => row.top,
+    };
+    b_top.partial_cmp(&a_top).unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  let page_left = events
+    .iter()
+    .filter_map(|event| match event {
+      Event::Text(row) if !row.text.trim().is_empty() => Some(row.left),
+      _ => None,
+    })
+    .fold(f32::INFINITY, f32::min);
+  let page_left = if page_left.is_finite() { page_left } else { 0.0 };
+
+  let mut lines = Vec::new();
+  let mut line_kinds = Vec::new();
+  for event in events {
+    match event {
+      Event::Text(row) => {
+        if row.text.trim().is_empty() {
+          continue;
+        }
+        let indent =
+          (((row.left - page_left) / 5.0).round()).max(0.0).min(20.0) as usize;
+        lines.push(format!("{}{}", " ".repeat(indent), row.text));
+        line_kinds.push(PdfLineKind::Text);
+      }
+      Event::Image(row) => {
+        let indent = " ".repeat(row.left_cells);
+        for line in row.lines {
+          lines.push(format!("{indent}{line}\x1b[0m"));
+          line_kinds.push(PdfLineKind::AnsiArt);
+        }
+      }
+    }
+  }
+
+  if lines.is_empty() {
+    lines.push(String::new());
+    line_kinds.push(PdfLineKind::Text);
+  }
+
+  PdfPageForAnsi { lines, line_kinds }
 }
 
 /// Build a text blob from pdf_oxide's positional `TextLine` output.
@@ -143,10 +338,8 @@ fn extract_page_text_lines(
           .partial_cmp(&b.bbox.left())
           .unwrap_or(std::cmp::Ordering::Equal)
       });
-      let row_left = row
-        .iter()
-        .map(|l| l.bbox.left())
-        .fold(f32::INFINITY, f32::min);
+      let row_left =
+        row.iter().map(|l| l.bbox.left()).fold(f32::INFINITY, f32::min);
       // Walk every word across every TextLine in this row left-to-right
       // and insert spacing proportional to the bbox gap between adjacent
       // words. `TextLine::text` joins words with a single space and so
@@ -159,8 +352,7 @@ fn extract_page_text_lines(
         for word in &line.words {
           if let Some(pr) = prev_right {
             let gap_pt = (word.bbox.left() - pr).max(0.0);
-            let gap_chars =
-              ((gap_pt / PT_PER_CHAR).round() as usize).max(1);
+            let gap_chars = ((gap_pt / PT_PER_CHAR).round() as usize).max(1);
             for _ in 0..gap_chars {
               body.push(' ');
             }
@@ -246,15 +438,12 @@ fn extract_page_text_lines(
   // common gap (most rows are body text on most pages), so the mode tracks
   // it directly. Mean and median both pick up an upward bias from the few
   // legitimate paragraph breaks they're trying to detect.
-  let gaps: Vec<f32> = rows
-    .windows(2)
-    .map(|w| (w[0].0 - w[1].0).max(0.0))
-    .collect();
+  let gaps: Vec<f32> =
+    rows.windows(2).map(|w| (w[0].0 - w[1].0).max(0.0)).collect();
   let para_threshold = paragraph_gap_threshold(&gaps);
 
-  let mut output = String::with_capacity(
-    rows.iter().map(|(_, _, s)| s.len() + 8).sum(),
-  );
+  let mut output =
+    String::with_capacity(rows.iter().map(|(_, _, s)| s.len() + 8).sum());
   for i in 0..rows.len() {
     if i > 0 && gaps[i - 1] > para_threshold {
       output.push('\n');
@@ -270,6 +459,78 @@ fn extract_page_text_lines(
     output.push('\n');
   }
   Some(output)
+}
+
+fn extract_visual_text_rows(
+  doc: &pdf_oxide::PdfDocument,
+  page_0based: usize,
+) -> Option<Vec<VisualTextRow>> {
+  let mut lines = doc.extract_text_lines(page_0based).ok()?;
+  if lines.is_empty() {
+    return None;
+  }
+
+  lines.sort_by(|a, b| {
+    b.bbox
+      .top()
+      .partial_cmp(&a.bbox.top())
+      .unwrap_or(std::cmp::Ordering::Equal)
+      .then_with(|| {
+        a.bbox
+          .left()
+          .partial_cmp(&b.bbox.left())
+          .unwrap_or(std::cmp::Ordering::Equal)
+      })
+  });
+
+  const SAME_ROW_TOL: f32 = 3.0;
+  const PT_PER_CHAR: f32 = 5.0;
+
+  let mut rows = Vec::new();
+  let mut row_start = 0usize;
+  let mut row_anchor_y = lines[0].bbox.top();
+  for i in 1..=lines.len() {
+    let break_row = i == lines.len()
+      || (row_anchor_y - lines[i].bbox.top()).abs() > SAME_ROW_TOL;
+    if break_row {
+      let mut row: Vec<&pdf_oxide::layout::TextLine> =
+        lines[row_start..i].iter().collect();
+      row.sort_by(|a, b| {
+        a.bbox
+          .left()
+          .partial_cmp(&b.bbox.left())
+          .unwrap_or(std::cmp::Ordering::Equal)
+      });
+      let row_left =
+        row.iter().map(|l| l.bbox.left()).fold(f32::INFINITY, f32::min);
+      let mut body = String::new();
+      let mut prev_right: Option<f32> = None;
+      for line in row {
+        for word in &line.words {
+          if let Some(pr) = prev_right {
+            let gap_pt = (word.bbox.left() - pr).max(0.0);
+            let gap_chars = ((gap_pt / PT_PER_CHAR).round() as usize).max(1);
+            for _ in 0..gap_chars {
+              body.push(' ');
+            }
+          }
+          body.push_str(&word.text);
+          prev_right = Some(word.bbox.right());
+        }
+      }
+      rows.push(VisualTextRow {
+        top: row_anchor_y,
+        left: row_left,
+        text: body,
+      });
+      row_start = i;
+      if i < lines.len() {
+        row_anchor_y = lines[i].bbox.top();
+      }
+    }
+  }
+
+  Some(rows)
 }
 
 fn is_digits_only(s: &str) -> bool {
@@ -347,16 +608,15 @@ mod tests {
   /// our positional row builder strips. Verify both stay fixed.
   #[test]
   fn progit_paragraph_breaks_and_page_footer() {
-    let pdf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-      .join("../test-data/pdf/progit.pdf");
+    let pdf_path =
+      Path::new(env!("CARGO_MANIFEST_DIR")).join("../test-data/pdf/progit.pdf");
     if !pdf_path.exists() {
       return;
     }
     let stream = PdfStream::open(pdf_path.to_str().expect("utf-8 path"))
       .expect("PdfStream should open progit");
-    let text = stream
-      .extract_page(43)
-      .expect("progit page 43 should produce text");
+    let text =
+      stream.extract_page(43).expect("progit page 43 should produce text");
 
     // Page-number footer must not leak through.
     let lines: Vec<&str> = text.lines().collect();
@@ -379,12 +639,8 @@ mod tests {
        paragraph, got:\n…{}…",
       &before[before.len().saturating_sub(80)..]
     );
-    let trailing_newlines = before
-      .as_bytes()
-      .iter()
-      .rev()
-      .take_while(|&&b| b == b'\n')
-      .count();
+    let trailing_newlines =
+      before.as_bytes().iter().rev().take_while(|&&b| b == b'\n').count();
     assert!(
       trailing_newlines >= 2,
       "expected at least one blank line before 'Alternatively…' \
@@ -407,24 +663,23 @@ mod tests {
     let stream = PdfStream::open(pdf_path.to_str().expect("utf-8 path"))
       .expect("PdfStream should open the reference PDF");
     // Page 5 (1-based) is the contents page.
-    let text = stream
-      .extract_page(5)
-      .expect("page 5 should produce text");
+    let text = stream.extract_page(5).expect("page 5 should produce text");
     let lines: Vec<&str> = text.lines().collect();
     // Word-bbox-derived spacing now preserves the wide TOC gap between the
     // section title and its trailing page number, so the trimmed row keeps
     // multiple spaces between them. Match either spacing shape.
-    let normalize_spaces = |s: &str| {
-      s.split_whitespace().collect::<Vec<_>>().join(" ")
-    };
+    let normalize_spaces =
+      |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-      lines.iter().any(|l| normalize_spaces(l.trim())
-        == "1.3 Related Publications 31"),
+      lines
+        .iter()
+        .any(|l| normalize_spaces(l.trim()) == "1.3 Related Publications 31"),
       "section 1.3 should be on its own line, got:\n{text}"
     );
     assert!(
-      lines.iter().any(|l| normalize_spaces(l.trim())
-        == "1.4 Intellectual Property 32"),
+      lines
+        .iter()
+        .any(|l| normalize_spaces(l.trim()) == "1.4 Intellectual Property 32"),
       "section 1.4 should be on its own line, got:\n{text}"
     );
     // The collapsing bug previously produced this run-on string.
@@ -432,5 +687,41 @@ mod tests {
       !text.contains("1.3 Related Publications1.4"),
       "section labels must not be concatenated, got:\n{text}"
     );
+  }
+
+  #[test]
+  fn visual_composition_orders_text_and_ansi_art_with_metadata() {
+    let text_rows = vec![
+      VisualTextRow { top: 90.0, left: 50.0, text: "after image".to_string() },
+      VisualTextRow {
+        top: 200.0,
+        left: 50.0,
+        text: "before image".to_string(),
+      },
+    ];
+    let image_rows = vec![VisualImageRows {
+      top: 150.0,
+      left_cells: 4,
+      lines: vec!["\x1b[38;2;1;2;3m\x1b[48;2;4;5;6m▀\x1b[0m".into()],
+    }];
+
+    let page = compose_visual_page(text_rows, image_rows);
+
+    assert_eq!(
+      page.line_kinds,
+      vec![PdfLineKind::Text, PdfLineKind::AnsiArt, PdfLineKind::Text,]
+    );
+    assert_eq!(page.lines[0], "before image");
+    assert!(page.lines[1].starts_with("    \x1b[38;2;1;2;3m"));
+    assert!(page.lines[1].ends_with("\x1b[0m"));
+    assert_eq!(page.lines[2], "after image");
+  }
+
+  #[test]
+  fn text_only_ansi_page_keeps_every_line_text_marked() {
+    let page = text_only_page_lines("one two three", 10);
+
+    assert!(!page.lines.is_empty());
+    assert_eq!(page.line_kinds, vec![PdfLineKind::Text; page.lines.len()]);
   }
 }
