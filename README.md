@@ -20,7 +20,7 @@ Minimalistic Vim-like TUI document reader.
 
 ## Why hygg?
 
-- **Universal document support** - PDF, EPUB, DOCX, and many more formats via pandoc. Supports scanned documents with OCR
+- **Universal document support** - PDF, EPUB, DOCX, and many more formats via pandoc. PDF output can include inline truecolor image art, and scanned documents are supported with OCR
 - **Lightning-fast keyboard based navigation** - Vim-inspired keybindings
 - **Powerful search** - Find anything instantly, highlight important passages, add bookmarks
 - **Never lose your place** - Automatic progress saving
@@ -40,6 +40,7 @@ For further install instructions read the [Getting started page](https://github.
 ### Core Reading Experience
 - **Minimalist interface** - Nothing between you and your content
 - **Smart text justification** - Perfectly formatted for your terminal width
+- **Inline PDF images** - Render embedded PDF raster images as colored terminal art alongside extracted text
 - **Vim keybindings** - Navigate with the efficiency you already know
 - **Visual selection** - Select, copy, highlight text
 - **Bookmarks** - Set bookmark points and jump between them instantly
@@ -54,6 +55,7 @@ For further install instructions read the [Getting started page](https://github.
 ## Roadmap
 - [x] Plain text format support
 - [x] PDF format support
+- [x] Inline colored PDF image rendering
 - [x] EPUB format support
 - [x] Convert scanned documents and images to plain text with ocrmypdf
 - [x] Auto saving progress
@@ -67,7 +69,6 @@ For further install instructions read the [Getting started page](https://github.
 - [ ] Offline PWA web client
 - [ ] Start screen to show overview of books and progress
 - [ ] Minimal build feature flag, for only basic converters, no server integration and no ai
-- [ ] Image to ascii art converter
 - [ ] Natural sounding ai voice model for text to speech narration
 - [ ] Run all inference directly in rust no external runtime deps
 - [ ] Support more ebook and document formats

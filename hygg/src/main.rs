@@ -32,6 +32,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     return Ok(());
   }
 
+  // Redirected non-OCR PDFs keep the extracted text and include inline
+  // truecolor image art. OCR output remains text-only.
+  if !std::io::stdout().is_terminal()
+    && stdin_content.is_none()
+    && !args.ocr
+    && let Some(pdf_path) = resolve_pdf_path(&args)
+  {
+    match cli_pdf_to_text::pdf_to_ansi_text(&pdf_path, args.col) {
+      Ok(content) => println!("{content}"),
+      Err(e) => {
+        eprintln!("Error:\nUnable to read PDF file '{pdf_path}'\n");
+        eprintln!("Details:\n{e}\n");
+        std::process::exit(1);
+      }
+    }
+    return Ok(());
+  }
+
   // Server flags are currently placeholders and intentionally no-op.
   let prepared = prepare_input(&args, stdin_content)?;
 

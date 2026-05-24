@@ -27,6 +27,38 @@ fn test_pdf_processing() {
 }
 
 #[test]
+fn test_redirected_pdf_output_includes_inline_ansi_images() {
+  let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
+    .parent()
+    .unwrap()
+    .join("test-data/pdf/progit-1-50.pdf");
+
+  if !test_file.exists() {
+    eprintln!("PDF image test file not found, skipping test");
+    return;
+  }
+
+  let output = Command::new(env!("CARGO_BIN_EXE_hygg"))
+    .arg("--col")
+    .arg("80")
+    .arg(test_file.to_str().unwrap())
+    .output()
+    .expect("Failed to execute hygg");
+
+  assert!(output.status.success(), "hygg should exit successfully");
+
+  let stdout = String::from_utf8_lossy(&output.stdout);
+  assert!(
+    stdout.contains("\x1b[38;2"),
+    "redirected PDF output should include truecolor ANSI image art"
+  );
+  assert!(
+    stdout.contains('\u{2580}'),
+    "redirected PDF output should include half-block image art"
+  );
+}
+
+#[test]
 fn test_epub_processing() {
   let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
     .parent()
