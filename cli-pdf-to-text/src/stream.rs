@@ -123,13 +123,7 @@ impl PdfStream {
       });
     }
 
-    let text_rows =
-      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        extract_visual_text_rows(&self.doc, page_0based)
-      }))
-      .ok()
-      .flatten()
-      .unwrap_or_default();
+    let text_rows = sanitized_visual_text_rows(&raw_text, col);
 
     let PdfPageForAnsi { lines, line_kinds } =
       compose_visual_page(text_rows, image_rows);
@@ -170,12 +164,12 @@ fn render_pdf_images(
   if col == 0 {
     return Vec::new();
   }
-  let page_width = doc
+  let (page_left, page_width) = doc
     .get_page_media_box(page_0based)
     .ok()
-    .map(|(llx, _, urx, _)| (urx - llx).abs())
-    .filter(|w| *w > 0.0)
-    .unwrap_or(612.0);
+    .map(|(llx, _, urx, _)| (llx, (urx - llx).abs()))
+    .filter(|(_, w)| *w > 0.0)
+    .unwrap_or((0.0, 612.0));
 
   let mut out = Vec::new();
   for image in images {
@@ -188,17 +182,18 @@ fn render_pdf_images(
     let Ok(dynamic_image) = image.to_dynamic_image() else {
       continue;
     };
-    let left_cells =
-      ((bbox.left().max(0.0) / page_width) * col as f32).round() as usize;
+    let left_cells = pdf_x_to_cells(bbox.left(), page_left, page_width, col);
     let left_cells = left_cells.min(col.saturating_sub(1));
-    let width_cells = ((bbox.width / page_width) * col as f32).round() as usize;
+    let width_cells = pdf_width_to_cells(bbox.width, page_width, col);
     let width_cells = width_cells.max(1).min(col.saturating_sub(left_cells));
     if width_cells == 0 {
       continue;
     }
+    let height_rows =
+      pdf_image_height_rows(bbox.width, bbox.height, width_cells);
     let lines = render_half_block(
       &dynamic_image,
-      RenderConfig::new(Some(width_cells as u32), None),
+      RenderConfig::new(Some(width_cells as u32), Some(height_rows as u32)),
     );
     if lines.is_empty() {
       continue;
@@ -206,6 +201,36 @@ fn render_pdf_images(
     out.push(VisualImageRows { top: bbox.top(), left_cells, lines });
   }
   out
+}
+
+fn pdf_x_to_cells(
+  x: f32,
+  page_left: f32,
+  page_width: f32,
+  col: usize,
+) -> usize {
+  if page_width <= 0.0 || col == 0 {
+    return 0;
+  }
+  (((x - page_left).max(0.0) / page_width) * col as f32).round() as usize
+}
+
+fn pdf_width_to_cells(width: f32, page_width: f32, col: usize) -> usize {
+  if page_width <= 0.0 || col == 0 {
+    return 0;
+  }
+  ((width.max(0.0) / page_width) * col as f32).round() as usize
+}
+
+fn pdf_image_height_rows(
+  bbox_width: f32,
+  bbox_height: f32,
+  width_cells: usize,
+) -> usize {
+  if bbox_width <= 0.0 || bbox_height <= 0.0 || width_cells == 0 {
+    return 1;
+  }
+  ((bbox_height / bbox_width) * width_cells as f32).round().max(1.0) as usize
 }
 
 fn compose_visual_page(
@@ -271,6 +296,18 @@ fn compose_visual_page(
   }
 
   PdfPageForAnsi { lines, line_kinds }
+}
+
+fn sanitized_visual_text_rows(
+  raw_text: &str,
+  col: usize,
+) -> Vec<VisualTextRow> {
+  cli_justify::justify_pdf_page(raw_text, col)
+    .lines
+    .into_iter()
+    .enumerate()
+    .map(|(idx, text)| VisualTextRow { top: -(idx as f32), left: 0.0, text })
+    .collect()
 }
 
 /// Build a text blob from pdf_oxide's positional `TextLine` output.
@@ -459,78 +496,6 @@ fn extract_page_text_lines(
     output.push('\n');
   }
   Some(output)
-}
-
-fn extract_visual_text_rows(
-  doc: &pdf_oxide::PdfDocument,
-  page_0based: usize,
-) -> Option<Vec<VisualTextRow>> {
-  let mut lines = doc.extract_text_lines(page_0based).ok()?;
-  if lines.is_empty() {
-    return None;
-  }
-
-  lines.sort_by(|a, b| {
-    b.bbox
-      .top()
-      .partial_cmp(&a.bbox.top())
-      .unwrap_or(std::cmp::Ordering::Equal)
-      .then_with(|| {
-        a.bbox
-          .left()
-          .partial_cmp(&b.bbox.left())
-          .unwrap_or(std::cmp::Ordering::Equal)
-      })
-  });
-
-  const SAME_ROW_TOL: f32 = 3.0;
-  const PT_PER_CHAR: f32 = 5.0;
-
-  let mut rows = Vec::new();
-  let mut row_start = 0usize;
-  let mut row_anchor_y = lines[0].bbox.top();
-  for i in 1..=lines.len() {
-    let break_row = i == lines.len()
-      || (row_anchor_y - lines[i].bbox.top()).abs() > SAME_ROW_TOL;
-    if break_row {
-      let mut row: Vec<&pdf_oxide::layout::TextLine> =
-        lines[row_start..i].iter().collect();
-      row.sort_by(|a, b| {
-        a.bbox
-          .left()
-          .partial_cmp(&b.bbox.left())
-          .unwrap_or(std::cmp::Ordering::Equal)
-      });
-      let row_left =
-        row.iter().map(|l| l.bbox.left()).fold(f32::INFINITY, f32::min);
-      let mut body = String::new();
-      let mut prev_right: Option<f32> = None;
-      for line in row {
-        for word in &line.words {
-          if let Some(pr) = prev_right {
-            let gap_pt = (word.bbox.left() - pr).max(0.0);
-            let gap_chars = ((gap_pt / PT_PER_CHAR).round() as usize).max(1);
-            for _ in 0..gap_chars {
-              body.push(' ');
-            }
-          }
-          body.push_str(&word.text);
-          prev_right = Some(word.bbox.right());
-        }
-      }
-      rows.push(VisualTextRow {
-        top: row_anchor_y,
-        left: row_left,
-        text: body,
-      });
-      row_start = i;
-      if i < lines.len() {
-        row_anchor_y = lines[i].bbox.top();
-      }
-    }
-  }
-
-  Some(rows)
 }
 
 fn is_digits_only(s: &str) -> bool {
@@ -723,5 +688,19 @@ mod tests {
 
     assert!(!page.lines.is_empty());
     assert_eq!(page.line_kinds, vec![PdfLineKind::Text; page.lines.len()]);
+  }
+
+  #[test]
+  fn pdf_cell_mapping_accounts_for_media_box_origin() {
+    assert_eq!(pdf_x_to_cells(100.0, 100.0, 500.0, 80), 0);
+    assert_eq!(pdf_x_to_cells(350.0, 100.0, 500.0, 80), 40);
+    assert_eq!(pdf_width_to_cells(125.0, 500.0, 80), 20);
+  }
+
+  #[test]
+  fn pdf_image_height_uses_display_bbox_aspect_ratio() {
+    assert_eq!(pdf_image_height_rows(100.0, 50.0, 20), 10);
+    assert_eq!(pdf_image_height_rows(100.0, 200.0, 20), 40);
+    assert_eq!(pdf_image_height_rows(0.0, 200.0, 20), 1);
   }
 }

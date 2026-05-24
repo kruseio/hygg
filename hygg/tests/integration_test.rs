@@ -1,6 +1,24 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+fn strip_ansi_escapes(input: &str) -> String {
+  let mut output = String::with_capacity(input.len());
+  let mut chars = input.chars().peekable();
+  while let Some(ch) = chars.next() {
+    if ch == '\x1b' && chars.peek() == Some(&'[') {
+      chars.next();
+      for c in chars.by_ref() {
+        if c.is_ascii_alphabetic() {
+          break;
+        }
+      }
+      continue;
+    }
+    output.push(ch);
+  }
+  output
+}
+
 #[test]
 fn test_pdf_processing() {
   let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -56,6 +74,17 @@ fn test_redirected_pdf_output_includes_inline_ansi_images() {
     stdout.contains('\u{2580}'),
     "redirected PDF output should include half-block image art"
   );
+  assert!(
+    stdout.contains("Pro Git"),
+    "redirected PDF output should preserve extracted text"
+  );
+  for line in stdout.lines() {
+    let visible = strip_ansi_escapes(line).chars().count();
+    assert!(
+      visible <= 80,
+      "redirected PDF line should fit --col=80, got {visible}: {line:?}"
+    );
+  }
 }
 
 #[test]
