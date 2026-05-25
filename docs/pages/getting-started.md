@@ -59,10 +59,20 @@ hygg doc.docx
 ```
 
 ## OCR for scanned documents
+Install with the bundled English OCR feature to enable OCR for scanned PDFs:
 ```sh
-sudo apt install ocrmypdf tesseract-ocr-eng
+cargo install --locked --features pdf-ocr-bundled hygg
 hygg --ocr=on doc.pdf
 ```
+
+When installing from a local checkout, pass the same feature flag to the
+`hygg` package:
+```sh
+cargo install --locked --path hygg --features pdf-ocr-bundled
+hygg --ocr=on doc.pdf
+```
+
+The bundled OCR feature does not require `ocrmypdf` or Tesseract.
 
 ## Reading from stdin
 ```sh
