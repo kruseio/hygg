@@ -35,8 +35,8 @@ fn bundled_ocr_config() -> pdf_oxide::ocr::OcrConfig {
 }
 
 #[cfg(feature = "pdf-ocr-bundled")]
-pub(crate) fn bundled_ocr_engine(
-) -> Result<pdf_oxide::ocr::OcrEngine, Box<dyn std::error::Error>> {
+pub(crate) fn bundled_ocr_engine()
+-> Result<pdf_oxide::ocr::OcrEngine, Box<dyn std::error::Error>> {
   let det_model = decompress_gzip(DET_MODEL_GZ)?;
   let rec_model = decompress_gzip(REC_MODEL_GZ)?;
   pdf_oxide::ocr::OcrEngine::from_bytes(
@@ -446,11 +446,7 @@ fn merge_native_and_ocr_regions_text(
     .filter(|text| !text.is_empty())
     .collect::<Vec<_>>()
     .join("\n");
-  if native.is_empty() {
-    ocr
-  } else {
-    format!("{native}\n{ocr}")
-  }
+  if native.is_empty() { ocr } else { format!("{native}\n{ocr}") }
 }
 
 #[cfg(feature = "pdf-ocr-bundled")]

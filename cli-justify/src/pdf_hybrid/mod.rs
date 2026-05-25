@@ -330,9 +330,7 @@ mod tests {
       .position(|line| line.trim_start().starts_with("%ad "))
       .expect("%ad row should appear");
     assert!(
-      row_h_upper < row_h_lower
-        && row_h_lower < row_an
-        && row_an < row_ad,
+      row_h_upper < row_h_lower && row_h_lower < row_an && row_an < row_ad,
       "specifier rows should appear in order, got: {out:?}",
     );
     for row in &out[row_h_upper..=row_ad] {
@@ -368,7 +366,10 @@ mod tests {
       .iter()
       .position(|line| line.contains("You may be wondering"))
       .expect("prose should appear");
-    assert!(prose_idx > last_row + 1, "prose should follow with a gap, got: {out:?}");
+    assert!(
+      prose_idx > last_row + 1,
+      "prose should follow with a gap, got: {out:?}"
+    );
     assert!(
       out[last_row + 1..prose_idx].iter().any(String::is_empty),
       "expected a blank line between the table and the prose, got: {out:?}",
@@ -443,9 +444,21 @@ mod tests {
       })
       .unwrap_or_else(|| panic!("second example should appear, got: {out:?}"));
 
-    assert_eq!(middle, opener + 1, "no blank/join between opener and middle, got: {out:?}");
-    assert_eq!(closer, middle + 1, "no blank/join between middle and closer, got: {out:?}");
-    assert_eq!(second, closer + 1, "second example follows directly, got: {out:?}");
+    assert_eq!(
+      middle,
+      opener + 1,
+      "no blank/join between opener and middle, got: {out:?}"
+    );
+    assert_eq!(
+      closer,
+      middle + 1,
+      "no blank/join between middle and closer, got: {out:?}"
+    );
+    assert_eq!(
+      second,
+      closer + 1,
+      "second example follows directly, got: {out:?}"
+    );
   }
 
   #[test]
@@ -545,12 +558,8 @@ mod tests {
   fn preserves_blank_between_bullet_list_and_following_prose() {
     // The collapse logic must not remove a blank that genuinely
     // terminates a list and introduces a fresh prose paragraph.
-    let input = concat!(
-      "• First.\n",
-      "• Second.\n",
-      "\n",
-      "Now back to prose.\n",
-    );
+    let input =
+      concat!("• First.\n", "• Second.\n", "\n", "Now back to prose.\n",);
     let out = justify_pdf_hybrid(input, 80);
 
     let second_idx = out
@@ -654,8 +663,16 @@ mod tests {
       .position(|line| line.trim_start().starts_with("( So does this one"))
       .unwrap_or_else(|| panic!("second example should appear, got: {out:?}"));
 
-    assert_eq!(closer, opener + 1, "bare closer should not be joined or padded, got: {out:?}");
-    assert_eq!(second, closer + 1, "second example follows directly, got: {out:?}");
+    assert_eq!(
+      closer,
+      opener + 1,
+      "bare closer should not be joined or padded, got: {out:?}"
+    );
+    assert_eq!(
+      second,
+      closer + 1,
+      "second example follows directly, got: {out:?}"
+    );
   }
 
   #[test]
@@ -678,7 +695,10 @@ mod tests {
       .iter()
       .position(|line| line.contains("This type of output"))
       .expect("prose should appear in output");
-    assert!(prose_idx > last_graph + 1, "prose should follow graph with a gap, got: {out:?}");
+    assert!(
+      prose_idx > last_graph + 1,
+      "prose should follow graph with a gap, got: {out:?}"
+    );
     assert!(
       out[last_graph + 1..prose_idx].iter().any(String::is_empty),
       "expected a blank line between graph and prose, got: {out:?}",

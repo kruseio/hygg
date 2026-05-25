@@ -42,13 +42,12 @@ impl Editor {
           let mut result = String::new();
 
           // First line (partial)
-          if start_line < self.lines.len() {
-            if !self.is_ansi_art_line(start_line) {
-              let line = &self.lines[start_line];
-              let start_col = start_col.min(line.len());
-              result.push_str(&line[start_col..]);
-              result.push('\n');
-            }
+          if start_line < self.lines.len() && !self.is_ansi_art_line(start_line)
+          {
+            let line = &self.lines[start_line];
+            let start_col = start_col.min(line.len());
+            result.push_str(&line[start_col..]);
+            result.push('\n');
           }
 
           // Middle lines (full)
@@ -60,12 +59,10 @@ impl Editor {
           }
 
           // Last line (partial)
-          if end_line < self.lines.len() {
-            if !self.is_ansi_art_line(end_line) {
-              let line = &self.lines[end_line];
-              let end_col = end_col.min(line.len());
-              result.push_str(&line[..end_col]);
-            }
+          if end_line < self.lines.len() && !self.is_ansi_art_line(end_line) {
+            let line = &self.lines[end_line];
+            let end_col = end_col.min(line.len());
+            result.push_str(&line[..end_col]);
           }
 
           return result;

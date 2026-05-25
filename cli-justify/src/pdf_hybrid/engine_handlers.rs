@@ -41,8 +41,7 @@ fn line_starts_sibling_list_item(
   if marker_punct != '.' && marker_punct != ')' {
     return false;
   }
-  let digit_count =
-    rest.chars().take_while(|ch| ch.is_ascii_digit()).count();
+  let digit_count = rest.chars().take_while(|ch| ch.is_ascii_digit()).count();
   if digit_count == 0 {
     return false;
   }
@@ -246,9 +245,7 @@ impl FormatterEngine {
       return false;
     };
 
-    drop_trailing_blanks_after_sibling_list(
-      &mut self.out, &indent, &marker,
-    );
+    drop_trailing_blanks_after_sibling_list(&mut self.out, &indent, &marker);
 
     let mut lines = Vec::new();
     if !content.is_empty() {
@@ -327,8 +324,7 @@ impl FormatterEngine {
         lines.push(line.to_string());
       }
       _ => {
-        let starts_caption =
-          looks_like_table_or_figure_caption(line.trim());
+        let starts_caption = looks_like_table_or_figure_caption(line.trim());
         let prior_was_list_item =
           matches!(self.pending, Some(PendingPdfBlock::ListItem { .. }));
         let prior_was_caption_pending = match self.pending.as_ref() {
@@ -356,17 +352,15 @@ impl FormatterEngine {
         // Push an explicit blank separator between the just-flushed block
         // and this new paragraph in two cases that pdf_extract leaves
         // ambiguous:
-        //   * After a list (option / spec table) ends and prose resumes.
-        //     The PDF has extra leading after the last row, but no blank
-        //     line, so the table and the next sentence would otherwise
-        //     run together.
-        //   * Before a caption that follows prose — captions read as
-        //     their own paragraph in the PDF but the extracted text has
-        //     them glued to the trailing sentence above. Consecutive
-        //     captions (a list of Plate / Figure / Table entries) must
-        //     stay adjacent: we already broke them into separate
-        //     paragraphs above, but a blank between each one would turn
-        //     the list into a sparse double-spaced block.
+        //   * After a list (option / spec table) ends and prose resumes. The
+        //     PDF has extra leading after the last row, but no blank line, so
+        //     the table and the next sentence would otherwise run together.
+        //   * Before a caption that follows prose — captions read as their own
+        //     paragraph in the PDF but the extracted text has them glued to the
+        //     trailing sentence above. Consecutive captions (a list of Plate /
+        //     Figure / Table entries) must stay adjacent: we already broke them
+        //     into separate paragraphs above, but a blank between each one
+        //     would turn the list into a sparse double-spaced block.
         // Skip when the prior content is already followed by a blank
         // (handle_blank_line ran, or code-block padding fired) so we
         // don't double up.

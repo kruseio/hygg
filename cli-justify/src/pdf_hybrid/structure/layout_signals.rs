@@ -156,11 +156,11 @@ fn symbol_density_looks_like_code(trimmed: &str) -> bool {
 /// leading `*` as a bullet-list marker.
 ///
 /// Matches three shapes:
-///   * pure-graph rows like `|`, `|\`, `|/`, `* |` — the column-glyph
-///     lines that draw the branch topology between commits.
-///   * commit rows like `* 2d3acf9 Subject`, `| * 420eac9 Subject`,
-///     `* | 30e367c Subject` — where the prefix is graph glyphs and the
-///     next token is a 7+ char hex git short-hash.
+///   * pure-graph rows like `|`, `|\`, `|/`, `* |` — the column-glyph lines
+///     that draw the branch topology between commits.
+///   * commit rows like `* 2d3acf9 Subject`, `| * 420eac9 Subject`, `* |
+///     30e367c Subject` — where the prefix is graph glyphs and the next token
+///     is a 7+ char hex git short-hash.
 ///   * the same two but indented (we strip leading whitespace before
 ///     inspecting).
 ///

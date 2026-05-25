@@ -92,10 +92,10 @@ pub fn justify_pdf_seam(
 /// in the streaming reader.
 ///
 /// Returns:
-///   * `0` when the two pages should read as one continuous block — a
-///     bulleted / numbered list whose sibling items span the page break,
-///     or a caption list (`Plate N …`, `Figure 3.4 …`, `Table 2 …`)
-///     whose entries straddle a page boundary.
+///   * `0` when the two pages should read as one continuous block — a bulleted
+///     / numbered list whose sibling items span the page break, or a caption
+///     list (`Plate N …`, `Figure 3.4 …`, `Table 2 …`) whose entries straddle a
+///     page boundary.
 ///   * `1` otherwise, as the normal paragraph separator.
 ///
 /// Both `this_lines` and `next_lines` are the per-page `standalone_lines`
@@ -188,8 +188,7 @@ fn line_starts_sibling_list_item(
   if marker_punct != '.' && marker_punct != ')' {
     return false;
   }
-  let digit_count =
-    rest.chars().take_while(|ch| ch.is_ascii_digit()).count();
+  let digit_count = rest.chars().take_while(|ch| ch.is_ascii_digit()).count();
   if digit_count == 0 {
     return false;
   }
@@ -385,7 +384,8 @@ mod tests {
   }
 
   #[test]
-  fn inter_page_blank_count_drops_blanks_between_sibling_bullets_with_continuation() {
+  fn inter_page_blank_count_drops_blanks_between_sibling_bullets_with_continuation()
+   {
     // The trailing line of the previous page is a wrapped continuation
     // of a bullet, not the bullet header. We must still recognise the
     // sibling relationship by walking back through continuation lines.
@@ -421,7 +421,8 @@ mod tests {
   fn inter_page_blank_count_keeps_one_blank_between_unrelated_paragraphs() {
     let this =
       vec!["End of one prose paragraph on the prior page.".to_string()];
-    let next = vec!["Start of a new prose paragraph on the next page.".to_string()];
+    let next =
+      vec!["Start of a new prose paragraph on the next page.".to_string()];
     assert_eq!(inter_page_blank_count(&this, &next), 1);
   }
 
@@ -438,9 +439,7 @@ mod tests {
       "  * 2d3acf9 Ignore errors from SIGCHLD on trap".to_string(),
       "  * | 30e367c Timeout code and tests".to_string(),
     ];
-    let next = vec![
-      "  * | 5a09431 Add timeout protection to grit".to_string(),
-    ];
+    let next = vec!["  * | 5a09431 Add timeout protection to grit".to_string()];
     assert_eq!(inter_page_blank_count(&this, &next), 0);
   }
 }

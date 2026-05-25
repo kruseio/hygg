@@ -171,10 +171,7 @@ fn is_chapter_section_running_header(trimmed: &str) -> bool {
   if number.is_empty() || number.len() > 8 {
     return false;
   }
-  if !number
-    .chars()
-    .all(|ch| ch.is_ascii_alphanumeric() || ch == '.')
-  {
+  if !number.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '.') {
     return false;
   }
   // Accept "3", "3.2", "A", "A.1" — anything with a digit, or a short
@@ -196,11 +193,7 @@ fn is_chapter_section_running_header(trimmed: &str) -> bool {
   has_wide_gap_between_tokens(trimmed, number, last)
 }
 
-fn has_wide_gap_between_tokens(
-  trimmed: &str,
-  first: &str,
-  last: &str,
-) -> bool {
+fn has_wide_gap_between_tokens(trimmed: &str, first: &str, last: &str) -> bool {
   let Some(first_idx) = trimmed.find(first) else {
     return false;
   };
@@ -211,11 +204,7 @@ fn has_wide_gap_between_tokens(
   if last_start <= first_end {
     return false;
   }
-  trimmed[first_end..last_start]
-    .chars()
-    .filter(|ch| *ch == ' ')
-    .count()
-    >= 10
+  trimmed[first_end..last_start].chars().filter(|ch| *ch == ' ').count() >= 10
 }
 
 fn centered_heading_label(line: &str) -> Option<&str> {
@@ -718,12 +707,24 @@ mod tests {
     // shows up wedged between the previous page's last line and the
     // current page's first line, breaking a paragraph that crossed
     // the page boundary.
-    let chapter = "CHAPTER 3                                                    Syntax";
-    let section = "SECTION 3.2                                                   Objects";
-    let appendix = "APPENDIX A                                                   Notes";
-    assert!(is_running_header_or_footer_line(chapter), "expected chapter running header to be dropped");
-    assert!(is_running_header_or_footer_line(section), "expected section running header to be dropped");
-    assert!(is_running_header_or_footer_line(appendix), "expected appendix running header to be dropped");
+    let chapter =
+      "CHAPTER 3                                                    Syntax";
+    let section =
+      "SECTION 3.2                                                   Objects";
+    let appendix =
+      "APPENDIX A                                                   Notes";
+    assert!(
+      is_running_header_or_footer_line(chapter),
+      "expected chapter running header to be dropped"
+    );
+    assert!(
+      is_running_header_or_footer_line(section),
+      "expected section running header to be dropped"
+    );
+    assert!(
+      is_running_header_or_footer_line(appendix),
+      "expected appendix running header to be dropped"
+    );
   }
 
   #[test]
@@ -740,11 +741,7 @@ mod tests {
   fn keeps_centered_section_heading() {
     // The actual section heading is centered (≥12 leading spaces) and
     // must survive — only the left-aligned variant is a running head.
-    assert!(
-      !is_running_header_or_footer_line(
-        "                    Figures"
-      )
-    );
+    assert!(!is_running_header_or_footer_line("                    Figures"));
   }
 
   #[test]

@@ -121,9 +121,9 @@ impl Editor {
       // differently
       if self.tutorial_active {
         // For tutorial, show command output in overlay instead of split
-        self.execute_shell_command_in_tutorial(&shell_cmd)?;
+        self.execute_shell_command_in_tutorial(shell_cmd)?;
       } else {
-        self.execute_shell_command(&shell_cmd)?;
+        self.execute_shell_command(shell_cmd)?;
       }
 
       self.debug_log(&format!(

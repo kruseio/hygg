@@ -959,14 +959,14 @@ impl Editor {
     let pages_snapshot: Vec<usize> =
       (0..state.pages.len()).map(|i| state.page_line_count(i)).collect();
 
-    if just_finished {
-      if let Some((started, name)) = self.pdf_load_started_at.take() {
-        self.pdf_load_finished = Some((
-          std::time::Instant::now(),
-          started.elapsed().as_secs_f32(),
-          name,
-        ));
-      }
+    if just_finished
+      && let Some((started, name)) = self.pdf_load_started_at.take()
+    {
+      self.pdf_load_finished = Some((
+        std::time::Instant::now(),
+        started.elapsed().as_secs_f32(),
+        name,
+      ));
     }
 
     self.rebuild_lines_from_pdf_stream();
