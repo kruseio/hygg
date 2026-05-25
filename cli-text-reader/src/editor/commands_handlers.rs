@@ -1,6 +1,17 @@
 use super::core::{Editor, EditorMode};
 use crate::config::{AppConfig, save_config};
 
+fn save_ocr_config_for_command(
+  config: &AppConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+  #[cfg(test)]
+  if std::env::var_os("HYGG_TEST_WRITE_CONFIG").is_none() {
+    return Ok(());
+  }
+
+  save_config(config)
+}
+
 impl Editor {
   // Handle :p command - toggle progress display
   pub fn handle_progress_command(
@@ -31,6 +42,39 @@ impl Editor {
       buffer.command_buffer.clear();
       buffer.command_cursor_pos = 0;
     }
+    Ok(false)
+  }
+
+  pub fn handle_ocr_command(
+    &mut self,
+    enable: bool,
+  ) -> Result<bool, Box<dyn std::error::Error>> {
+    self.ocr_enabled = enable;
+    let config = AppConfig {
+      enable_tutorial: None,
+      enable_line_highlighter: None,
+      show_cursor: None,
+      show_progress: None,
+      pdf_ocr: Some(enable),
+      tutorial_shown: None,
+    };
+    if let Err(e) = save_ocr_config_for_command(&config) {
+      self.debug_log_error(&format!("Failed to save OCR config: {e}"));
+    }
+
+    if enable {
+      self.start_pdf_ocr_loader();
+    } else {
+      self.stop_pdf_ocr_loader();
+    }
+    self.set_active_mode(EditorMode::Normal);
+    self.editor_state.command_buffer.clear();
+    self.editor_state.command_cursor_pos = 0;
+    if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
+      buffer.command_buffer.clear();
+      buffer.command_cursor_pos = 0;
+    }
+    self.mark_dirty();
     Ok(false)
   }
 
@@ -291,6 +335,7 @@ impl Editor {
       enable_line_highlighter: Some(self.show_highlighter),
       show_cursor: Some(self.show_cursor),
       show_progress: Some(self.show_progress),
+      pdf_ocr: None,        // Keep existing value
       tutorial_shown: None, // Keep existing value
     };
 
@@ -395,6 +440,7 @@ impl Editor {
       enable_line_highlighter: None, // Keep existing value
       show_cursor: None,             // Keep existing value
       show_progress: None,           // Keep existing value
+      pdf_ocr: None,                 // Keep existing value
       tutorial_shown: None,          // Keep existing value
     };
 
@@ -445,6 +491,7 @@ impl Editor {
       enable_line_highlighter: None, // Keep existing value
       show_cursor: None,             // Keep existing value
       show_progress: None,           // Keep existing value
+      pdf_ocr: None,                 // Keep existing value
       tutorial_shown: None,          // Keep existing value
     };
 
@@ -485,5 +532,89 @@ impl Editor {
       buffer.command_cursor_pos = 0;
     }
     Ok(false)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::core_types::ViewMode;
+  use crate::editor::streaming::{LoadedPage, PageSlot, PdfStreamingState};
+  use cli_pdf_to_text::PdfStream;
+  use std::sync::atomic::AtomicBool;
+  use std::sync::{Arc, mpsc};
+
+  #[test]
+  fn ocr_on_off_do_not_open_overlay_or_split_from_pdf_view() {
+    let mut editor = Editor::new(vec!["pdf line".to_string()], 80);
+    editor.active_buffer = 0;
+    editor.view_mode = ViewMode::Normal;
+    editor.buffers[0].command_buffer = "ocr on".to_string();
+
+    editor.handle_ocr_command(true).expect("OCR on command should succeed");
+    assert!(editor.ocr_enabled);
+    assert_eq!(editor.active_buffer, 0);
+    assert_eq!(editor.view_mode, ViewMode::Normal);
+    assert_eq!(editor.buffers.len(), 1);
+
+    editor.buffers[0].command_buffer = "ocr off".to_string();
+    editor.handle_ocr_command(false).expect("OCR off command should succeed");
+    assert!(!editor.ocr_enabled);
+    assert_eq!(editor.active_buffer, 0);
+    assert_eq!(editor.view_mode, ViewMode::Normal);
+    assert_eq!(editor.buffers.len(), 1);
+  }
+
+  #[test]
+  fn ocr_on_starts_loader_and_stays_in_streaming_pdf_view() {
+    let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+      .join("../test-data/pdf/progit-1-50.pdf");
+    if !pdf_path.exists() {
+      return;
+    }
+    let stream = Arc::new(
+      PdfStream::open(pdf_path.to_str().expect("utf-8 path"))
+        .expect("PdfStream should open valid test PDF"),
+    );
+    let (_tx, rx) = mpsc::channel();
+    let mut editor = Editor::new(vec!["pdf line".to_string()], 80);
+    editor.pdf_source_path = Some(pdf_path.to_string_lossy().to_string());
+    editor.pdf_streaming = Some(PdfStreamingState {
+      stream,
+      col: 80,
+      pages: vec![PageSlot::Loaded(LoadedPage::from_raw(
+        "pdf line".to_string(),
+        80,
+      ))],
+      receiver: rx,
+      cancel: Arc::new(AtomicBool::new(false)),
+      fully_loaded: true,
+      ocr_loading: false,
+      ocr_receiver: None,
+      ocr_cancel: None,
+      ocr_worker: None,
+      worker: None,
+    });
+
+    editor.handle_ocr_command(true).expect("OCR on command should succeed");
+
+    assert!(editor.ocr_enabled);
+    assert_eq!(editor.active_buffer, 0);
+    assert_eq!(editor.view_mode, ViewMode::Normal);
+    let state = editor.pdf_streaming.as_ref().expect("streaming state");
+    assert!(state.ocr_loading);
+    assert!(state.ocr_receiver.is_some());
+    assert!(state.ocr_cancel.is_some());
+    assert!(state.ocr_worker.is_some());
+
+    let state = editor.pdf_streaming.as_mut().expect("streaming state");
+    if let Some(cancel) = state.ocr_cancel.take() {
+      cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    if let Some(worker) = state.ocr_worker.take() {
+      let _ = worker.join();
+    }
+    state.ocr_receiver = None;
+    state.ocr_loading = false;
   }
 }

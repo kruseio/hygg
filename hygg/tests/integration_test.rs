@@ -20,6 +20,14 @@ fn strip_ansi_escapes(input: &str) -> String {
   output
 }
 
+fn hygg_command(test_name: &str) -> Command {
+  let config_home = std::env::temp_dir()
+    .join(format!("hygg-config-{}-{test_name}", std::process::id()));
+  let mut command = Command::new(env!("CARGO_BIN_EXE_hygg"));
+  command.env("XDG_CONFIG_HOME", config_home);
+  command
+}
+
 #[cfg(feature = "pdf-ocr-bundled")]
 fn write_native_text_pdf(path: &Path, text: &str) {
   let stream = format!("BT\n/F1 18 Tf\n40 90 Td\n({text}) Tj\nET\n");
@@ -87,7 +95,7 @@ fn test_pdf_processing() {
     return;
   }
 
-  let output = Command::new(env!("CARGO_BIN_EXE_hygg"))
+  let output = hygg_command("test_pdf_processing")
     .arg("--col")
     .arg("80")
     .arg(test_file.to_str().unwrap())
@@ -112,12 +120,13 @@ fn test_redirected_pdf_output_includes_inline_ansi_images() {
     return;
   }
 
-  let output = Command::new(env!("CARGO_BIN_EXE_hygg"))
-    .arg("--col")
-    .arg("80")
-    .arg(test_file.to_str().unwrap())
-    .output()
-    .expect("Failed to execute hygg");
+  let output =
+    hygg_command("test_redirected_pdf_output_includes_inline_ansi_images")
+      .arg("--col")
+      .arg("80")
+      .arg(test_file.to_str().unwrap())
+      .output()
+      .expect("Failed to execute hygg");
 
   assert!(output.status.success(), "hygg should exit successfully");
 
@@ -169,15 +178,16 @@ fn test_ocr_without_bundled_feature_gives_clear_error() {
     return;
   }
 
-  let output = Command::new(env!("CARGO_BIN_EXE_hygg"))
-    .arg("--ocr")
-    .arg(test_file.to_str().unwrap())
-    .output()
-    .expect("Failed to execute hygg");
+  let output =
+    hygg_command("test_ocr_without_bundled_feature_gives_clear_error")
+      .arg("--ocr=on")
+      .arg(test_file.to_str().unwrap())
+      .output()
+      .expect("Failed to execute hygg");
 
   assert!(
     !output.status.success(),
-    "hygg --ocr should fail without bundled OCR"
+    "hygg --ocr=on should fail without bundled OCR"
   );
 
   let stderr = String::from_utf8_lossy(&output.stderr);
@@ -209,12 +219,13 @@ fn test_ocr_with_bundled_feature_does_not_invoke_ocrmypdf() {
   let path =
     std::env::join_paths(paths).expect("failed to construct test PATH");
 
-  let output = Command::new(env!("CARGO_BIN_EXE_hygg"))
-    .arg("--ocr")
-    .arg(pdf_path.to_str().unwrap())
-    .env("PATH", path)
-    .output()
-    .expect("Failed to execute hygg");
+  let output =
+    hygg_command("test_ocr_with_bundled_feature_does_not_invoke_ocrmypdf")
+      .arg("--ocr=on")
+      .arg(pdf_path.to_str().unwrap())
+      .env("PATH", path)
+      .output()
+      .expect("Failed to execute hygg");
 
   let stdout = String::from_utf8_lossy(&output.stdout);
   let stderr = String::from_utf8_lossy(&output.stderr);
@@ -223,7 +234,7 @@ fn test_ocr_with_bundled_feature_does_not_invoke_ocrmypdf() {
 
   assert!(
     output.status.success(),
-    "hygg --ocr should succeed with bundled OCR; stdout: {stdout}; stderr: {stderr}"
+    "hygg --ocr=on should succeed with bundled OCR; stdout: {stdout}; stderr: {stderr}"
   );
   assert!(
     stdout.contains("Bundled OCR smoke text"),
@@ -271,7 +282,7 @@ fn test_epub_processing() {
 
   // For the full hygg test, we'll spawn it and kill it after a short time
   // This verifies it doesn't panic on startup
-  let mut child = Command::new(env!("CARGO_BIN_EXE_hygg"))
+  let mut child = hygg_command("test_epub_processing")
     .arg("--col")
     .arg("80")
     .arg(test_file.to_str().unwrap())
@@ -323,7 +334,7 @@ fn test_odt_processing_with_pandoc() {
     return;
   }
 
-  let output = Command::new(env!("CARGO_BIN_EXE_hygg"))
+  let output = hygg_command("test_odt_processing_with_pandoc")
     .arg("--col")
     .arg("80")
     .arg(test_file.to_str().unwrap())
@@ -374,7 +385,7 @@ fn test_docx_processing_with_pandoc() {
   assert!(text.contains("Unicode"), "Should contain Unicode section");
 
   // Test full hygg processing (spawn and kill due to TUI)
-  let mut child = Command::new(env!("CARGO_BIN_EXE_hygg"))
+  let mut child = hygg_command("test_docx_processing_with_pandoc")
     .arg("--col")
     .arg("80")
     .arg(test_file.to_str().unwrap())
@@ -419,7 +430,7 @@ fn test_txt_processing() {
   }
 
   // Spawn the process with piped stdout/stderr to ensure non-interactive mode
-  let mut child = Command::new(env!("CARGO_BIN_EXE_hygg"))
+  let mut child = hygg_command("test_txt_processing")
     .arg("--col")
     .arg("80")
     .arg(test_file.to_str().unwrap())
@@ -476,7 +487,7 @@ fn test_stdin_processing() {
   use std::time::{Duration, Instant};
 
   // Test that hygg can accept stdin input
-  let mut child = Command::new(env!("CARGO_BIN_EXE_hygg"))
+  let mut child = hygg_command("test_stdin_processing")
     .arg("--col")
     .arg("40")
     .stdin(Stdio::piped())

@@ -9,6 +9,9 @@ mod command_execution;
 mod command_execution_core;
 mod command_execution_security;
 mod command_mode;
+pub(crate) mod command_registry;
+#[cfg(test)]
+mod command_registry_tests;
 mod command_translation;
 mod commands;
 mod commands_handlers;

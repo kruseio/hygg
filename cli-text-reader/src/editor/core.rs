@@ -3,12 +3,21 @@ pub use crate::core_types::{
   BufferState, EditorMode, EditorState, SplitPosition, ViewMode,
 };
 
-use crate::editor::streaming::PdfStreamingState;
+use crate::editor::streaming::{LoadedPage, PageSlot, PdfStreamingState};
 use crate::highlights::HighlightData;
 use crate::progress::generate_hash;
 use arboard::Clipboard;
 use cli_pdf_to_text::PdfLineKind;
 use crossterm::terminal;
+
+const PDF_BUFFER_INDEX: usize = 0;
+
+#[derive(Clone, Copy)]
+struct PdfCursorAnchor {
+  page_index: usize,
+  line_in_page: usize,
+  screen_row: usize,
+}
 
 /// Map a flat line index back to (page_index, line_within_page) using the
 /// streaming state's current per-page rendered line counts.
@@ -29,6 +38,23 @@ fn page_and_offset_for_line(
   (last_idx, last_count.saturating_sub(1))
 }
 
+fn reanchored_pdf_line(
+  page_counts: &[usize],
+  anchor: PdfCursorAnchor,
+) -> usize {
+  let mut line = 0usize;
+  for (idx, count) in page_counts.iter().enumerate() {
+    if idx >= anchor.page_index {
+      break;
+    }
+    line += count;
+  }
+  let clamped_line_in_page = anchor.line_in_page.min(
+    page_counts.get(anchor.page_index).copied().unwrap_or(0).saturating_sub(1),
+  );
+  line + clamped_line_in_page
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -38,6 +64,60 @@ mod tests {
   use cli_pdf_to_text::{PdfRenderedPage, PdfStream};
   use std::sync::atomic::AtomicBool;
   use std::sync::{Arc, mpsc};
+
+  fn test_pdf_stream() -> Option<Arc<PdfStream>> {
+    let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+      .join("../test-data/pdf/progit-1-50.pdf");
+    if !pdf_path.exists() {
+      return None;
+    }
+    Some(Arc::new(
+      PdfStream::open(pdf_path.to_str().expect("utf-8 path"))
+        .expect("PdfStream should open valid test PDF"),
+    ))
+  }
+
+  fn rendered_image_page(lines: &[&str]) -> PdfRenderedPage {
+    PdfRenderedPage {
+      raw_text: lines.join("\n"),
+      lines: lines.iter().map(|line| (*line).to_string()).collect(),
+      line_kinds: vec![PdfLineKind::Text; lines.len()],
+      contains_images: true,
+    }
+  }
+
+  fn editor_with_two_page_pdf() -> Option<(Editor, mpsc::SyncSender<PageLoaded>)>
+  {
+    let stream = test_pdf_stream()?;
+    let (tx, rx) = mpsc::sync_channel(4);
+    let mut editor = Editor::new(vec!["placeholder".to_string()], 80);
+    editor.height = 10;
+    editor.ocr_enabled = true;
+    editor.pdf_streaming = Some(PdfStreamingState {
+      stream,
+      col: 80,
+      pages: vec![
+        PageSlot::Loaded(LoadedPage::from_rendered(
+          rendered_image_page(&["p1-0", "p1-1", "p1-2"]),
+          80,
+        )),
+        PageSlot::Loaded(LoadedPage::from_rendered(
+          rendered_image_page(&["p2-0", "p2-1"]),
+          80,
+        )),
+      ],
+      receiver: rx,
+      cancel: Arc::new(AtomicBool::new(false)),
+      fully_loaded: true,
+      ocr_loading: true,
+      ocr_receiver: None,
+      ocr_cancel: None,
+      ocr_worker: None,
+      worker: None,
+    });
+    editor.rebuild_lines_from_pdf_stream();
+    Some((editor, tx))
+  }
 
   #[test]
   fn pdf_restore_uses_saved_cursor_screen_row() {
@@ -67,6 +147,7 @@ mod tests {
     );
     let (tx, rx) = mpsc::sync_channel(1);
     let mut editor = Editor::new(vec!["fast page".to_string()], 80);
+    editor.ocr_enabled = true;
     editor.pdf_streaming = Some(PdfStreamingState {
       stream,
       col: 80,
@@ -78,6 +159,9 @@ mod tests {
       cancel: Arc::new(AtomicBool::new(false)),
       fully_loaded: true,
       ocr_loading: true,
+      ocr_receiver: None,
+      ocr_cancel: None,
+      ocr_worker: None,
       worker: None,
     });
     editor.rebuild_lines_from_pdf_stream();
@@ -96,6 +180,12 @@ mod tests {
 
     assert_eq!(editor.drain_pdf_stream(), 1);
     assert_eq!(editor.lines, vec!["ocr page"]);
+    let PageSlot::Loaded(page) =
+      &editor.pdf_streaming.as_ref().expect("streaming state").pages[0]
+    else {
+      panic!("page should be loaded");
+    };
+    assert!(page.ocr_enhanced);
   }
 
   #[test]
@@ -122,6 +212,9 @@ mod tests {
       cancel: Arc::new(AtomicBool::new(false)),
       fully_loaded: true,
       ocr_loading: true,
+      ocr_receiver: None,
+      ocr_cancel: None,
+      ocr_worker: None,
       worker: None,
     });
 
@@ -131,6 +224,88 @@ mod tests {
     assert!(
       !editor.pdf_streaming.as_ref().expect("streaming state").ocr_loading
     );
+  }
+
+  #[test]
+  fn ocr_replacement_preserves_page_line_and_cursor_screen_row() {
+    let Some((mut editor, tx)) = editor_with_two_page_pdf() else {
+      return;
+    };
+    editor.offset = 3;
+    editor.cursor_y = 2;
+    editor.buffers[0].offset = 3;
+    editor.buffers[0].cursor_y = 2;
+    assert_eq!(editor.current_pdf_position(), Some((2, 1)));
+
+    tx.send(PageLoaded::Page {
+      page_index: 0,
+      rendered_page: rendered_image_page(&["p1 replacement"]),
+      replace_existing: true,
+    })
+    .expect("replacement page should enqueue");
+
+    assert_eq!(editor.drain_pdf_stream(), 1);
+    assert_eq!(editor.current_pdf_position(), Some((2, 1)));
+    assert_eq!(editor.cursor_y, 2);
+    assert_eq!(editor.offset, 1);
+  }
+
+  #[test]
+  fn drain_pdf_stream_updates_pdf_buffer_without_moving_overlay() {
+    assert_non_pdf_active_drain_preserves_active_buffer(ViewMode::Overlay);
+  }
+
+  #[test]
+  fn drain_pdf_stream_updates_pdf_buffer_without_moving_split() {
+    assert_non_pdf_active_drain_preserves_active_buffer(
+      ViewMode::HorizontalSplit,
+    );
+  }
+
+  fn assert_non_pdf_active_drain_preserves_active_buffer(view_mode: ViewMode) {
+    let Some((mut editor, tx)) = editor_with_two_page_pdf() else {
+      return;
+    };
+    editor.buffers[0].offset = 3;
+    editor.buffers[0].cursor_y = 2;
+
+    let mut panel = BufferState::new(vec![
+      "panel-0".to_string(),
+      "panel-1".to_string(),
+      "panel-2".to_string(),
+      "panel-3".to_string(),
+    ]);
+    panel.offset = 1;
+    panel.cursor_y = 1;
+    panel.viewport_height = 4;
+    panel.is_split_buffer = view_mode == ViewMode::HorizontalSplit;
+    editor.buffers.push(panel);
+    editor.active_buffer = 1;
+    editor.active_pane = 1;
+    editor.view_mode = view_mode.clone();
+    editor.load_buffer_state(1);
+    let active_lines = editor.lines.clone();
+    let active_offset = editor.offset;
+    let active_cursor_y = editor.cursor_y;
+    let active_total_lines = editor.total_lines;
+
+    tx.send(PageLoaded::Page {
+      page_index: 0,
+      rendered_page: rendered_image_page(&["p1 replacement"]),
+      replace_existing: true,
+    })
+    .expect("replacement page should enqueue");
+
+    assert_eq!(editor.drain_pdf_stream(), 1);
+    assert_eq!(editor.active_buffer, 1);
+    assert_eq!(editor.view_mode, view_mode);
+    assert_eq!(editor.lines, active_lines);
+    assert_eq!(editor.offset, active_offset);
+    assert_eq!(editor.cursor_y, active_cursor_y);
+    assert_eq!(editor.total_lines, active_total_lines);
+    assert_eq!(editor.buffers[0].lines[0], "p1 replacement");
+    assert_eq!(editor.buffers[0].offset, 1);
+    assert_eq!(editor.buffers[0].cursor_y, 2);
   }
 }
 
@@ -276,6 +451,8 @@ impl Editor {
       last_cursor_style: None,
       buffer_just_switched: false,
       pdf_streaming: None,
+      pdf_source_path: None,
+      ocr_enabled: false,
       pdf_pending: None,
       pdf_load_started_at: None,
       pdf_load_finished: None,
@@ -406,6 +583,47 @@ impl Editor {
     needs
   }
 
+  fn pdf_cursor_anchor(&self) -> Option<PdfCursorAnchor> {
+    let state = self.pdf_streaming.as_ref()?;
+    if state.pages.is_empty() {
+      return None;
+    }
+    let (offset, cursor_y) = if self.active_buffer == PDF_BUFFER_INDEX {
+      (self.offset, self.cursor_y)
+    } else {
+      self
+        .buffers
+        .get(PDF_BUFFER_INDEX)
+        .map(|buffer| (buffer.offset, buffer.cursor_y))
+        .unwrap_or((0, 0))
+    };
+    let (page_index, line_in_page) =
+      page_and_offset_for_line(state, offset + cursor_y);
+    Some(PdfCursorAnchor { page_index, line_in_page, screen_row: cursor_y })
+  }
+
+  fn apply_pdf_cursor_anchor(
+    &mut self,
+    page_counts: &[usize],
+    anchor: PdfCursorAnchor,
+  ) {
+    let new_line = reanchored_pdf_line(page_counts, anchor);
+    let offset = new_line.saturating_sub(anchor.screen_row);
+    let cursor_y = new_line - offset;
+
+    if let Some(buffer) = self.buffers.get_mut(PDF_BUFFER_INDEX) {
+      buffer.offset = offset;
+      buffer.cursor_y = cursor_y;
+    }
+
+    if self.active_buffer == PDF_BUFFER_INDEX {
+      self.offset = offset;
+      self.cursor_y = cursor_y;
+      self.last_offset = new_line;
+      self.last_saved_viewport_offset = self.offset;
+    }
+  }
+
   /// Rebuild `self.lines` (and total_lines / active buffer state) from the
   /// current PDF streaming page table. Called whenever a Loading slot
   /// transitions to Loaded, or after a seam stitch. No-op for sessions that
@@ -416,14 +634,103 @@ impl Editor {
     };
     let new_lines = state.flat_lines();
     let new_line_kinds = state.flat_line_kinds();
-    self.lines = new_lines.clone();
-    self.line_kinds = new_line_kinds.clone();
-    self.total_lines = self.lines.len();
-    if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-      buffer.lines = new_lines;
-      buffer.line_kinds = new_line_kinds;
+    if let Some(buffer) = self.buffers.get_mut(PDF_BUFFER_INDEX) {
+      buffer.lines = new_lines.clone();
+      buffer.line_kinds = new_line_kinds.clone();
+    }
+    if self.active_buffer == PDF_BUFFER_INDEX {
+      self.lines = new_lines;
+      self.line_kinds = new_line_kinds;
+      self.total_lines = self.lines.len();
     }
     self.needs_redraw = true;
+  }
+
+  pub fn start_pdf_ocr_loader(&mut self) -> bool {
+    let Some(pdf_path) = self.pdf_source_path.clone() else {
+      return false;
+    };
+    let start_page =
+      self.current_pdf_buffer_position().map(|(p, _)| p as usize).unwrap_or(1);
+    let Some(state) = self.pdf_streaming.as_mut() else {
+      return false;
+    };
+    if state.ocr_loading {
+      return false;
+    }
+
+    let total_pages = state.pages.len();
+    if total_pages == 0 {
+      return false;
+    }
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (receiver, worker) = crate::editor::streaming_loader::spawn_ocr_loader(
+      pdf_path,
+      start_page,
+      state.col,
+      total_pages,
+      std::sync::Arc::clone(&cancel),
+    );
+    state.ocr_receiver = Some(receiver);
+    state.ocr_cancel = Some(cancel);
+    state.ocr_worker = Some(worker);
+    state.ocr_loading = true;
+    self.needs_redraw = true;
+    true
+  }
+
+  pub fn stop_pdf_ocr_loader(&mut self) -> bool {
+    let Some(state) = self.pdf_streaming.as_mut() else {
+      return false;
+    };
+    let was_loading = state.ocr_loading;
+    if let Some(cancel) = state.ocr_cancel.take() {
+      cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    state.ocr_receiver = None;
+    state.ocr_worker = None;
+    state.ocr_loading = false;
+    self.needs_redraw = true;
+    self.reload_ocr_enhanced_pdf_pages();
+    was_loading
+  }
+
+  fn reload_ocr_enhanced_pdf_pages(&mut self) -> bool {
+    let Some(anchor) = self.pdf_cursor_anchor() else {
+      return false;
+    };
+    let Some(state) = self.pdf_streaming.as_mut() else {
+      return false;
+    };
+
+    let stream = std::sync::Arc::clone(&state.stream);
+    let col = state.col;
+    let ocr_pages: Vec<usize> = state
+      .pages
+      .iter()
+      .enumerate()
+      .filter_map(|(idx, slot)| {
+        slot.as_loaded().and_then(|page| page.ocr_enhanced.then_some(idx))
+      })
+      .collect();
+    if ocr_pages.is_empty() {
+      return false;
+    }
+
+    for idx in ocr_pages {
+      if let Some(rendered_page) = stream.extract_page_with_images(idx + 1, col)
+      {
+        state.pages[idx] =
+          PageSlot::Loaded(LoadedPage::from_rendered(rendered_page, col));
+      }
+    }
+    let pages_snapshot: Vec<usize> =
+      (0..state.pages.len()).map(|i| state.page_line_count(i)).collect();
+
+    self.rebuild_lines_from_pdf_stream();
+    self.apply_pdf_cursor_anchor(&pages_snapshot, anchor);
+    self.needs_redraw = true;
+    true
   }
 
   pub fn is_ansi_art_line(&self, line_idx: usize) -> bool {
@@ -530,11 +837,17 @@ impl Editor {
           cancel,
           fully_loaded,
           ocr_loading,
+          ocr_receiver: None,
+          ocr_cancel: None,
+          ocr_worker: None,
           worker: Some(worker),
         };
         let target_line_start = state.line_start_for_page(target_page - 1);
         let target_page_lines = state.page_line_count(target_page - 1);
         self.pdf_streaming = Some(state);
+        if self.ocr_enabled {
+          self.start_pdf_ocr_loader();
+        }
         self.rebuild_lines_from_pdf_stream();
         // Land at the saved row within the target page; clamp to the page's
         // current rendered height so a shrunk page or missing line_in_page
@@ -583,21 +896,30 @@ impl Editor {
   /// same (page, line-within-page) it was on before the drain.
   pub fn drain_pdf_stream(&mut self) -> usize {
     use crate::editor::streaming::{LoadedPage, PageLoaded, PageSlot};
-    let Some(state) = self.pdf_streaming.as_mut() else {
-      return 0;
-    };
+    let ocr_enabled = self.ocr_enabled;
     // Collect messages in a tight loop to avoid mutable-borrow churn.
-    let messages: Vec<_> = state.receiver.try_iter().collect();
+    let messages = {
+      let Some(state) = self.pdf_streaming.as_mut() else {
+        return 0;
+      };
+      let mut messages: Vec<_> = state.receiver.try_iter().collect();
+      if let Some(receiver) = state.ocr_receiver.as_ref() {
+        messages.extend(receiver.try_iter());
+      }
+      messages
+    };
     if messages.is_empty() {
       return 0;
     }
 
     // Snapshot the logical cursor location: which page, which row within
     // that page's flat-lines slice.
-    let cursor_line = self.offset + self.cursor_y;
-    let cursor_screen_row = self.cursor_y;
-    let (anchor_page, anchor_line_in_page) =
-      page_and_offset_for_line(state, cursor_line);
+    let Some(anchor) = self.pdf_cursor_anchor() else {
+      return 0;
+    };
+    let Some(state) = self.pdf_streaming.as_mut() else {
+      return 0;
+    };
 
     let col = state.col;
     let mut applied = 0usize;
@@ -606,6 +928,11 @@ impl Editor {
         msg
       else {
         state.ocr_loading = false;
+        state.ocr_receiver = None;
+        state.ocr_cancel = None;
+        if let Some(worker) = state.ocr_worker.take() {
+          let _ = worker.join();
+        }
         applied += 1;
         continue;
       };
@@ -615,7 +942,8 @@ impl Editor {
       if !replace_existing && let PageSlot::Loaded(_) = state.pages[idx] {
         continue;
       }
-      let loaded = LoadedPage::from_rendered(rendered_page, col);
+      let mut loaded = LoadedPage::from_rendered(rendered_page, col);
+      loaded.ocr_enhanced = replace_existing && ocr_enabled;
       state.pages[idx] = PageSlot::Loaded(loaded);
       applied += 1;
     }
@@ -643,23 +971,9 @@ impl Editor {
 
     self.rebuild_lines_from_pdf_stream();
 
-    // Re-anchor the viewport: keep (anchor_page, anchor_line_in_page) on
-    // the same screen row it was previously occupying.
-    let mut new_line = 0usize;
-    for (idx, count) in pages_snapshot.iter().enumerate() {
-      if idx >= anchor_page {
-        break;
-      }
-      new_line += count;
-    }
-    let clamped_line_in_page = anchor_line_in_page.min(
-      pages_snapshot.get(anchor_page).copied().unwrap_or(0).saturating_sub(1),
-    );
-    new_line += clamped_line_in_page;
-    self.offset = new_line.saturating_sub(cursor_screen_row);
-    self.cursor_y = new_line - self.offset;
-    self.last_offset = new_line;
-    self.last_saved_viewport_offset = self.offset;
+    // Re-anchor the viewport: keep the same PDF page/line on the same
+    // screen row it was previously occupying.
+    self.apply_pdf_cursor_anchor(&pages_snapshot, anchor);
     self.needs_redraw = true;
     applied
   }
@@ -675,6 +989,11 @@ impl Editor {
     let target_line = self.offset + self.cursor_y;
     let (page_idx, line_in_page) = page_and_offset_for_line(state, target_line);
     Some(((page_idx + 1) as u32, line_in_page))
+  }
+
+  fn current_pdf_buffer_position(&self) -> Option<(u32, usize)> {
+    let anchor = self.pdf_cursor_anchor()?;
+    Some(((anchor.page_index + 1) as u32, anchor.line_in_page))
   }
 
   // Get the effective viewport height for the current buffer

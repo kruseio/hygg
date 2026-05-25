@@ -84,6 +84,8 @@ pub struct Editor {
   pub buffer_just_switched: bool,
   // Streaming-PDF page table; None for non-streaming sessions.
   pub pdf_streaming: Option<PdfStreamingState>,
+  pub pdf_source_path: Option<String>,
+  pub ocr_enabled: bool,
   // Background-opening PDF state; held while we wait for the doc to parse.
   pub pdf_pending: Option<PendingPdfStream>,
   pub pdf_load_started_at: Option<(Instant, String)>,

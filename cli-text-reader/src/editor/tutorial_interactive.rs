@@ -298,6 +298,7 @@ impl Editor {
       enable_line_highlighter: None,
       show_cursor: None,
       show_progress: None,
+      pdf_ocr: None,
       tutorial_shown: Some(true),
     };
 

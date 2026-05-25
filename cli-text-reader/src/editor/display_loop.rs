@@ -133,6 +133,7 @@ impl Editor {
           let is_mode_change_only = matches!(
             self.editor_state.mode,
             EditorMode::Command
+              | EditorMode::CommandExecution
               | EditorMode::Search
               | EditorMode::ReverseSearch
           ) && !self.cursor_moved;
@@ -216,6 +217,7 @@ impl Editor {
           let is_mode_change_only = matches!(
             self.editor_state.mode,
             EditorMode::Command
+              | EditorMode::CommandExecution
               | EditorMode::Search
               | EditorMode::ReverseSearch
           ) && !self.cursor_moved;

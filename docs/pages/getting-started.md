@@ -61,7 +61,7 @@ hygg doc.docx
 ## OCR for scanned documents
 ```sh
 sudo apt install ocrmypdf tesseract-ocr-eng
-hygg --ocr=true doc.pdf
+hygg --ocr=on doc.pdf
 ```
 
 ## Reading from stdin

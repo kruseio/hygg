@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Receiver;
+use std::thread::JoinHandle;
 
 use cli_justify::{
   PartialParagraph, PdfPageJustified, inter_page_blank_count, justify_pdf_page,
@@ -89,6 +90,9 @@ mod tests {
       cancel: Arc::new(AtomicBool::new(false)),
       fully_loaded: true,
       ocr_loading: false,
+      ocr_receiver: None,
+      ocr_cancel: None,
+      ocr_worker: None,
       worker: None,
     };
 
@@ -116,6 +120,7 @@ pub struct LoadedPage {
   pub standalone_lines: Vec<String>,
   pub line_kinds: Vec<PdfLineKind>,
   pub contains_images: bool,
+  pub ocr_enhanced: bool,
   /// Leading partial paragraph (if it looks like a continuation from the
   /// previous page).
   pub head_partial: Option<StoredPartial>,
@@ -211,6 +216,7 @@ impl LoadedPage {
       standalone_lines: lines,
       line_kinds,
       contains_images: false,
+      ocr_enhanced: false,
       head_partial: head_partial.map(Into::into),
       tail_partial: tail_partial.map(Into::into),
     }
@@ -231,6 +237,7 @@ impl LoadedPage {
       standalone_lines: page.lines,
       line_kinds,
       contains_images: true,
+      ocr_enhanced: false,
       head_partial: None,
       tail_partial: None,
     }
@@ -308,9 +315,12 @@ pub struct PdfStreamingState {
   /// True once every page has been received and stitched.
   pub fully_loaded: bool,
   pub ocr_loading: bool,
+  pub ocr_receiver: Option<Receiver<PageLoaded>>,
+  pub ocr_cancel: Option<Arc<AtomicBool>>,
+  pub ocr_worker: Option<JoinHandle<()>>,
   /// Worker thread join handle; held so the thread is cleanly joined when
   /// the editor exits.
-  pub worker: Option<std::thread::JoinHandle<()>>,
+  pub worker: Option<JoinHandle<()>>,
 }
 
 impl PdfStreamingState {

@@ -1,6 +1,7 @@
 use crate::utils::{
   ensure_config_file_with_defaults, get_hygg_config_file, parse_bool_env_var,
 };
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -10,6 +11,7 @@ pub struct AppConfig {
   pub enable_line_highlighter: Option<bool>,
   pub show_cursor: Option<bool>,
   pub show_progress: Option<bool>,
+  pub pdf_ocr: Option<bool>,
   pub tutorial_shown: Option<bool>,
 }
 
@@ -21,7 +23,7 @@ fn ensure_config_file() -> Result<(), Box<dyn std::error::Error>> {
   let config_path = get_config_env_path()?;
   ensure_config_file_with_defaults(
     &config_path,
-    "ENABLE_TUTORIAL=true\nENABLE_LINE_HIGHLIGHTER=true\nSHOW_CURSOR=true\nSHOW_PROGRESS=true\nTUTORIAL_SHOWN=false\n",
+    "ENABLE_TUTORIAL=true\nENABLE_LINE_HIGHLIGHTER=true\nSHOW_CURSOR=true\nSHOW_PROGRESS=true\nPDF_OCR=false\nTUTORIAL_SHOWN=false\n",
   )
 }
 
@@ -31,16 +33,29 @@ pub fn load_config() -> AppConfig {
   if let Ok(config_path) = get_config_env_path()
     && ensure_config_file().is_ok()
   {
-    dotenvy::from_path(config_path).ok();
-    config.enable_tutorial = parse_bool_env_var("ENABLE_TUTORIAL");
+    let file_values = dotenvy::from_path_iter(config_path)
+      .ok()
+      .map(|iter| iter.filter_map(Result::ok).collect::<HashMap<_, _>>())
+      .unwrap_or_default();
+    config.enable_tutorial = config_bool("ENABLE_TUTORIAL", &file_values);
     config.enable_line_highlighter =
-      parse_bool_env_var("ENABLE_LINE_HIGHLIGHTER");
-    config.show_cursor = parse_bool_env_var("SHOW_CURSOR");
-    config.show_progress = parse_bool_env_var("SHOW_PROGRESS");
-    config.tutorial_shown = parse_bool_env_var("TUTORIAL_SHOWN");
+      config_bool("ENABLE_LINE_HIGHLIGHTER", &file_values);
+    config.show_cursor = config_bool("SHOW_CURSOR", &file_values);
+    config.show_progress = config_bool("SHOW_PROGRESS", &file_values);
+    config.pdf_ocr = config_bool("PDF_OCR", &file_values);
+    config.tutorial_shown = config_bool("TUTORIAL_SHOWN", &file_values);
   }
 
   config
+}
+
+fn config_bool(
+  key: &str,
+  file_values: &HashMap<String, String>,
+) -> Option<bool> {
+  parse_bool_env_var(key).or_else(|| {
+    file_values.get(key).map(|value| value.eq_ignore_ascii_case("true"))
+  })
 }
 
 pub fn save_config(
@@ -60,11 +75,12 @@ pub fn save_config(
     config.show_cursor.or(existing_config.show_cursor).unwrap_or(true);
   let show_progress =
     config.show_progress.or(existing_config.show_progress).unwrap_or(true);
+  let pdf_ocr = config.pdf_ocr.or(existing_config.pdf_ocr).unwrap_or(false);
   let tutorial_shown =
     config.tutorial_shown.or(existing_config.tutorial_shown).unwrap_or(false);
 
   let content = format!(
-    "ENABLE_TUTORIAL={enable_tutorial}\nENABLE_LINE_HIGHLIGHTER={enable_line_highlighter}\nSHOW_CURSOR={show_cursor}\nSHOW_PROGRESS={show_progress}\nTUTORIAL_SHOWN={tutorial_shown}\n"
+    "ENABLE_TUTORIAL={enable_tutorial}\nENABLE_LINE_HIGHLIGHTER={enable_line_highlighter}\nSHOW_CURSOR={show_cursor}\nSHOW_PROGRESS={show_progress}\nPDF_OCR={pdf_ocr}\nTUTORIAL_SHOWN={tutorial_shown}\n"
   );
 
   fs::write(config_path, content)?;

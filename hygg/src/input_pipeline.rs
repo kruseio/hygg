@@ -25,6 +25,7 @@ pub(crate) fn read_stdin_content() -> Option<String> {
 pub(crate) fn prepare_input(
   args: &Args,
   stdin_content: Option<String>,
+  ocr_enabled: bool,
 ) -> Result<PreparedInput, Box<dyn std::error::Error>> {
   if let Some(content) = stdin_content {
     return Ok(PreparedInput {
@@ -42,7 +43,7 @@ pub(crate) fn prepare_input(
     });
   };
 
-  process_file_input(args, &file)
+  process_file_input(args, &file, ocr_enabled)
 }
 
 pub(crate) fn cleanup_temp_file(
@@ -79,6 +80,7 @@ fn resolve_input_file(args_file: Option<String>) -> Option<String> {
 fn process_file_input(
   args: &Args,
   file: &str,
+  ocr_enabled: bool,
 ) -> Result<PreparedInput, Box<dyn std::error::Error>> {
   let temp_file = format!("{file}-{}", uuid::Uuid::new_v4());
 
@@ -86,9 +88,10 @@ fn process_file_input(
     .extension()
     .and_then(|ext| ext.to_str())
     .map(|ext| ext.to_lowercase());
-  let is_pdf = extension.as_deref() == Some("pdf") || args.ocr;
+  let is_pdf = extension.as_deref() == Some("pdf");
+  let use_ocr = is_pdf && ocr_enabled;
 
-  let content = if args.ocr {
+  let content = if use_ocr {
     extract_pdf_text_with_ocr(file)?
   } else {
     read_content_without_ocr(file, extension.as_deref())?

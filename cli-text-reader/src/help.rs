@@ -1,6 +1,8 @@
+use crate::editor::command_registry;
+
 // Help text showing all available commands
 pub fn get_help_text() -> Vec<String> {
-  vec![
+  let mut lines = vec![
     "hygg - Document Reader with Vim-like Navigation".to_string(),
     "".to_string(),
     "NAVIGATION COMMANDS".to_string(),
@@ -112,27 +114,9 @@ pub fn get_help_text() -> Vec<String> {
     "    :           Enter command mode".to_string(),
     "".to_string(),
     "  Available Commands:".to_string(),
-    "    :q, :q!, :quit, :exit  Quit".to_string(),
-    "    :help, :commands       Show this help".to_string(),
-    "    :tutorial              Start interactive tutorial".to_string(),
-    "    :tutorial {n}          Jump to tutorial step n".to_string(),
-    "    :tutorial on           Enable tutorial for next launch".to_string(),
-    "    :tutorial off          Disable tutorial (same as :notutorial)"
-      .to_string(),
-    "    :notutorial            Permanently disable tutorial".to_string(),
-    "    :next, :continue       Next tutorial step (when completed)"
-      .to_string(),
-    "    :back, :prev, :previous Previous tutorial step".to_string(),
-    "    :z                     Toggle line highlighter".to_string(),
-    "    :p                     Toggle progress display".to_string(),
-    "    :cursor, :c            Toggle cursor visibility".to_string(),
-    "    :h                     Highlight selected text (in visual mode)"
-      .to_string(),
-    "    :nohl, :nohlsearch     Clear search highlighting".to_string(),
-    "    :credits, :author      Show credits".to_string(),
-    "    :about                 Show about information".to_string(),
-    "    :!{cmd}                Execute shell command (opens in split view)"
-      .to_string(),
+  ];
+  lines.extend(command_registry::command_help_lines());
+  lines.extend(vec![
     "".to_string(),
     "  Split View Navigation:".to_string(),
     "    Alt+j       Switch to bottom pane".to_string(),
@@ -161,5 +145,6 @@ pub fn get_help_text() -> Vec<String> {
     "  Bookmarks and highlights are saved per document.".to_string(),
     "".to_string(),
     "Press ':q' to close this help.".to_string(),
-  ]
+  ]);
+  lines
 }

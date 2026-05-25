@@ -91,6 +91,19 @@ pub fn run_cli_text_reader_pdf_path_with_bundled_ocr(
   run_cli_text_reader_pdf_path_inner(pdf_path, col, true)
 }
 
+pub fn load_ocr_enabled_config() -> bool {
+  config::load_config().pdf_ocr.unwrap_or(false)
+}
+
+pub fn save_ocr_enabled_config(
+  enabled: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+  config::save_config(&config::AppConfig {
+    pdf_ocr: Some(enabled),
+    ..Default::default()
+  })
+}
+
 fn run_cli_text_reader_pdf_path_inner(
   pdf_path: String,
   col: usize,
@@ -109,8 +122,7 @@ fn run_cli_text_reader_pdf_path_inner(
   let canonical_str = canonical_path.to_string_lossy().to_string();
   let document_hash = crate::progress::generate_hash(&canonical_str);
 
-  // Spawn the open + target-page extract in the background so the editor
-  // can paint a "Loading…" splash immediately.
+  // Spawn the open in the background so the editor can paint immediately.
   let (ready_tx, ready_rx) = std::sync::mpsc::channel::<StreamReady>();
   let path_for_thread = canonical_str.clone();
   let (saved_target_page, saved_line_in_page, saved_cursor_y) =
@@ -138,21 +150,23 @@ fn run_cli_text_reader_pdf_path_inner(
             StreamReady::Err("PDF parsed but reports zero pages".to_string())
           } else {
             let target_page = saved_target_page.clamp(1, total_pages);
-            let lo = target_page.saturating_sub(preload_radius).max(1);
-            let hi = (target_page + preload_radius).min(total_pages);
-            let preloaded_pages: Vec<_> = (lo..=hi)
-              .filter_map(|p| {
-                stream.extract_page_with_images(p, col).map(|page| (p, page))
-              })
-              .collect();
+            let preloaded_pages: Vec<_> = if bundled_ocr {
+              Vec::new()
+            } else {
+              let lo = target_page.saturating_sub(preload_radius).max(1);
+              let hi = (target_page + preload_radius).min(total_pages);
+              (lo..=hi)
+                .filter_map(|p| {
+                  stream.extract_page_with_images(p, col).map(|page| (p, page))
+                })
+                .collect()
+            };
             let preloaded_indices: Vec<usize> =
               preloaded_pages.iter().map(|(p, _)| *p).collect();
             let shared = Arc::new(stream);
             let cancel = Arc::new(AtomicBool::new(false));
-            let ocr_pdf_path = bundled_ocr.then(|| path_for_thread.clone());
             let (pages_rx, worker) = spawn_loader(
               Arc::clone(&shared),
-              ocr_pdf_path,
               target_page,
               col,
               preloaded_indices,
@@ -165,7 +179,7 @@ fn run_cli_text_reader_pdf_path_inner(
               pages_receiver: pages_rx,
               cancel,
               worker,
-              ocr_loading: bundled_ocr,
+              ocr_loading: false,
             }
           }
         }
@@ -183,6 +197,8 @@ fn run_cli_text_reader_pdf_path_inner(
   let mut editor =
     Editor::new_with_content(vec![String::new()], col, canonical_str.clone());
   editor.document_hash = document_hash;
+  editor.pdf_source_path = Some(canonical_str.clone());
+  editor.ocr_enabled = bundled_ocr;
   editor.pdf_pending = Some(PendingPdfStream {
     receiver: ready_rx,
     started_at: std::time::Instant::now(),
@@ -215,7 +231,13 @@ fn run_cli_text_reader_pdf_path_inner(
   // Stop any loader thread and join it before we return.
   if let Some(state) = editor.pdf_streaming.as_mut() {
     state.cancel.store(true, Ordering::Relaxed);
+    if let Some(cancel) = state.ocr_cancel.take() {
+      cancel.store(true, Ordering::Relaxed);
+    }
     if let Some(handle) = state.worker.take() {
+      let _ = handle.join();
+    }
+    if let Some(handle) = state.ocr_worker.take() {
       let _ = handle.join();
     }
   }

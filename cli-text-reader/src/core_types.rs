@@ -116,6 +116,7 @@ pub struct EditorState {
   pub search_original_cursor: Option<(usize, usize)>, // (cursor_y, cursor_x)
   pub search_original_offset: Option<usize>,
   pub search_preview_match: Option<(usize, usize, usize)>, /* (line, start, end) for highlighting */
+  pub command_completion: Option<String>,
 }
 
 impl EditorState {
@@ -142,6 +143,7 @@ impl EditorState {
       search_original_cursor: None,
       search_original_offset: None,
       search_preview_match: None,
+      command_completion: None,
     }
   }
 }

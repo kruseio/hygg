@@ -1,8 +1,10 @@
 use crossterm::terminal;
 use std::io;
 
+use super::command_registry::{
+  RegisteredCommand, TutorialCommand, classify_command,
+};
 use super::core::{Editor, ViewMode};
-use crate::config::{AppConfig, save_config};
 
 impl Editor {
   pub fn execute_command(
@@ -29,8 +31,10 @@ impl Editor {
       &format!("{:?}", self.view_mode),
     );
 
+    let registered_command = classify_command(&cmd);
+
     // Handle :q, :q!, :quit, :exit commands
-    if cmd == "q" || cmd == "q!" || cmd == "quit" || cmd == "exit" {
+    if registered_command == RegisteredCommand::Quit {
       // Check if we're in horizontal split view
       if self.view_mode == ViewMode::HorizontalSplit {
         // In split view, :q closes the split from either pane
@@ -100,9 +104,8 @@ impl Editor {
     }
 
     // Handle command execution
-    if let Some(shell_cmd) = cmd.strip_prefix('!') {
+    if let RegisteredCommand::Shell(shell_cmd) = &registered_command {
       // Execute shell command
-      let shell_cmd = shell_cmd.to_string();
       self.debug_log_event(
         "command",
         "shell_command",
@@ -154,46 +157,72 @@ impl Editor {
       return Ok(false);
     }
 
-    match cmd.as_str() {
-      "p" => self.handle_progress_command(),
-      "cursor" | "c" => self.handle_cursor_command(),
-      "help" | "commands" => self.handle_help_command(),
-      "notutorial" => self.handle_notutorial_command(),
-      cmd if cmd.starts_with("tutorial") => {
-        // Check if there's a parameter after "tutorial"
-        if let Some(param_str) = cmd.strip_prefix("tutorial").map(|s| s.trim())
-        {
-          if param_str == "on" {
-            self.handle_tutorial_toggle_command(true)
-          } else if param_str == "off" {
-            self.handle_tutorial_toggle_command(false)
-          } else if !param_str.is_empty() {
-            // Try to parse as step number
-            if let Ok(step_num) = param_str.parse::<usize>() {
-              self.handle_tutorial_command_with_step(step_num)
-            } else {
-              self.handle_tutorial_command()
-            }
-          } else {
-            self.handle_tutorial_command()
-          }
-        } else {
-          self.handle_tutorial_command()
-        }
+    match registered_command {
+      RegisteredCommand::Progress => self.handle_progress_command(),
+      RegisteredCommand::Cursor => self.handle_cursor_command(),
+      RegisteredCommand::Help => self.handle_help_command(),
+      RegisteredCommand::NoTutorial => self.handle_notutorial_command(),
+      RegisteredCommand::Tutorial(TutorialCommand::Default) => {
+        self.handle_tutorial_command()
       }
-      "next" | "continue" => self.handle_next_command(),
-      "back" | "prev" | "previous" => self.handle_back_command(),
-      "h" => self.handle_highlight_command(),
-      "nohl" | "nohlsearch" => self.handle_nohl_command(),
-      "credits" | "author" => self.handle_credits_command(),
-      "about" => self.handle_about_command(),
-      _ => {
+      RegisteredCommand::Tutorial(TutorialCommand::Enabled(enabled)) => {
+        self.handle_tutorial_toggle_command(enabled)
+      }
+      RegisteredCommand::Tutorial(TutorialCommand::Step(step)) => {
+        self.handle_tutorial_command_with_step(step)
+      }
+      RegisteredCommand::Next => self.handle_next_command(),
+      RegisteredCommand::Back => self.handle_back_command(),
+      RegisteredCommand::Highlight => self.handle_highlight_command(),
+      RegisteredCommand::NoHighlight => self.handle_nohl_command(),
+      RegisteredCommand::Credits => self.handle_credits_command(),
+      RegisteredCommand::About => self.handle_about_command(),
+      RegisteredCommand::Ocr(enable) => self.handle_ocr_command(enable),
+      RegisteredCommand::ToggleHighlighter => {
+        self.show_highlighter = !self.show_highlighter;
+        self.save_current_config();
+        Ok(false)
+      }
+      RegisteredCommand::Unknown => {
         let result = handle_command(&cmd, &mut self.show_highlighter);
         if cmd == "z" {
           self.save_current_config();
         }
         Ok(result)
       }
+      RegisteredCommand::Quit | RegisteredCommand::Shell(_) => Ok(false),
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::Editor;
+  use crate::editor::command_registry::{RegisteredCommand, classify_command};
+  use std::io;
+
+  #[test]
+  fn ocr_command_requires_exact_token_and_on_off_argument() {
+    assert_eq!(classify_command("ocr on"), RegisteredCommand::Ocr(true));
+    assert_eq!(classify_command("ocr off"), RegisteredCommand::Ocr(false));
+    assert_eq!(classify_command("ocron"), RegisteredCommand::Unknown);
+    assert_eq!(classify_command("ocrx"), RegisteredCommand::Unknown);
+    assert_eq!(classify_command("ocr on now"), RegisteredCommand::Unknown);
+  }
+
+  #[test]
+  fn ocr_prefixes_do_not_dispatch_as_ocr_commands() {
+    let mut stdout = io::stdout();
+    for command in ["ocron", "ocrx"] {
+      let mut editor = Editor::new(vec!["line".to_string()], 80);
+      editor.buffers[0].command_buffer = command.to_string();
+
+      editor
+        .execute_command(&mut stdout)
+        .expect("command dispatch should not fail");
+
+      assert!(!editor.ocr_enabled);
+      assert_eq!(editor.buffers.len(), 1);
     }
   }
 }
