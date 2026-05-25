@@ -31,6 +31,8 @@ use crate::editor::streaming::{PendingPdfStream, StreamReady};
 use crate::editor::streaming_loader::spawn_loader;
 use crate::progress::load_progress;
 
+const PDF_PRELOAD_RADIUS: usize = 10;
+
 pub fn run_cli_text_reader(
   lines: Vec<String>,
   col: usize,
@@ -126,7 +128,7 @@ fn run_cli_text_reader_pdf_path_inner(
   // even for dense PDFs, and so seam stitching between the page and its
   // immediate neighbours is stable from frame one (eliminates the
   // placeholder->loaded flicker the user sees while pages stream in).
-  const PRELOAD_RADIUS: usize = 10;
+  let preload_radius = pdf_preload_radius(bundled_ocr);
 
   std::thread::Builder::new().name("hygg-pdf-opener".into()).spawn(
     move || {
@@ -142,8 +144,8 @@ fn run_cli_text_reader_pdf_path_inner(
             StreamReady::Err("PDF parsed but reports zero pages".to_string())
           } else {
             let target_page = saved_target_page.clamp(1, total_pages);
-            let lo = target_page.saturating_sub(PRELOAD_RADIUS).max(1);
-            let hi = (target_page + PRELOAD_RADIUS).min(total_pages);
+            let lo = target_page.saturating_sub(preload_radius).max(1);
+            let hi = (target_page + preload_radius).min(total_pages);
             let preloaded_pages: Vec<_> = (lo..=hi)
               .filter_map(|p| {
                 stream.extract_page_with_images(p, col).map(|page| (p, page))
@@ -226,6 +228,10 @@ fn run_cli_text_reader_pdf_path_inner(
   result
 }
 
+fn pdf_preload_radius(bundled_ocr: bool) -> usize {
+  if bundled_ocr { 0 } else { PDF_PRELOAD_RADIUS }
+}
+
 pub fn run_cli_text_reader_with_demo_id(
   lines: Vec<String>,
   col: usize,
@@ -245,4 +251,15 @@ pub fn run_cli_text_reader_with_demo_id(
   debug::debug_log("main", "Editor run completed");
   debug::flush_debug_log();
   result
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn ocr_pdf_streams_with_smaller_initial_preload() {
+    assert_eq!(pdf_preload_radius(false), 10);
+    assert_eq!(pdf_preload_radius(true), 0);
+  }
 }

@@ -64,11 +64,8 @@ impl PdfStream {
       .page_count()
       .map_err(|e| format!("pdf_oxide page_count failed: {e:?}"))?;
     #[cfg(feature = "pdf-ocr-bundled")]
-    let ocr_engine = if enable_ocr {
-      Some(crate::ocr::bundled_ocr_engine()?)
-    } else {
-      None
-    };
+    let ocr_engine =
+      if enable_ocr { Some(crate::ocr::bundled_ocr_engine()?) } else { None };
     #[cfg(not(feature = "pdf-ocr-bundled"))]
     if enable_ocr {
       return Err(
@@ -339,7 +336,7 @@ fn ocr_visual_text_rows(
       width: bbox.width,
       height: bbox.height,
     };
-    if native_text_is_sufficient_in_region(native_rows, region) {
+    if !should_ocr_image_region(region, native_rows) {
       continue;
     }
     let Ok(dynamic_image) = image.to_dynamic_image() else {
@@ -351,13 +348,27 @@ fn ocr_visual_text_rows(
   for (region, dynamic_image) in
     render_vector_diagram_images(doc, page_0based, native_rows)
   {
-    if native_text_is_sufficient_in_region(native_rows, region) {
+    if !should_ocr_image_region(region, native_rows) {
       continue;
     }
     out.extend(ocr_dynamic_image_text_rows(engine, &dynamic_image, region));
   }
 
   out
+}
+
+#[cfg(feature = "pdf-ocr-bundled")]
+fn should_ocr_image_region(
+  region: PdfRegion,
+  native_rows: &[VisualTextRow],
+) -> bool {
+  if native_text_is_sufficient_in_region(native_rows, region) {
+    return false;
+  }
+  if native_rows.is_empty() {
+    return true;
+  }
+  has_nearby_figure_caption(region, native_rows)
 }
 
 #[cfg(feature = "pdf-ocr-bundled")]
@@ -393,7 +404,8 @@ fn ocr_dynamic_image_text_rows(
   image: &image::DynamicImage,
   pdf_region: PdfRegion,
 ) -> Vec<VisualTextRow> {
-  let Ok(output) = engine.ocr_image(image) else {
+  let image = resized_image_for_ocr(image);
+  let Ok(output) = engine.ocr_image(&image) else {
     return Vec::new();
   };
   let image_width = image.width().max(1) as f32;
@@ -407,11 +419,30 @@ fn ocr_dynamic_image_text_rows(
       if text.trim().is_empty() {
         return None;
       }
-      let (left, top) =
-        ocr_polygon_pdf_anchor(&span.polygon, pdf_region, image_width, image_height)?;
+      let (left, top) = ocr_polygon_pdf_anchor(
+        &span.polygon,
+        pdf_region,
+        image_width,
+        image_height,
+      )?;
       Some(VisualTextRow { top, left, text })
     })
     .collect()
+}
+
+#[cfg(feature = "pdf-ocr-bundled")]
+fn resized_image_for_ocr(image: &image::DynamicImage) -> image::DynamicImage {
+  const MAX_OCR_IMAGE_EDGE: u32 = 240;
+  let width = image.width();
+  let height = image.height();
+  if width <= MAX_OCR_IMAGE_EDGE && height <= MAX_OCR_IMAGE_EDGE {
+    return image.clone();
+  }
+  image.resize(
+    MAX_OCR_IMAGE_EDGE,
+    MAX_OCR_IMAGE_EDGE,
+    image::imageops::FilterType::Triangle,
+  )
 }
 
 #[cfg(feature = "pdf-ocr-bundled")]
@@ -465,6 +496,7 @@ fn render_vector_diagram_images(
 
   regions
     .into_iter()
+    .filter(|region| should_ocr_image_region(*region, native_rows))
     .filter_map(|region| {
       let rendered = pdf_oxide::rendering::render_page_region(
         doc,
@@ -711,12 +743,14 @@ fn add_vector_path_to_clusters(
   clusters[cluster_idx].merge_bounds(bounds);
   let mut idx = 0;
   while idx < clusters.len() {
-    if idx != cluster_idx && clusters[cluster_idx].is_near(VectorPathBounds {
-      left: clusters[idx].left,
-      bottom: clusters[idx].bottom,
-      right: clusters[idx].right,
-      top: clusters[idx].top,
-    }) {
+    if idx != cluster_idx
+      && clusters[cluster_idx].is_near(VectorPathBounds {
+        left: clusters[idx].left,
+        bottom: clusters[idx].bottom,
+        right: clusters[idx].right,
+        top: clusters[idx].top,
+      })
+    {
       let other = clusters.remove(idx);
       if idx < cluster_idx {
         cluster_idx -= 1;
@@ -737,10 +771,11 @@ fn should_render_vector_diagram_region(
   if !has_nearby_figure_caption(region, native_rows) {
     return false;
   }
-  allow_missing_native_text || has_native_text_inside_region(region, native_rows)
+  allow_missing_native_text
+    || has_native_text_inside_region(region, native_rows)
 }
 
-#[cfg(any(feature = "pdf-rendering", test))]
+#[cfg(any(feature = "pdf-rendering", feature = "pdf-ocr-bundled", test))]
 fn has_nearby_figure_caption(
   region: PdfRegion,
   native_rows: &[VisualTextRow],
@@ -753,7 +788,7 @@ fn has_nearby_figure_caption(
   })
 }
 
-#[cfg(any(feature = "pdf-rendering", test))]
+#[cfg(any(feature = "pdf-rendering", feature = "pdf-ocr-bundled", test))]
 fn has_native_text_inside_region(
   region: PdfRegion,
   native_rows: &[VisualTextRow],
@@ -765,24 +800,21 @@ fn has_native_text_inside_region(
   })
 }
 
-#[cfg(any(feature = "pdf-rendering", test))]
+#[cfg(any(feature = "pdf-rendering", feature = "pdf-ocr-bundled", test))]
 fn visual_alnum_len(text: &str) -> usize {
   text.chars().filter(|ch| ch.is_alphanumeric()).count()
 }
 
-#[cfg(any(feature = "pdf-rendering", test))]
+#[cfg(any(feature = "pdf-rendering", feature = "pdf-ocr-bundled", test))]
 fn is_figure_caption(text: &str) -> bool {
   let trimmed = text.trim_start();
   let Some(rest) = trimmed.strip_prefix("Figure ") else {
     return false;
   };
-  rest
-    .chars()
-    .next()
-    .is_some_and(|ch| ch.is_ascii_digit())
+  rest.chars().next().is_some_and(|ch| ch.is_ascii_digit())
 }
 
-#[cfg(any(feature = "pdf-rendering", test))]
+#[cfg(any(feature = "pdf-rendering", feature = "pdf-ocr-bundled", test))]
 fn vertical_distance_to_region(region: PdfRegion, y: f32) -> f32 {
   if y < region.bottom {
     region.bottom - y
@@ -930,13 +962,16 @@ fn overlay_text_row_on_first_matching_image(
   false
 }
 
-fn image_contains_text_row(image: &VisualImageRows, row: &VisualTextRow) -> bool {
+fn image_contains_text_row(
+  image: &VisualImageRows,
+  row: &VisualTextRow,
+) -> bool {
   let right = image.region.left + image.region.width;
   let bottom = image.region.bottom;
   let top = image.region.top();
-  let vertical_pad =
-    (image.region.height / image.lines.len().max(1) as f32 * 0.5)
-      .clamp(2.0, 6.0);
+  let vertical_pad = (image.region.height / image.lines.len().max(1) as f32
+    * 0.5)
+    .clamp(2.0, 6.0);
   row.top <= top + vertical_pad
     && row.top >= bottom - vertical_pad
     && row.left <= right
@@ -956,11 +991,16 @@ fn image_text_col_index(image: &VisualImageRows, text_left: f32) -> usize {
   if image.region.width <= 0.0 || image.width_cells == 0 {
     return 0;
   }
-  let rel = ((text_left - image.region.left) / image.region.width).clamp(0.0, 1.0);
+  let rel =
+    ((text_left - image.region.left) / image.region.width).clamp(0.0, 1.0);
   (rel * image.width_cells as f32).round() as usize
 }
 
-fn overlay_text_on_ansi_line(line: &str, start_col: usize, text: &str) -> String {
+fn overlay_text_on_ansi_line(
+  line: &str,
+  start_col: usize,
+  text: &str,
+) -> String {
   let available = ansi_visible_width(line).saturating_sub(start_col);
   if available == 0 {
     return line.to_string();
@@ -995,7 +1035,10 @@ fn overlay_text_on_ansi_line(line: &str, start_col: usize, text: &str) -> String
       inserted = true;
     }
 
-    if inserted && visible_col >= start_col && visible_col < start_col + overlay_width {
+    if inserted
+      && visible_col >= start_col
+      && visible_col < start_col + overlay_width
+    {
       visible_col += 1;
       continue;
     }
@@ -1655,7 +1698,12 @@ mod tests {
       top: 150.0,
       left_cells: 4,
       width_cells: 20,
-      region: PdfRegion { left: 0.0, bottom: 125.0, width: 100.0, height: 25.0 },
+      region: PdfRegion {
+        left: 0.0,
+        bottom: 125.0,
+        width: 100.0,
+        height: 25.0,
+      },
       lines: vec!["\x1b[38;2;1;2;3m\x1b[48;2;4;5;6m▀\x1b[0m".into()],
     }];
 
@@ -1682,7 +1730,12 @@ mod tests {
       top: 150.0,
       left_cells: 0,
       width_cells: 40,
-      region: PdfRegion { left: 0.0, bottom: 100.0, width: 100.0, height: 50.0 },
+      region: PdfRegion {
+        left: 0.0,
+        bottom: 100.0,
+        width: 100.0,
+        height: 50.0,
+      },
       lines: vec![
         format!("\x1b[38;2;1;2;3m{}\x1b[0m", "▀".repeat(40)),
         format!("\x1b[38;2;1;2;3m{}\x1b[0m", "▀".repeat(40)),
@@ -1725,7 +1778,12 @@ mod tests {
       top: 180.0,
       left_cells: 0,
       width_cells: 60,
-      region: PdfRegion { left: 0.0, bottom: 100.0, width: 300.0, height: 80.0 },
+      region: PdfRegion {
+        left: 0.0,
+        bottom: 100.0,
+        width: 300.0,
+        height: 80.0,
+      },
       lines: (0..6)
         .map(|_| format!("\x1b[38;2;1;2;3m{}\x1b[0m", "▀".repeat(60)))
         .collect(),
@@ -1753,16 +1811,18 @@ mod tests {
       top: 150.0,
       left_cells: 0,
       width_cells: 40,
-      region: PdfRegion { left: 0.0, bottom: 100.0, width: 100.0, height: 50.0 },
+      region: PdfRegion {
+        left: 0.0,
+        bottom: 100.0,
+        width: 100.0,
+        height: 50.0,
+      },
       lines: vec!["\x1b[38;2;1;2;3m▀▀▀▀▀▀▀▀▀▀\x1b[0m".into()],
     }];
 
     let page = compose_visual_page(text_rows, image_rows, 80);
 
-    assert_eq!(
-      page.line_kinds,
-      vec![PdfLineKind::AnsiArt, PdfLineKind::Text]
-    );
+    assert_eq!(page.line_kinds, vec![PdfLineKind::AnsiArt, PdfLineKind::Text]);
     assert_eq!(page.lines[1], "caption below");
   }
 
@@ -1805,6 +1865,64 @@ mod tests {
     assert!(!rows.is_empty());
     assert_eq!(rows[0].top, anchors[0].top);
     assert_eq!(rows[0].left, anchors[0].left);
+  }
+
+  #[test]
+  fn progit_figure_images_do_not_expose_internal_native_labels() {
+    let pdf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+      .join("../test-data/pdf/progit-1-50.pdf");
+    if !pdf_path.exists() {
+      return;
+    }
+    let stream = PdfStream::open(pdf_path.to_str().expect("utf-8 path"))
+      .expect("PdfStream should open valid test PDF");
+    let page_0based = 22;
+    let rows = positioned_visual_text_rows(&stream.doc, page_0based);
+    let images = stream
+      .doc
+      .extract_images(page_0based)
+      .expect("page should extract images");
+    let bbox = images[0].bbox().expect("figure image should have a bbox");
+    let region = PdfRegion {
+      left: bbox.left(),
+      bottom: bbox.top(),
+      width: bbox.width,
+      height: bbox.height,
+    };
+
+    assert!(has_nearby_figure_caption(region, &rows));
+    assert!(
+      !rows.iter().any(|row| {
+        !is_figure_caption(&row.text)
+          && visual_text_row_overlaps_region(row, region)
+      }),
+      "ProGit figure labels are embedded in the image and require OCR"
+    );
+  }
+
+  #[cfg(feature = "pdf-ocr-bundled")]
+  #[test]
+  fn progit_figure_ocr_overlays_embedded_image_labels() {
+    let pdf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+      .join("../test-data/pdf/progit-1-50.pdf");
+    if !pdf_path.exists() {
+      return;
+    }
+    let stream =
+      PdfStream::open_with_bundled_ocr(pdf_path.to_str().expect("utf-8 path"))
+        .expect("PdfStream should open valid test PDF");
+
+    let page = stream
+      .extract_page_with_images(34, 100)
+      .expect("page should render with image rows");
+    let rendered = page.lines.join("\n");
+
+    assert!(
+      ["Untracked", "Unmodified", "Modified", "Staged"]
+        .iter()
+        .any(|label| rendered.contains(label)),
+      "OCR should recover at least one embedded figure label, got {rendered:?}"
+    );
   }
 
   #[test]
@@ -1870,8 +1988,9 @@ mod tests {
       left: 100.0,
       text: "Figure 1. Test diagram".to_string(),
     }];
-    let regions =
-      detect_vector_diagram_regions(&paths, 0.0, 0.0, 612.0, 792.0, &text_rows, true);
+    let regions = detect_vector_diagram_regions(
+      &paths, 0.0, 0.0, 612.0, 792.0, &text_rows, true,
+    );
 
     assert_eq!(regions.len(), 1);
     assert!(regions[0].left <= 100.0);
@@ -1933,13 +2052,7 @@ mod tests {
 
     assert!(
       detect_vector_diagram_regions(
-        &paths,
-        0.0,
-        0.0,
-        612.0,
-        792.0,
-        &text_rows,
-        false,
+        &paths, 0.0, 0.0, 612.0, 792.0, &text_rows, false,
       )
       .is_empty()
     );
@@ -1971,8 +2084,9 @@ mod tests {
       },
     ];
 
-    let regions =
-      detect_vector_diagram_regions(&paths, 0.0, 0.0, 612.0, 792.0, &text_rows, false);
+    let regions = detect_vector_diagram_regions(
+      &paths, 0.0, 0.0, 612.0, 792.0, &text_rows, false,
+    );
 
     assert_eq!(regions.len(), 1);
   }
@@ -1997,13 +2111,7 @@ mod tests {
       text: "Figure 1. Test diagram".to_string(),
     }];
     let regions = detect_vector_diagram_regions(
-      &paths,
-      100.0,
-      200.0,
-      500.0,
-      500.0,
-      &text_rows,
-      true,
+      &paths, 100.0, 200.0, 500.0, 500.0, &text_rows, true,
     );
 
     assert_eq!(regions.len(), 1);
@@ -2033,13 +2141,7 @@ mod tests {
       text: "Figure 1. Test diagram".to_string(),
     }];
     let regions = detect_vector_diagram_regions(
-      &paths,
-      -300.0,
-      -200.0,
-      500.0,
-      500.0,
-      &text_rows,
-      true,
+      &paths, -300.0, -200.0, 500.0, 500.0, &text_rows, true,
     );
 
     assert_eq!(regions.len(), 1);
@@ -2064,14 +2166,91 @@ mod tests {
   }
 
   #[cfg(feature = "pdf-ocr-bundled")]
+  #[test]
+  fn ocrs_images_when_page_has_no_native_text() {
+    let region =
+      PdfRegion { left: 0.0, bottom: 0.0, width: 100.0, height: 100.0 };
+
+    assert!(should_ocr_image_region(region, &[]));
+  }
+
+  #[cfg(feature = "pdf-ocr-bundled")]
+  #[test]
+  fn ocrs_captioned_images_without_native_text() {
+    let region =
+      PdfRegion { left: 48.0, bottom: 300.0, width: 500.0, height: 200.0 };
+    let native_rows = vec![
+      VisualTextRow {
+        top: 285.0,
+        left: 48.0,
+        text: "Figure 8. The lifecycle of the status of your files".to_string(),
+      },
+      VisualTextRow {
+        top: 250.0,
+        left: 48.0,
+        text: "Checking the Status of Your Files".to_string(),
+      },
+    ];
+
+    assert!(should_ocr_image_region(region, &native_rows));
+  }
+
+  #[cfg(feature = "pdf-ocr-bundled")]
+  #[test]
+  fn skips_uncaptioned_images_on_native_text_pages() {
+    let region =
+      PdfRegion { left: 48.0, bottom: 300.0, width: 500.0, height: 200.0 };
+    let native_rows = vec![VisualTextRow {
+      top: 250.0,
+      left: 48.0,
+      text: "Body text below an unrelated decorative image".to_string(),
+    }];
+
+    assert!(!should_ocr_image_region(region, &native_rows));
+  }
+
+  #[cfg(feature = "pdf-ocr-bundled")]
+  #[test]
+  fn skips_ocr_when_native_text_already_covers_region() {
+    let region =
+      PdfRegion { left: 48.0, bottom: 300.0, width: 500.0, height: 200.0 };
+    let native_rows = vec![
+      VisualTextRow {
+        top: 400.0,
+        left: 100.0,
+        text: "Native label".to_string(),
+      },
+      VisualTextRow {
+        top: 285.0,
+        left: 48.0,
+        text: "Figure 1. Native diagram".to_string(),
+      },
+    ];
+
+    assert!(!should_ocr_image_region(region, &native_rows));
+  }
+
+  #[cfg(feature = "pdf-ocr-bundled")]
+  #[test]
+  fn resizes_large_images_before_ocr() {
+    let image =
+      image::DynamicImage::ImageRgba8(image::RgbaImage::new(2400, 1200));
+
+    let resized = resized_image_for_ocr(&image);
+
+    assert_eq!(resized.width(), 240);
+    assert_eq!(resized.height(), 120);
+  }
+
+  #[cfg(feature = "pdf-ocr-bundled")]
   fn generated_ocr_fixture(text: &str) -> image::DynamicImage {
     let scale = 12u32;
     let glyph_width = 5u32;
     let glyph_height = 7u32;
     let spacing = 2u32;
     let padding = 24u32;
-    let width =
-      padding * 2 + text.chars().count() as u32 * (glyph_width + spacing) * scale;
+    let width = padding * 2
+      + text.chars().count() as u32 * (glyph_width + spacing) * scale;
     let height = padding * 2 + glyph_height * scale;
     let mut image = image::RgbaImage::from_pixel(
       width,
@@ -2093,7 +2272,13 @@ mod tests {
   }
 
   #[cfg(feature = "pdf-ocr-bundled")]
-  fn draw_glyph(image: &mut image::RgbaImage, x: u32, y: u32, scale: u32, ch: char) {
+  fn draw_glyph(
+    image: &mut image::RgbaImage,
+    x: u32,
+    y: u32,
+    scale: u32,
+    ch: char,
+  ) {
     let Some(pattern) = glyph_pattern(ch) else {
       return;
     };
@@ -2118,12 +2303,24 @@ mod tests {
   #[cfg(feature = "pdf-ocr-bundled")]
   fn glyph_pattern(ch: char) -> Option<[&'static str; 7]> {
     match ch {
-      'C' => Some(["01111", "10000", "10000", "10000", "10000", "10000", "01111"]),
-      'E' => Some(["11111", "10000", "10000", "11110", "10000", "10000", "11111"]),
-      'H' => Some(["10001", "10001", "10001", "11111", "10001", "10001", "10001"]),
-      'L' => Some(["10000", "10000", "10000", "10000", "10000", "10000", "11111"]),
-      'O' => Some(["01110", "10001", "10001", "10001", "10001", "10001", "01110"]),
-      'R' => Some(["11110", "10001", "10001", "11110", "10100", "10010", "10001"]),
+      'C' => {
+        Some(["01111", "10000", "10000", "10000", "10000", "10000", "01111"])
+      }
+      'E' => {
+        Some(["11111", "10000", "10000", "11110", "10000", "10000", "11111"])
+      }
+      'H' => {
+        Some(["10001", "10001", "10001", "11111", "10001", "10001", "10001"])
+      }
+      'L' => {
+        Some(["10000", "10000", "10000", "10000", "10000", "10000", "11111"])
+      }
+      'O' => {
+        Some(["01110", "10001", "10001", "10001", "10001", "10001", "01110"])
+      }
+      'R' => {
+        Some(["11110", "10001", "10001", "11110", "10100", "10010", "10001"])
+      }
       _ => None,
     }
   }
