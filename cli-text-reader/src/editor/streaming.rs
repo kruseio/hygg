@@ -252,6 +252,7 @@ impl PageSlot {
 pub struct PageLoaded {
   pub page_index: usize,
   pub rendered_page: PdfRenderedPage,
+  pub replace_existing: bool,
 }
 
 /// Result of the background "open the PDF + extract initial pages" job.

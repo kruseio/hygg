@@ -31,7 +31,13 @@ fn page_and_offset_for_line(
 
 #[cfg(test)]
 mod tests {
-  use super::restored_pdf_viewport;
+  use super::*;
+  use crate::editor::streaming::{
+    LoadedPage, PageLoaded, PageSlot, PdfStreamingState,
+  };
+  use cli_pdf_to_text::{PdfRenderedPage, PdfStream};
+  use std::sync::atomic::AtomicBool;
+  use std::sync::{Arc, mpsc};
 
   #[test]
   fn pdf_restore_uses_saved_cursor_screen_row() {
@@ -46,6 +52,49 @@ mod tests {
   #[test]
   fn pdf_restore_falls_back_to_center_without_saved_cursor_row() {
     assert_eq!(restored_pdf_viewport(42, 24, None), (30, 12));
+  }
+
+  #[test]
+  fn drain_pdf_stream_replaces_loaded_page_for_ocr_update() {
+    let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+      .join("../test-data/pdf/progit-1-50.pdf");
+    if !pdf_path.exists() {
+      return;
+    }
+    let stream = Arc::new(
+      PdfStream::open(pdf_path.to_str().expect("utf-8 path"))
+        .expect("PdfStream should open valid test PDF"),
+    );
+    let (tx, rx) = mpsc::sync_channel(1);
+    let mut editor = Editor::new(vec!["fast page".to_string()], 80);
+    editor.pdf_streaming = Some(PdfStreamingState {
+      stream,
+      col: 80,
+      pages: vec![PageSlot::Loaded(LoadedPage::from_raw(
+        "fast page".to_string(),
+        80,
+      ))],
+      receiver: rx,
+      cancel: Arc::new(AtomicBool::new(false)),
+      fully_loaded: true,
+      worker: None,
+    });
+    editor.rebuild_lines_from_pdf_stream();
+
+    tx.send(PageLoaded {
+      page_index: 0,
+      rendered_page: PdfRenderedPage {
+        raw_text: "ocr page".to_string(),
+        lines: vec!["ocr page".to_string()],
+        line_kinds: vec![PdfLineKind::Text],
+        contains_images: true,
+      },
+      replace_existing: true,
+    })
+    .expect("replacement page should enqueue");
+
+    assert_eq!(editor.drain_pdf_stream(), 1);
+    assert_eq!(editor.lines, vec!["ocr page"]);
   }
 }
 
@@ -463,8 +512,11 @@ impl Editor {
         // falls back to clamping near the top, matching center_cursor's
         // overscroll handling.
         let content_height = self.height.saturating_sub(1);
-        let (offset, cursor_y) =
-          restored_pdf_viewport(document_line, content_height, restore_cursor_y);
+        let (offset, cursor_y) = restored_pdf_viewport(
+          document_line,
+          content_height,
+          restore_cursor_y,
+        );
         self.offset = offset;
         self.cursor_y = cursor_y;
         self.last_offset = document_line;
@@ -516,7 +568,9 @@ impl Editor {
       if idx >= state.pages.len() {
         continue;
       }
-      if let PageSlot::Loaded(_) = state.pages[idx] {
+      if !msg.replace_existing
+        && let PageSlot::Loaded(_) = state.pages[idx]
+      {
         continue;
       }
       let loaded = LoadedPage::from_rendered(msg.rendered_page, col);

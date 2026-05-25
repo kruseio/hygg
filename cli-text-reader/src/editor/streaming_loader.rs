@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::thread::{self, JoinHandle};
 
-use cli_pdf_to_text::SharedPdfStream;
+use cli_pdf_to_text::{PdfRenderedPage, PdfStream, SharedPdfStream};
 
 use super::streaming::PageLoaded;
 
@@ -28,6 +28,7 @@ const BLOCK: usize = 10;
 /// shared `cancel` flag flips to `true`.
 pub fn spawn_loader(
   stream: SharedPdfStream,
+  ocr_pdf_path: Option<String>,
   start_page: usize,
   col: usize,
   already_loaded: Vec<usize>,
@@ -39,15 +40,31 @@ pub fn spawn_loader(
   let handle = thread::Builder::new()
     .name("hygg-pdf-loader".into())
     .spawn(move || {
+      let ocr_stream = ocr_pdf_path
+        .as_ref()
+        .and_then(|path| PdfStream::open_with_bundled_ocr(path).ok());
+      if let Some(stream) = ocr_stream.as_ref() {
+        run_ocr_page(stream, start_page, col, &tx, &cancel);
+      }
       run_loader(
         stream,
         start_page,
         col,
         already_loaded,
         total_pages,
-        tx,
-        cancel,
+        tx.clone(),
+        Arc::clone(&cancel),
       );
+      if let Some(stream) = ocr_stream.as_ref() {
+        run_ocr_remaining_pages(
+          stream,
+          start_page,
+          col,
+          total_pages,
+          &tx,
+          &cancel,
+        );
+      }
     })
     .expect("spawning pdf loader thread");
 
@@ -77,30 +94,87 @@ fn run_loader(
     if skip.contains(&page_1based) {
       continue;
     }
-    let rendered_page = stream
-      .extract_page_with_images(page_1based, col)
-      .unwrap_or_else(|| cli_pdf_to_text::PdfRenderedPage {
-        raw_text: String::new(),
-        lines: vec![String::new()],
-        line_kinds: vec![cli_pdf_to_text::PdfLineKind::Text],
-        contains_images: false,
-      });
-    let message = PageLoaded { page_index: page_1based - 1, rendered_page };
+    let rendered_page = render_or_blank(&stream, page_1based, col);
+    let message = PageLoaded {
+      page_index: page_1based - 1,
+      rendered_page,
+      replace_existing: false,
+    };
 
-    // Use a small spin so we honour cancellation while the channel is full.
-    let mut payload = Some(message);
-    while let Some(msg) = payload.take() {
-      if cancel.load(Ordering::Relaxed) {
-        return;
+    send_page_loaded(&tx, message, cancel.as_ref());
+  }
+}
+
+fn run_ocr_page(
+  stream: &PdfStream,
+  page_1based: usize,
+  col: usize,
+  tx: &SyncSender<PageLoaded>,
+  cancel: &AtomicBool,
+) {
+  if cancel.load(Ordering::Relaxed) {
+    return;
+  }
+  if page_1based == 0 || page_1based > stream.total_pages() {
+    return;
+  }
+  let rendered_page = render_or_blank(stream, page_1based, col);
+  let message = PageLoaded {
+    page_index: page_1based - 1,
+    rendered_page,
+    replace_existing: true,
+  };
+  send_page_loaded(tx, message, cancel);
+}
+
+fn run_ocr_remaining_pages(
+  stream: &PdfStream,
+  start_page: usize,
+  col: usize,
+  total_pages: usize,
+  tx: &SyncSender<PageLoaded>,
+  cancel: &AtomicBool,
+) {
+  for page_1based in load_order(start_page, total_pages) {
+    run_ocr_page(stream, page_1based, col, tx, cancel);
+    if cancel.load(Ordering::Relaxed) {
+      break;
+    }
+  }
+}
+
+fn render_or_blank(
+  stream: &PdfStream,
+  page_1based: usize,
+  col: usize,
+) -> PdfRenderedPage {
+  stream.extract_page_with_images(page_1based, col).unwrap_or_else(|| {
+    PdfRenderedPage {
+      raw_text: String::new(),
+      lines: vec![String::new()],
+      line_kinds: vec![cli_pdf_to_text::PdfLineKind::Text],
+      contains_images: false,
+    }
+  })
+}
+
+fn send_page_loaded(
+  tx: &SyncSender<PageLoaded>,
+  message: PageLoaded,
+  cancel: &AtomicBool,
+) {
+  let mut payload = Some(message);
+  while let Some(msg) = payload.take() {
+    if cancel.load(Ordering::Relaxed) {
+      return;
+    }
+    match tx.try_send(msg) {
+      Ok(()) => break,
+      Err(TrySendError::Full(returned)) => {
+        payload = Some(returned);
+        thread::sleep(std::time::Duration::from_millis(20));
       }
-      match tx.try_send(msg) {
-        Ok(()) => break,
-        Err(TrySendError::Full(returned)) => {
-          payload = Some(returned);
-          thread::sleep(std::time::Duration::from_millis(20));
-        }
-        Err(TrySendError::Disconnected(_)) => return,
-      }
+      Err(TrySendError::Disconnected(_)) => return,
     }
   }
 }

@@ -132,11 +132,7 @@ fn run_cli_text_reader_pdf_path_inner(
 
   std::thread::Builder::new().name("hygg-pdf-opener".into()).spawn(
     move || {
-      let opened = if bundled_ocr {
-        cli_pdf_to_text::PdfStream::open_with_bundled_ocr(&path_for_thread)
-      } else {
-        cli_pdf_to_text::PdfStream::open(&path_for_thread)
-      };
+      let opened = cli_pdf_to_text::PdfStream::open(&path_for_thread);
       let message = match opened {
         Ok(stream) => {
           let total_pages = stream.total_pages();
@@ -155,8 +151,10 @@ fn run_cli_text_reader_pdf_path_inner(
               preloaded_pages.iter().map(|(p, _)| *p).collect();
             let shared = Arc::new(stream);
             let cancel = Arc::new(AtomicBool::new(false));
+            let ocr_pdf_path = bundled_ocr.then(|| path_for_thread.clone());
             let (pages_rx, worker) = spawn_loader(
               Arc::clone(&shared),
+              ocr_pdf_path,
               target_page,
               col,
               preloaded_indices,

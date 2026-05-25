@@ -404,8 +404,7 @@ fn ocr_dynamic_image_text_rows(
   image: &image::DynamicImage,
   pdf_region: PdfRegion,
 ) -> Vec<VisualTextRow> {
-  let image = resized_image_for_ocr(image);
-  let Ok(output) = engine.ocr_image(&image) else {
+  let Ok(output) = engine.ocr_image(image) else {
     return Vec::new();
   };
   let image_width = image.width().max(1) as f32;
@@ -428,21 +427,6 @@ fn ocr_dynamic_image_text_rows(
       Some(VisualTextRow { top, left, text })
     })
     .collect()
-}
-
-#[cfg(feature = "pdf-ocr-bundled")]
-fn resized_image_for_ocr(image: &image::DynamicImage) -> image::DynamicImage {
-  const MAX_OCR_IMAGE_EDGE: u32 = 240;
-  let width = image.width();
-  let height = image.height();
-  if width <= MAX_OCR_IMAGE_EDGE && height <= MAX_OCR_IMAGE_EDGE {
-    return image.clone();
-  }
-  image.resize(
-    MAX_OCR_IMAGE_EDGE,
-    MAX_OCR_IMAGE_EDGE,
-    image::imageops::FilterType::Triangle,
-  )
 }
 
 #[cfg(feature = "pdf-ocr-bundled")]
@@ -2228,18 +2212,6 @@ mod tests {
     ];
 
     assert!(!should_ocr_image_region(region, &native_rows));
-  }
-
-  #[cfg(feature = "pdf-ocr-bundled")]
-  #[test]
-  fn resizes_large_images_before_ocr() {
-    let image =
-      image::DynamicImage::ImageRgba8(image::RgbaImage::new(2400, 1200));
-
-    let resized = resized_image_for_ocr(&image);
-
-    assert_eq!(resized.width(), 240);
-    assert_eq!(resized.height(), 120);
   }
 
   #[cfg(feature = "pdf-ocr-bundled")]
