@@ -77,11 +77,12 @@ mod tests {
       receiver: rx,
       cancel: Arc::new(AtomicBool::new(false)),
       fully_loaded: true,
+      ocr_loading: true,
       worker: None,
     });
     editor.rebuild_lines_from_pdf_stream();
 
-    tx.send(PageLoaded {
+    tx.send(PageLoaded::Page {
       page_index: 0,
       rendered_page: PdfRenderedPage {
         raw_text: "ocr page".to_string(),
@@ -95,6 +96,41 @@ mod tests {
 
     assert_eq!(editor.drain_pdf_stream(), 1);
     assert_eq!(editor.lines, vec!["ocr page"]);
+  }
+
+  #[test]
+  fn drain_pdf_stream_marks_ocr_complete() {
+    let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+      .join("../test-data/pdf/progit-1-50.pdf");
+    if !pdf_path.exists() {
+      return;
+    }
+    let stream = Arc::new(
+      PdfStream::open(pdf_path.to_str().expect("utf-8 path"))
+        .expect("PdfStream should open valid test PDF"),
+    );
+    let (tx, rx) = mpsc::sync_channel(1);
+    let mut editor = Editor::new(vec!["fast page".to_string()], 80);
+    editor.pdf_streaming = Some(PdfStreamingState {
+      stream,
+      col: 80,
+      pages: vec![PageSlot::Loaded(LoadedPage::from_raw(
+        "fast page".to_string(),
+        80,
+      ))],
+      receiver: rx,
+      cancel: Arc::new(AtomicBool::new(false)),
+      fully_loaded: true,
+      ocr_loading: true,
+      worker: None,
+    });
+
+    tx.send(PageLoaded::OcrComplete).expect("OCR completion should enqueue");
+
+    assert_eq!(editor.drain_pdf_stream(), 1);
+    assert!(
+      !editor.pdf_streaming.as_ref().expect("streaming state").ocr_loading
+    );
   }
 }
 
@@ -472,6 +508,7 @@ impl Editor {
         pages_receiver,
         cancel,
         worker,
+        ocr_loading,
       } => {
         let total_pages = stream.total_pages();
         let mut pages: Vec<PageSlot> =
@@ -492,6 +529,7 @@ impl Editor {
           receiver: pages_receiver,
           cancel,
           fully_loaded,
+          ocr_loading,
           worker: Some(worker),
         };
         let target_line_start = state.line_start_for_page(target_page - 1);
@@ -544,7 +582,7 @@ impl Editor {
   /// stickiness: after rebuilding the flat lines, the cursor stays on the
   /// same (page, line-within-page) it was on before the drain.
   pub fn drain_pdf_stream(&mut self) -> usize {
-    use crate::editor::streaming::{LoadedPage, PageSlot};
+    use crate::editor::streaming::{LoadedPage, PageLoaded, PageSlot};
     let Some(state) = self.pdf_streaming.as_mut() else {
       return 0;
     };
@@ -564,16 +602,20 @@ impl Editor {
     let col = state.col;
     let mut applied = 0usize;
     for msg in messages {
-      let idx = msg.page_index;
+      let PageLoaded::Page { page_index: idx, rendered_page, replace_existing } =
+        msg
+      else {
+        state.ocr_loading = false;
+        applied += 1;
+        continue;
+      };
       if idx >= state.pages.len() {
         continue;
       }
-      if !msg.replace_existing
-        && let PageSlot::Loaded(_) = state.pages[idx]
-      {
+      if !replace_existing && let PageSlot::Loaded(_) = state.pages[idx] {
         continue;
       }
-      let loaded = LoadedPage::from_rendered(msg.rendered_page, col);
+      let loaded = LoadedPage::from_rendered(rendered_page, col);
       state.pages[idx] = PageSlot::Loaded(loaded);
       applied += 1;
     }

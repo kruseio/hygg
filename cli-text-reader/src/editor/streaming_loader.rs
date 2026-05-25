@@ -40,12 +40,27 @@ pub fn spawn_loader(
   let handle = thread::Builder::new()
     .name("hygg-pdf-loader".into())
     .spawn(move || {
-      let ocr_stream = ocr_pdf_path
-        .as_ref()
-        .and_then(|path| PdfStream::open_with_bundled_ocr(path).ok());
-      if let Some(stream) = ocr_stream.as_ref() {
-        run_ocr_page(stream, start_page, col, &tx, &cancel);
-      }
+      let ocr_worker = ocr_pdf_path.map(|path| {
+        let tx = tx.clone();
+        let cancel = Arc::clone(&cancel);
+        thread::Builder::new()
+          .name("hygg-pdf-ocr-loader".into())
+          .spawn(move || {
+            if let Ok(stream) = PdfStream::open_with_bundled_ocr(&path) {
+              run_ocr_page(&stream, start_page, col, &tx, &cancel);
+              run_ocr_remaining_pages(
+                &stream,
+                start_page,
+                col,
+                total_pages,
+                &tx,
+                &cancel,
+              );
+            }
+            send_page_loaded(&tx, PageLoaded::OcrComplete, cancel.as_ref());
+          })
+          .expect("spawning pdf OCR loader thread")
+      });
       run_loader(
         stream,
         start_page,
@@ -55,15 +70,8 @@ pub fn spawn_loader(
         tx.clone(),
         Arc::clone(&cancel),
       );
-      if let Some(stream) = ocr_stream.as_ref() {
-        run_ocr_remaining_pages(
-          stream,
-          start_page,
-          col,
-          total_pages,
-          &tx,
-          &cancel,
-        );
+      if let Some(worker) = ocr_worker {
+        let _ = worker.join();
       }
     })
     .expect("spawning pdf loader thread");
@@ -95,7 +103,7 @@ fn run_loader(
       continue;
     }
     let rendered_page = render_or_blank(&stream, page_1based, col);
-    let message = PageLoaded {
+    let message = PageLoaded::Page {
       page_index: page_1based - 1,
       rendered_page,
       replace_existing: false,
@@ -119,7 +127,7 @@ fn run_ocr_page(
     return;
   }
   let rendered_page = render_or_blank(stream, page_1based, col);
-  let message = PageLoaded {
+  let message = PageLoaded::Page {
     page_index: page_1based - 1,
     rendered_page,
     replace_existing: true,

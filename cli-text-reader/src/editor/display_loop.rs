@@ -11,6 +11,10 @@ use std::io::{self, IsTerminal, Result as IoResult, Write};
 use super::core::{Editor, EditorMode, ViewMode};
 use crate::progress::save_progress_full;
 
+const FAST_EVENT_POLL_MS: u64 = 16;
+const PDF_LOADING_EVENT_POLL_MS: u64 = 120;
+const IDLE_EVENT_POLL_MS: u64 = 250;
+
 impl Editor {
   fn show_idle_cursor_if_needed(
     &mut self,
@@ -25,62 +29,6 @@ impl Editor {
       buffer.queue(crossterm::cursor::Show)?;
       self.cursor_currently_visible = true;
     }
-    Ok(())
-  }
-
-  /// Render a "Loading …" indicator in the bottom-right corner — the same
-  /// row/column the progress percentage normally occupies — while the PDF
-  /// is either being opened (`pdf_pending`) or having its pages streamed
-  /// in (`pdf_streaming` with `!fully_loaded`). Anchoring it next to the
-  /// status line keeps the message visible across the full load cycle:
-  /// the centered splash used to vanish the instant `pdf_pending` cleared,
-  /// and the inline `[ loading page X of Y … ]` placeholders get
-  /// overwritten by real content as each page streams in. Pinning the
-  /// indicator outside the content area means it survives both transitions.
-  fn draw_pdf_loading_indicator_buffered(
-    &self,
-    buffer: &mut Vec<u8>,
-  ) -> IoResult<()> {
-    use crossterm::QueueableCommand;
-    use crossterm::cursor::MoveTo;
-    use crossterm::terminal::{Clear, ClearType};
-
-    let message = if self.pdf_pending.is_some() {
-      "Loading page 1…".to_string()
-    } else if let Some(state) = self.pdf_streaming.as_ref()
-      && !state.fully_loaded
-    {
-      let loaded = state.pages.iter().filter(|p| p.is_loaded()).count();
-      format!("Loading page {loaded}…")
-    } else if let Some((finished_at, _, _)) = self.pdf_load_finished.as_ref() {
-      let age = finished_at.elapsed().as_secs_f32();
-      if age > 3.0 || age >= 0.5 {
-        return Ok(());
-      }
-      if let Some(state) = self.pdf_streaming.as_ref() {
-        let total = state.pages.len();
-        format!("Loading page {total}…")
-      } else {
-        return Ok(());
-      }
-    } else {
-      return Ok(());
-    };
-
-    if self.height < 2 || self.width == 0 {
-      return Ok(());
-    }
-
-    // "Loading page 9999…" = 18 chars — fix the position so the
-    // indicator doesn't shift as the page number grows.
-    const MAX_WIDTH: usize = 18;
-    let x = self.width.saturating_sub(MAX_WIDTH).saturating_sub(2) as u16;
-    let y = self.height.saturating_sub(2) as u16;
-
-    buffer.queue(MoveTo(x, y))?;
-    write!(buffer, "{message}")?;
-    buffer.queue(Clear(ClearType::UntilNewLine))?;
-
     Ok(())
   }
 
@@ -108,6 +56,13 @@ impl Editor {
       // redraw if anything new arrived.
       if self.pdf_streaming.is_some() {
         let _ = self.drain_pdf_stream();
+        if self
+          .pdf_streaming
+          .as_ref()
+          .is_some_and(|state| !state.fully_loaded || state.ocr_loading)
+        {
+          self.mark_dirty();
+        }
       }
 
       // Manage the "Loaded in X.Xs" indicator: tick through the 500 ms
@@ -235,24 +190,6 @@ impl Editor {
           // Show status line and position info
           self.draw_status_line_buffered(&mut render_buffer)?;
 
-          // While the PDF is still being opened or streamed in the
-          // background, draw a "Loading …" indicator in the bottom-right
-          // corner so the user can see hygg is actually working instead of
-          // staring at an empty screen (during open) or watching the inline
-          // page placeholders get overwritten without any aggregate signal
-          // of how much is left (during streaming).
-          let streaming_loading = self
-            .pdf_streaming
-            .as_ref()
-            .map(|s| !s.fully_loaded)
-            .unwrap_or(false);
-          if self.pdf_pending.is_some()
-            || streaming_loading
-            || self.pdf_load_finished.is_some()
-          {
-            self.draw_pdf_loading_indicator_buffered(&mut render_buffer)?;
-          }
-
           // Render demo hint if active
           if self.tutorial_demo_mode {
             self.render_demo_hint_buffered(
@@ -358,24 +295,24 @@ impl Editor {
       if std::io::stdout().is_terminal() {
         self.debug_log("Waiting for keyboard event...");
         // Use longer timeout when idle to reduce CPU usage
-        let streaming_active =
-          self.pdf_streaming.as_ref().map(|s| !s.fully_loaded).unwrap_or(false);
+        let streaming_active = self
+          .pdf_streaming
+          .as_ref()
+          .map(|s| !s.fully_loaded || s.ocr_loading)
+          .unwrap_or(false);
         let pending_pdf = self.pdf_pending.is_some();
         let load_transitioning = self
           .pdf_load_finished
           .as_ref()
           .map(|(t, _, _)| t.elapsed().as_secs_f32() < 0.55)
           .unwrap_or(false);
-        let timeout = if self.needs_redraw
-          || self.tutorial_demo_mode
-          || streaming_active
-          || pending_pdf
-          || load_transitioning
-        {
-          std::time::Duration::from_millis(16) // ~60fps when animating, in demo, streaming, or opening PDF
-        } else {
-          std::time::Duration::from_millis(250) // Slower when idle
-        };
+        let timeout = event_poll_timeout(
+          self.needs_redraw,
+          self.tutorial_demo_mode,
+          streaming_active,
+          pending_pdf,
+          load_transitioning,
+        );
 
         // Check for demo script actions
         if self.tutorial_demo_mode {
@@ -562,6 +499,22 @@ impl Editor {
   }
 }
 
+fn event_poll_timeout(
+  needs_redraw: bool,
+  tutorial_demo_mode: bool,
+  streaming_active: bool,
+  pending_pdf: bool,
+  load_transitioning: bool,
+) -> std::time::Duration {
+  if needs_redraw || tutorial_demo_mode {
+    std::time::Duration::from_millis(FAST_EVENT_POLL_MS)
+  } else if streaming_active || pending_pdf || load_transitioning {
+    std::time::Duration::from_millis(PDF_LOADING_EVENT_POLL_MS)
+  } else {
+    std::time::Duration::from_millis(IDLE_EVENT_POLL_MS)
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -625,5 +578,29 @@ mod tests {
 
     assert!(buffer.is_empty());
     assert!(!editor.cursor_currently_visible);
+  }
+
+  #[test]
+  fn event_poll_timeout_uses_spinner_cadence_for_pdf_loading() {
+    assert_eq!(
+      event_poll_timeout(false, false, true, false, false),
+      std::time::Duration::from_millis(PDF_LOADING_EVENT_POLL_MS)
+    );
+    assert_eq!(
+      event_poll_timeout(false, false, false, true, false),
+      std::time::Duration::from_millis(PDF_LOADING_EVENT_POLL_MS)
+    );
+  }
+
+  #[test]
+  fn event_poll_timeout_keeps_fast_cadence_for_redraws_and_demo() {
+    assert_eq!(
+      event_poll_timeout(true, false, true, false, false),
+      std::time::Duration::from_millis(FAST_EVENT_POLL_MS)
+    );
+    assert_eq!(
+      event_poll_timeout(false, true, false, false, false),
+      std::time::Duration::from_millis(FAST_EVENT_POLL_MS)
+    );
   }
 }

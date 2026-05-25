@@ -115,11 +115,9 @@ fn run_cli_text_reader_pdf_path_inner(
   let path_for_thread = canonical_str.clone();
   let (saved_target_page, saved_line_in_page, saved_cursor_y) =
     match load_progress(document_hash) {
-      Ok(p) => (
-        p.page.map(|n| n as usize).unwrap_or(1),
-        p.line_in_page,
-        p.cursor_y,
-      ),
+      Ok(p) => {
+        (p.page.map(|n| n as usize).unwrap_or(1), p.line_in_page, p.cursor_y)
+      }
       Err(_) => (1, None, None),
     };
 
@@ -167,6 +165,7 @@ fn run_cli_text_reader_pdf_path_inner(
               pages_receiver: pages_rx,
               cancel,
               worker,
+              ocr_loading: bundled_ocr,
             }
           }
         }

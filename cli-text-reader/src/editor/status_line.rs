@@ -3,6 +3,10 @@ use std::io::{self, Write};
 
 use super::core::{Editor, EditorMode};
 
+const PROGRESS_SLOT_WIDTH: usize = 4;
+const PDF_LOADING_SLOT_WIDTH: usize = 9;
+const PDF_LOADING_FRAMES: [&str; 4] = ["◰", "◳", "◲", "◱"];
+
 impl Editor {
   // Draw the status line with mode indicators and position info
   pub fn draw_status_line(
@@ -14,15 +18,13 @@ impl Editor {
 
     // Position info is now always hidden per user request
 
-    // Show progress indicator if enabled, in normal view mode, and not in demo
-    // Skip while the PDF is still loading — the padded splash buffer (or a
-    // partially-streamed page table) would otherwise report a misleading
-    // percentage that snaps to its real value once every page is in.
+    // Show progress indicator if enabled, in normal view mode, and not in demo.
+    // PDF loading indicators use reserved slots immediately to the left, so
+    // the progress percentage remains anchored while parser/OCR work comes
+    // and goes.
     if self.show_progress
       && self.view_mode == super::core::ViewMode::Normal
       && !self.tutorial_demo_mode
-      && self.pdf_pending.is_none()
-      && self.pdf_streaming.as_ref().map(|s| s.fully_loaded).unwrap_or(true)
     {
       self.draw_progress_indicator(stdout)?;
     }
@@ -164,25 +166,15 @@ impl Editor {
 
   // Draw progress indicator in the status line area
   fn draw_progress_indicator(&self, stdout: &mut io::Stdout) -> io::Result<()> {
-    // Calculate actual position in document (offset + cursor position + 1 for
-    // 1-based indexing)
-    let current_position =
-      (self.offset + self.cursor_y + 1).min(self.total_lines);
-    let progress = if self.total_lines > 0 {
-      (current_position as f64 / self.total_lines as f64 * 100.0)
-        .round()
-        .min(100.0)
-    } else {
-      100.0 // Empty document is 100% read
-    };
-    let message = format!("{progress}%");
+    let message = self.progress_indicator_message();
 
     self.debug_log(&format!(
       "Drawing progress indicator: {} (view_mode: {:?}, demo: {})",
       message, self.view_mode, self.tutorial_demo_mode
     ));
-    let x = self.width as u16 - message.len() as u16 - 2;
+    let x = self.progress_indicator_x() as u16;
     let y = self.height as u16 - 2;
+    self.draw_pdf_loading_slots(stdout, x, y)?;
     execute!(stdout, MoveTo(x, y))?;
     write!(stdout, "{message}")?;
     execute!(
@@ -201,15 +193,13 @@ impl Editor {
     // Draw mode indicators in the status line
     self.draw_mode_indicator_buffered(buffer)?;
 
-    // Show progress indicator if enabled, in normal view mode, and not in demo
-    // Skip while the PDF is still loading — the padded splash buffer (or a
-    // partially-streamed page table) would otherwise report a misleading
-    // percentage that snaps to its real value once every page is in.
+    // Show progress indicator if enabled, in normal view mode, and not in demo.
+    // PDF loading indicators use reserved slots immediately to the left, so
+    // the progress percentage remains anchored while parser/OCR work comes
+    // and goes.
     if self.show_progress
       && self.view_mode == super::core::ViewMode::Normal
       && !self.tutorial_demo_mode
-      && self.pdf_pending.is_none()
-      && self.pdf_streaming.as_ref().map(|s| s.fully_loaded).unwrap_or(true)
     {
       self.draw_progress_indicator_buffered(buffer)?;
     }
@@ -266,6 +256,29 @@ impl Editor {
     &self,
     buffer: &mut Vec<u8>,
   ) -> io::Result<()> {
+    let message = self.progress_indicator_message();
+
+    self.debug_log(&format!(
+      "Drawing progress indicator: {} (view_mode: {:?}, demo: {})",
+      message, self.view_mode, self.tutorial_demo_mode
+    ));
+    let x = self.progress_indicator_x() as u16;
+    let y = self.height as u16 - 2;
+    self.draw_pdf_loading_slots_buffered(buffer, x, y)?;
+    buffer.queue(MoveTo(x, y))?;
+    write!(buffer, "{message}")?;
+    buffer.queue(crossterm::terminal::Clear(
+      crossterm::terminal::ClearType::UntilNewLine,
+    ))?;
+
+    Ok(())
+  }
+
+  fn progress_indicator_message(&self) -> String {
+    if self.pdf_pending.is_some() {
+      return format!("{:>width$}", "--%", width = PROGRESS_SLOT_WIDTH);
+    }
+
     // Calculate actual position in document (offset + cursor position + 1 for
     // 1-based indexing)
     let current_position =
@@ -277,20 +290,112 @@ impl Editor {
     } else {
       100.0 // Empty document is 100% read
     };
-    let message = format!("{progress}%");
+    format!("{:>width$}", format!("{progress}%"), width = PROGRESS_SLOT_WIDTH)
+  }
 
-    self.debug_log(&format!(
-      "Drawing progress indicator: {} (view_mode: {:?}, demo: {})",
-      message, self.view_mode, self.tutorial_demo_mode
-    ));
-    let x = self.width as u16 - message.len() as u16 - 2;
-    let y = self.height as u16 - 2;
+  fn progress_indicator_x(&self) -> usize {
+    self.width.saturating_sub(PROGRESS_SLOT_WIDTH).saturating_sub(2)
+  }
+
+  fn pdf_loading_slots_message(&self) -> String {
+    let parser_loading = self.pdf_pending.is_some()
+      || self.pdf_streaming.as_ref().is_some_and(|s| !s.fully_loaded);
+    let ocr_loading =
+      self.pdf_streaming.as_ref().is_some_and(|s| s.ocr_loading);
+    if !parser_loading && !ocr_loading {
+      return " ".repeat(PDF_LOADING_SLOT_WIDTH);
+    }
+
+    let elapsed_ms = std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)
+      .map(|duration| duration.as_millis())
+      .unwrap_or(0);
+    let frame_idx =
+      (elapsed_ms / 120 % PDF_LOADING_FRAMES.len() as u128) as usize;
+    pdf_loading_slots_message_for_state(parser_loading, ocr_loading, frame_idx)
+  }
+
+  fn pdf_loading_slots_x(&self) -> usize {
+    self.progress_indicator_x().saturating_sub(PDF_LOADING_SLOT_WIDTH + 1)
+  }
+
+  fn draw_pdf_loading_slots(
+    &self,
+    stdout: &mut io::Stdout,
+    progress_x: u16,
+    y: u16,
+  ) -> io::Result<()> {
+    let x = self.pdf_loading_slots_x().min(progress_x as usize) as u16;
+    let message = self.pdf_loading_slots_message();
+    execute!(stdout, MoveTo(x, y))?;
+    write!(stdout, "{message}")?;
+    Ok(())
+  }
+
+  fn draw_pdf_loading_slots_buffered(
+    &self,
+    buffer: &mut Vec<u8>,
+    progress_x: u16,
+    y: u16,
+  ) -> io::Result<()> {
+    let x = self.pdf_loading_slots_x().min(progress_x as usize) as u16;
+    let message = self.pdf_loading_slots_message();
     buffer.queue(MoveTo(x, y))?;
     write!(buffer, "{message}")?;
-    buffer.queue(crossterm::terminal::Clear(
-      crossterm::terminal::ClearType::UntilNewLine,
-    ))?;
-
     Ok(())
+  }
+}
+
+fn pdf_loading_slots_message_for_state(
+  parser_loading: bool,
+  ocr_loading: bool,
+  frame_idx: usize,
+) -> String {
+  if !parser_loading && !ocr_loading {
+    return " ".repeat(PDF_LOADING_SLOT_WIDTH);
+  }
+
+  let parser = if parser_loading {
+    format!("P[{}]", PDF_LOADING_FRAMES[frame_idx % PDF_LOADING_FRAMES.len()])
+  } else {
+    "    ".to_string()
+  };
+  let ocr = if ocr_loading {
+    format!(
+      "O[{}]",
+      PDF_LOADING_FRAMES[(frame_idx + 2) % PDF_LOADING_FRAMES.len()]
+    )
+  } else {
+    "    ".to_string()
+  };
+  format!("{parser} {ocr}")
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn pdf_loading_slots_keep_fixed_width_when_inactive() {
+    let message = pdf_loading_slots_message_for_state(false, false, 0);
+
+    assert_eq!(message, " ".repeat(PDF_LOADING_SLOT_WIDTH));
+    assert_eq!(message.chars().count(), PDF_LOADING_SLOT_WIDTH);
+  }
+
+  #[test]
+  fn pdf_loading_slots_hide_completed_parser_slot() {
+    let message = pdf_loading_slots_message_for_state(false, true, 0);
+
+    assert_eq!(message, "     O[◲]");
+    assert_eq!(message.chars().count(), PDF_LOADING_SLOT_WIDTH);
+  }
+
+  #[test]
+  fn pdf_loading_slots_hide_completed_ocr_slot() {
+    let message = pdf_loading_slots_message_for_state(true, false, 0);
+
+    assert_eq!(message, "P[◰]     ");
+    assert_eq!(message.chars().count(), PDF_LOADING_SLOT_WIDTH);
   }
 }

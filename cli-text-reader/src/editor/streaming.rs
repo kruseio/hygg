@@ -88,6 +88,7 @@ mod tests {
       receiver: rx,
       cancel: Arc::new(AtomicBool::new(false)),
       fully_loaded: true,
+      ocr_loading: false,
       worker: None,
     };
 
@@ -246,13 +247,16 @@ impl PageSlot {
   }
 }
 
-/// Message posted by the background loader when it finishes extracting one
-/// page's raw text. Justification happens on the main thread when the
-/// message is drained.
-pub struct PageLoaded {
-  pub page_index: usize,
-  pub rendered_page: PdfRenderedPage,
-  pub replace_existing: bool,
+/// Message posted by the background loader when page content or OCR state
+/// changes. Justification happens on the main thread when the message is
+/// drained.
+pub enum PageLoaded {
+  Page {
+    page_index: usize,
+    rendered_page: PdfRenderedPage,
+    replace_existing: bool,
+  },
+  OcrComplete,
 }
 
 /// Result of the background "open the PDF + extract initial pages" job.
@@ -270,6 +274,7 @@ pub enum StreamReady {
     pages_receiver: Receiver<PageLoaded>,
     cancel: Arc<AtomicBool>,
     worker: std::thread::JoinHandle<()>,
+    ocr_loading: bool,
   },
   Err(String),
 }
@@ -302,6 +307,7 @@ pub struct PdfStreamingState {
   pub cancel: Arc<AtomicBool>,
   /// True once every page has been received and stitched.
   pub fully_loaded: bool,
+  pub ocr_loading: bool,
   /// Worker thread join handle; held so the thread is cleanly joined when
   /// the editor exits.
   pub worker: Option<std::thread::JoinHandle<()>>,
