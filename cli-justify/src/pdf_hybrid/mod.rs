@@ -21,12 +21,8 @@ mod tests {
 
   #[test]
   fn preserves_indent_when_trimmed_content_fits_line_width_exactly() {
-    let line = format!(
-      "   {}{}{}",
-      "Foo Bar".to_string(),
-      " ".repeat(31),
-      "Baz Qux Quux Corge"
-    );
+    let line =
+      format!("   {}{}{}", "Foo Bar", " ".repeat(31), "Baz Qux Quux Corge");
     let out = justify_pdf_hybrid(&line, 80);
     assert!(
       out[0].starts_with("   "),

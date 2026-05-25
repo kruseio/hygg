@@ -31,11 +31,7 @@ chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
 ureq = { version = "3", features = ["json"] }
 
-arboard = { version = "3", default-features = true }
-[target.'cfg(target_os = "linux")'.dependencies.arboard]
-version = "3"
-default-features = true
-features = ["wayland-data-control"]
+arboard = { version = "3", default-features = true, features = ["wayland-data-control"] }
 
 [dev-dependencies]
 tempfile = "3"

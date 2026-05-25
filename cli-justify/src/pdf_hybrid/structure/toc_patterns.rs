@@ -33,13 +33,13 @@ pub(crate) fn looks_like_toc_entry_prefix(prefix: &str) -> bool {
 #[derive(Clone, Copy)]
 pub(crate) enum TocPrefixKind {
   /// Like `1.2.3` — a bare dotted-numeric or alphanumeric section identifier.
-  NumericSectionLabel,
+  NumericSection,
   /// Like `Appendix A` — a recognized TOC keyword followed by a counter token.
-  KeywordedLabel,
+  Keyworded,
   /// Like `Plate 14` — a title-case word followed by a numeric counter.
   /// More permissive but requires a strictly numeric counter to avoid
   /// matching multi-column rows like `Akrom K`.
-  TitleNumberLabel,
+  TitleNumber,
 }
 
 pub(crate) fn classify_toc_entry_prefix(prefix: &str) -> Option<TocPrefixKind> {
@@ -51,7 +51,7 @@ pub(crate) fn classify_toc_entry_prefix(prefix: &str) -> Option<TocPrefixKind> {
   let words: Vec<&str> = prefix.split_whitespace().collect();
   if words.len() == 1 {
     if is_numeric_section_label(words[0]) {
-      return Some(TocPrefixKind::NumericSectionLabel);
+      return Some(TocPrefixKind::NumericSection);
     }
     return None;
   }
@@ -60,14 +60,14 @@ pub(crate) fn classify_toc_entry_prefix(prefix: &str) -> Option<TocPrefixKind> {
     && is_toc_label_keyword(words[0])
     && is_counter_token(words[1])
   {
-    return Some(TocPrefixKind::KeywordedLabel);
+    return Some(TocPrefixKind::Keyworded);
   }
 
   if words.len() == 2
     && is_title_case_label_word(words[0])
     && is_numeric_counter(words[1])
   {
-    return Some(TocPrefixKind::TitleNumberLabel);
+    return Some(TocPrefixKind::TitleNumber);
   }
 
   None

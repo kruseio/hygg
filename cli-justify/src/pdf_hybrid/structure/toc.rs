@@ -132,7 +132,7 @@ pub(crate) fn parse_aligned_toc_row_start(
     return None;
   }
 
-  // TitleNumberLabel prefixes (`Plate N`, `Diagram N`, …) are ambiguous
+  // TitleNumber prefixes (`Plate N`, `Diagram N`, …) are ambiguous
   // without a clean trailing page number: a real TOC entry has the number
   // alone at the right margin (`Plate 14 … 313`), but a list-of-plates
   // section has them embedded inline ("page 313") with parens or quotes
@@ -142,7 +142,7 @@ pub(crate) fn parse_aligned_toc_row_start(
   if page_number.is_none()
     && matches!(
       classify_toc_entry_prefix(&entry_prefix),
-      Some(TocPrefixKind::TitleNumberLabel)
+      Some(TocPrefixKind::TitleNumber)
     )
   {
     return None;
@@ -182,9 +182,7 @@ pub(crate) fn parse_plain_aligned_toc_row(line: &str) -> Option<AlignedTocRow> {
 
   let (title, page_number) =
     split_trailing_numeric_token_with_min_gap(trimmed, 2);
-  let Some(page_number) = page_number else {
-    return None;
-  };
+  let page_number = page_number?;
   if title.is_empty() {
     return None;
   }

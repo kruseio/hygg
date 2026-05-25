@@ -884,7 +884,7 @@ fn compose_visual_page(
           continue;
         }
         let indent =
-          (((row.left - page_left) / 5.0).round()).max(0.0).min(20.0) as usize;
+          (((row.left - page_left) / 5.0).round()).clamp(0.0, 20.0) as usize;
         let text_width = col.saturating_sub(indent).max(1);
         let wrapped_lines = if row.text.chars().count() <= text_width {
           vec![row.text]

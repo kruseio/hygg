@@ -68,15 +68,11 @@ pub(crate) fn parse_list_marker(
 
   let remainder = &trimmed[idx..];
   let mut chars = remainder.chars();
-  let Some(delimiter) = chars.next() else {
-    return None;
-  };
+  let delimiter = chars.next()?;
   if delimiter != '.' && delimiter != ')' {
     return None;
   }
-  let Some(space) = chars.next() else {
-    return None;
-  };
+  let space = chars.next()?;
   if space != ' ' {
     return None;
   }
