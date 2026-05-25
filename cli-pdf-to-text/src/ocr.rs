@@ -189,7 +189,7 @@ fn ocr_missing_text_regions(
       let Some(bbox) = image.bbox() else {
         continue;
       };
-      let Some(region) = TextRegion::from_rect(&bbox) else {
+      let Some(region) = TextRegion::from_rect(bbox) else {
         continue;
       };
       if native_region_text_is_sufficient(native_regions, &region) {

@@ -17,27 +17,6 @@ fn osc52_copy(text: &str) {
   let _ = stdout.flush();
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use cli_pdf_to_text::PdfLineKind;
-
-  #[test]
-  fn yank_line_skips_ansi_art_rows() {
-    let mut editor = Editor::new(
-      vec!["plain".to_string(), "\x1b[38;2;1;2;3m▀\x1b[0m".to_string()],
-      80,
-    );
-    editor.line_kinds = vec![PdfLineKind::Text, PdfLineKind::AnsiArt];
-    editor.editor_state.yank_buffer = "previous".to_string();
-    editor.cursor_y = 1;
-
-    editor.yank_line();
-
-    assert_eq!(editor.editor_state.yank_buffer, "previous");
-  }
-}
-
 fn base64_encode(input: &[u8]) -> String {
   const ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -187,5 +166,26 @@ impl Editor {
         }
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use cli_pdf_to_text::PdfLineKind;
+
+  #[test]
+  fn yank_line_skips_ansi_art_rows() {
+    let mut editor = Editor::new(
+      vec!["plain".to_string(), "\x1b[38;2;1;2;3m▀\x1b[0m".to_string()],
+      80,
+    );
+    editor.line_kinds = vec![PdfLineKind::Text, PdfLineKind::AnsiArt];
+    editor.editor_state.yank_buffer = "previous".to_string();
+    editor.cursor_y = 1;
+
+    editor.yank_line();
+
+    assert_eq!(editor.editor_state.yank_buffer, "previous");
   }
 }

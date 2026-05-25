@@ -15,14 +15,12 @@ impl Editor {
     line: &str,
     center_offset_string: &str,
   ) -> IoResult<bool> {
-    if ((self.editor_state.mode == EditorMode::VisualChar
+    if (self.editor_state.mode == EditorMode::VisualChar
       || self.editor_state.mode == EditorMode::VisualLine
       || self.editor_state.visual_selection_active)
-      && self.editor_state.selection_start.is_some()
-      && self.editor_state.selection_end.is_some())
+      && let (Some(start), Some(end)) =
+        (self.editor_state.selection_start, self.editor_state.selection_end)
     {
-      let start = self.editor_state.selection_start.unwrap();
-      let end = self.editor_state.selection_end.unwrap();
       let current_line_idx = self.offset + line_index;
 
       // Determine if this line is within the selection range
@@ -152,14 +150,12 @@ impl Editor {
     line: &str,
     center_offset_string: &str,
   ) -> IoResult<bool> {
-    if ((self.editor_state.mode == EditorMode::VisualChar
+    if (self.editor_state.mode == EditorMode::VisualChar
       || self.editor_state.mode == EditorMode::VisualLine
       || self.editor_state.visual_selection_active)
-      && self.editor_state.selection_start.is_some()
-      && self.editor_state.selection_end.is_some())
+      && let (Some(start), Some(end)) =
+        (self.editor_state.selection_start, self.editor_state.selection_end)
     {
-      let start = self.editor_state.selection_start.unwrap();
-      let end = self.editor_state.selection_end.unwrap();
       let current_line_idx = self.offset + line_index;
 
       // Determine if this line is within the selection range

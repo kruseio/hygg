@@ -265,11 +265,7 @@ pub(super) fn wrap_aligned_toc_row(
   let continuation_limit =
     line_width.saturating_sub(char_len(&continuation_prefix));
 
-  loop {
-    let Some(last_line) = wrapped.last() else {
-      break;
-    };
-
+  while let Some(last_line) = wrapped.last() {
     let last_idx = wrapped.len() - 1;
     let prefix_len = if last_idx == 0 {
       char_len(&first_prefix)
@@ -337,9 +333,7 @@ pub(super) fn flush_pending_pdf_block(
   out: &mut Vec<String>,
   line_width: usize,
 ) -> Option<usize> {
-  let Some(block) = pending.take() else {
-    return None;
-  };
+  let block = pending.take()?;
 
   match block {
     PendingPdfBlock::Paragraph { indent, lines } => {

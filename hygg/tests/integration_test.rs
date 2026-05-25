@@ -299,13 +299,11 @@ fn test_epub_processing() {
 
   // Check if it panicked (would have exited with error)
   match child.try_wait() {
-    Ok(Some(status)) => {
-      if !status.success() {
-        let stderr = child.wait_with_output().unwrap().stderr;
-        let stderr_str = String::from_utf8_lossy(&stderr);
-        if stderr_str.contains("panic") {
-          panic!("hygg panicked: {}", stderr_str);
-        }
+    Ok(Some(status)) if !status.success() => {
+      let stderr = child.wait_with_output().unwrap().stderr;
+      let stderr_str = String::from_utf8_lossy(&stderr);
+      if stderr_str.contains("panic") {
+        panic!("hygg panicked: {}", stderr_str);
       }
     }
     _ => {
@@ -399,13 +397,11 @@ fn test_docx_processing_with_pandoc() {
 
   // Check if it panicked
   match child.try_wait() {
-    Ok(Some(status)) => {
-      if !status.success() {
-        let stderr = child.wait_with_output().unwrap().stderr;
-        let stderr_str = String::from_utf8_lossy(&stderr);
-        if stderr_str.contains("panic") {
-          panic!("hygg panicked on DOCX: {}", stderr_str);
-        }
+    Ok(Some(status)) if !status.success() => {
+      let stderr = child.wait_with_output().unwrap().stderr;
+      let stderr_str = String::from_utf8_lossy(&stderr);
+      if stderr_str.contains("panic") {
+        panic!("hygg panicked on DOCX: {}", stderr_str);
       }
     }
     _ => {

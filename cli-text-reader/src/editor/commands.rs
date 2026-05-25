@@ -195,6 +195,19 @@ impl Editor {
   }
 }
 
+// Handle Vim-style commands
+pub fn handle_command(command: &str, show_highlighter: &mut bool) -> bool {
+  match command.trim() {
+    "q" => true,
+    "z" => {
+      *show_highlighter = !*show_highlighter;
+      false
+    }
+    "p" | "help" | "tutorial" => false,
+    _ => false,
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::Editor;
@@ -224,18 +237,5 @@ mod tests {
       assert!(!editor.ocr_enabled);
       assert_eq!(editor.buffers.len(), 1);
     }
-  }
-}
-
-// Handle Vim-style commands
-pub fn handle_command(command: &str, show_highlighter: &mut bool) -> bool {
-  match command.trim() {
-    "q" => true,
-    "z" => {
-      *show_highlighter = !*show_highlighter;
-      false
-    }
-    "p" | "help" | "tutorial" => false,
-    _ => false,
   }
 }
