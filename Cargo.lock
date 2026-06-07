@@ -385,10 +385,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cff-parser"
-version = "0.1.0"
-
-[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -512,10 +508,10 @@ dependencies = [
  "cli-justify",
  "flate2",
  "getopts",
+ "hygg-pdf-extract",
  "hygg-shared",
  "image",
  "lopdf 0.40.0",
- "pdf-extract",
  "pdf_oxide",
  "rayon",
  "redirect-stderr",
@@ -1350,6 +1346,25 @@ dependencies = [
  "hygg-shared",
  "redirect-stderr",
  "uuid",
+]
+
+[[package]]
+name = "hygg-cff-parser"
+version = "0.1.20"
+
+[[package]]
+name = "hygg-pdf-extract"
+version = "0.1.20"
+dependencies = [
+ "adobe-cmap-parser",
+ "encoding_rs",
+ "euclid 0.20.14",
+ "hygg-cff-parser",
+ "log",
+ "lopdf 0.38.0",
+ "postscript",
+ "type1-encoding-parser",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -2206,23 +2221,6 @@ checksum = "112d82ceb8c5bf524d9af484d4e4970c9fd5a0cc15ba14ad93dccd28873b0629"
 dependencies = [
  "digest 0.11.3",
  "hmac",
-]
-
-[[package]]
-name = "pdf-extract"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e28ba1758a3d3f361459645780e09570b573fc3c82637449e9963174c813a98"
-dependencies = [
- "adobe-cmap-parser",
- "cff-parser",
- "encoding_rs",
- "euclid 0.20.14",
- "log",
- "lopdf 0.38.0",
- "postscript",
- "type1-encoding-parser",
- "unicode-normalization",
 ]
 
 [[package]]

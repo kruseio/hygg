@@ -1,5 +1,7 @@
-// Vendored upstream code; suppress lints that the newer rustc surfaces.
-#![allow(mismatched_lifetime_syntaxes)]
+// Vendored upstream code (cff-parser 0.1.0 + an Expert-font panic fix);
+// suppress lints so the workspace's `-D warnings` clippy gate doesn't fail on
+// third-party source.
+#![allow(warnings, clippy::all)]
 
 mod parser;
 mod index;
