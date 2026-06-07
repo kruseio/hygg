@@ -6,9 +6,16 @@
 // reading clock, and drives a live "spoken word" highlight plus cursor
 // auto-scroll through the existing render loop.
 //
-// The real Kokoro engine (Phase 2) will replace `spawn_fake_narration` with a
-// worker that emits the same `SpeechMsg::Word` events from actual audio
-// timings; everything downstream (drain, highlight, auto-scroll) stays.
+// The real Kokoro engine (Phase 2, `kokoro` submodule, feature = "tts") emits
+// the same `SpeechMsg::Word` events from actual audio timings; everything
+// downstream (drain, highlight, auto-scroll) is shared with the fake voice.
+
+#[cfg(feature = "tts")]
+mod kokoro;
+#[cfg(feature = "tts")]
+mod player;
+#[cfg(feature = "tts")]
+mod vocab;
 
 use std::io::{Result as IoResult, Write};
 use std::sync::Arc;
@@ -27,9 +34,13 @@ use crossterm::terminal::{Clear, ClearType};
 use super::core::Editor;
 
 // Synthetic reading cadence for the fake voice. Tuned to roughly match
-// Kokoro's observed ~0.3 s/word from the Phase 0 spike.
+// Kokoro's observed ~0.3 s/word from the Phase 0 spike. Only needed when the
+// real engine is absent (or in tests).
+#[cfg(any(not(feature = "tts"), test))]
 const BASE_MS: u64 = 140;
+#[cfg(any(not(feature = "tts"), test))]
 const PER_CHAR_MS: u64 = 55;
+#[cfg(any(not(feature = "tts"), test))]
 const SLEEP_STEP_MS: u64 = 25; // cancel-check granularity
 
 // What the `:speak` command requested.
@@ -120,6 +131,7 @@ pub(crate) fn build_word_spans(
   spans
 }
 
+#[cfg(any(not(feature = "tts"), test))]
 fn interruptible_sleep(total_ms: u64, cancel: &AtomicBool) -> bool {
   let mut elapsed = 0;
   while elapsed < total_ms {
@@ -134,6 +146,7 @@ fn interruptible_sleep(total_ms: u64, cancel: &AtomicBool) -> bool {
 }
 
 // The fake voice: walk the words, emitting each at its synthetic start time.
+#[cfg(any(not(feature = "tts"), test))]
 fn run_fake_voice(
   spans: Vec<WordSpan>,
   tx: Sender<SpeechMsg>,
@@ -163,6 +176,7 @@ fn run_fake_voice(
 }
 
 // Spawn the fake-voice worker over a set of word spans.
+#[cfg(any(not(feature = "tts"), test))]
 fn spawn_fake_narration(spans: Vec<WordSpan>, speed: f32) -> SpeechState {
   let (tx, rx) = mpsc::channel();
   let cancel = Arc::new(AtomicBool::new(false));
@@ -175,7 +189,9 @@ fn spawn_fake_narration(spans: Vec<WordSpan>, speed: f32) -> SpeechState {
 }
 
 impl Editor {
-  // Begin narrating from the current reading line.
+  // Begin narrating from the current reading line. With the `tts` feature this
+  // uses the local Kokoro engine (real audio + word timings); otherwise a
+  // silent fake voice that still drives the highlight + auto-scroll.
   pub(crate) fn start_narration(&mut self) {
     self.stop_narration();
     let all = build_word_spans(&self.lines, &self.line_kinds);
@@ -186,7 +202,42 @@ impl Editor {
     if spans.is_empty() {
       return;
     }
-    // Phase 1 uses a fixed speed; Phase 2 reads it from config.
+
+    #[cfg(feature = "tts")]
+    {
+      // Pair each span with its on-screen text so the worker can synthesize.
+      let words: Vec<(WordSpan, String)> = spans
+        .iter()
+        .map(|s| {
+          let text = self
+            .lines
+            .get(s.line)
+            .and_then(|l| l.get(s.col_start..s.col_end))
+            .unwrap_or_default()
+            .to_string();
+          (*s, text)
+        })
+        .collect();
+      // Default voice/speed for now; made configurable in a later pass.
+      self.speech = Some(player::spawn_kokoro_narration(
+        words,
+        "af_sarah".to_string(),
+        1.0,
+      ));
+      self.mark_dirty();
+    }
+
+    #[cfg(not(feature = "tts"))]
+    self.start_fake_narration(spans);
+  }
+
+  // Silent fake voice that still drives the highlight + auto-scroll. Used when
+  // the `tts` feature is off, and by the visual demo test.
+  #[cfg(any(not(feature = "tts"), test))]
+  pub(crate) fn start_fake_narration(&mut self, spans: Vec<WordSpan>) {
+    if spans.is_empty() {
+      return;
+    }
     self.speech = Some(spawn_fake_narration(spans, 1.0));
     self.mark_dirty();
   }
@@ -407,7 +458,8 @@ mod tests {
     editor.total_lines = editor.lines.len();
     editor.offset = 0; // start narration from the top so the scroll is visible
     editor.cursor_y = 0;
-    editor.start_narration();
+    let spans = build_word_spans(&editor.lines, &editor.line_kinds);
+    editor.start_fake_narration(spans);
 
     for frame in 0..16 {
       std::thread::sleep(Duration::from_millis(220));

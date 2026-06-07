@@ -17,6 +17,15 @@ categories.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+# Local Kokoro TTS narration. Opt-in like `pdf-ocr-bundled`: the default build
+# (and `cargo install hygg`) pulls none of these. `ort` downloads an ONNX
+# Runtime binary at build time; `espeak-rs` vendors espeak-ng and builds it
+# with CMake (needs a C toolchain). The model itself is downloaded on first
+# use, not bundled (it is far too large for crates.io). See plans/.
+tts = ["dep:ort", "dep:espeak-rs", "dep:ndarray", "dep:ndarray-npy", "dep:rodio"]
+
 [dependencies]
 cli-justify = { version = "0.1", path = "../cli-justify" }
 cli-pdf-to-text = { version = "0.1", path = "../cli-pdf-to-text" }
@@ -32,6 +41,15 @@ dotenvy = "0.15"
 ureq = { version = "3", features = ["json"] }
 
 arboard = { version = "3", default-features = true, features = ["wayland-data-control"] }
+
+# --- TTS (feature = "tts") ---
+# Pinned to the exact ort release the Phase 0 spike validated, since the
+# inference code targets this API. ndarray-npy reads the voices .bin (an NPZ).
+ort = { version = "=2.0.0-rc.11", optional = true }
+espeak-rs = { version = "0.1.9", optional = true }
+ndarray = { version = "0.16", optional = true }
+ndarray-npy = { version = "0.9", optional = true }
+rodio = { version = "0.20", optional = true }
 
 [dev-dependencies]
 tempfile = "3"

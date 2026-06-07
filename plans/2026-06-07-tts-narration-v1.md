@@ -1,7 +1,7 @@
 # Plan: Voice narration with word highlighting (v1)
 
 **Date:** 2026-06-07
-**Status:** Phase 0 spike DONE ✅ · Phase 1 (UX slice, fake voice) DONE ✅ — next: Phase 2 (real Kokoro engine behind `tts` feature). Results at bottom.
+**Status:** Phase 0 spike ✅ · Phase 1 (UX slice, fake voice) ✅ · Phase 2 (real Kokoro engine behind `tts` feature: ONNX inference + espeak alignment + rodio playback, model downloaded on first use) ✅ — verified: real audio + word-synced highlight. Follow-ups: voice/speed config, download-progress UI, chunk pipelining polish. Results at bottom.
 **Roadmap item:** "Natural sounding ai voice model for text to speech narration"
 
 ## Scope decisions (locked in)
