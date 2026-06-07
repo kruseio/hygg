@@ -1,0 +1,23 @@
+[package]
+name = "hygg-cff-parser"
+description = "Thin fork of cff-parser 0.1.0 with a panic fix for Adobe Expert-encoded CFF fonts. Consumed by hygg via hygg-pdf-extract."
+# Tracks the hygg release train rather than upstream's 0.1.0 so it republishes
+# alongside the rest of the workspace. Based on cff-parser 0.1.0; see README.
+version.workspace = true
+edition = "2021"
+authors = [
+  "Evgeniy Reizner <razrfalcon@gmail.com>",
+  "Jeff Muizelaar <jrmuizel@gmail.com>",
+  "kruseio",
+]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kruseio/hygg"
+readme = "README.md"
+keywords = ["cff", "font", "adobe"]
+categories = ["parser-implementations"]
+
+[lib]
+name = "cff_parser"
+path = "src/lib.rs"
+
+[dependencies]

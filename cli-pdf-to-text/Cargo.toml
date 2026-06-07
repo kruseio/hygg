@@ -30,7 +30,9 @@ hygg-shared = { version = "0.1", path = "../hygg-shared" }
 
 getopts = "0.2"
 
-pdf-extract = "0.10"
+# Our thin fork of pdf-extract 0.10, wired to the patched hygg-cff-parser
+# (Adobe Expert-encoded-CFF panic fix). Still imported as `pdf_extract`.
+pdf-extract = { package = "hygg-pdf-extract", version = "0.1", path = "../hygg-pdf-extract" }
 lopdf = "0.40"
 rayon = "1"
 # pdf_oxide is the streaming-path backend. It parses PDFs lazily — opening
