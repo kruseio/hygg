@@ -218,12 +218,8 @@ impl Editor {
           (*s, text)
         })
         .collect();
-      // Default voice/speed for now; made configurable in a later pass.
-      self.speech = Some(player::spawn_kokoro_narration(
-        words,
-        "af_sarah".to_string(),
-        1.0,
-      ));
+      let (voice, speed) = crate::config::tts_settings();
+      self.speech = Some(player::spawn_kokoro_narration(words, voice, speed));
       self.mark_dirty();
     }
 

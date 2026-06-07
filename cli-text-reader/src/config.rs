@@ -58,6 +58,39 @@ fn config_bool(
   })
 }
 
+#[cfg(feature = "tts")]
+fn config_string(
+  key: &str,
+  file_values: &HashMap<String, String>,
+) -> Option<String> {
+  std::env::var(key).ok().or_else(|| file_values.get(key).cloned())
+}
+
+#[cfg(feature = "tts")]
+fn config_f32(key: &str, file_values: &HashMap<String, String>) -> Option<f32> {
+  std::env::var(key)
+    .ok()
+    .and_then(|v| v.parse().ok())
+    .or_else(|| file_values.get(key).and_then(|v| v.parse().ok()))
+}
+
+/// TTS narration voice id and speed. Reads `TTS_VOICE` / `TTS_SPEED` from the
+/// environment, then `~/.config/hygg/.env`, falling back to sensible defaults.
+/// (Add `TTS_VOICE=af_sarah` / `TTS_SPEED=1.0` to that file to customize.)
+#[cfg(feature = "tts")]
+pub fn tts_settings() -> (String, f32) {
+  let file_values = get_config_env_path()
+    .ok()
+    .filter(|_| ensure_config_file().is_ok())
+    .and_then(|path| dotenvy::from_path_iter(path).ok())
+    .map(|iter| iter.filter_map(Result::ok).collect::<HashMap<_, _>>())
+    .unwrap_or_default();
+  let voice = config_string("TTS_VOICE", &file_values)
+    .unwrap_or_else(|| "af_sarah".to_string());
+  let speed = config_f32("TTS_SPEED", &file_values).unwrap_or(1.0);
+  (voice, speed)
+}
+
 pub fn save_config(
   config: &AppConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
