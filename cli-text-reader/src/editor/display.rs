@@ -179,6 +179,19 @@ impl Editor {
         let is_current_line =
           self.highlight_current_line_buffered(buffer, i, term_width)?;
 
+        // Spoken-word narration highlight takes precedence so the word the
+        // voice is currently reading is always visible.
+        if self.spoken_word_on_line(i)
+          && self.highlight_spoken_word_buffered(
+            buffer,
+            i,
+            &line,
+            center_offset_string,
+          )?
+        {
+          continue;
+        }
+
         // Check if we need to render any special highlights
         let has_selection = self.has_selection_on_line(i);
         let has_search = self.has_search_match_on_line(i);

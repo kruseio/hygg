@@ -65,6 +65,13 @@ impl Editor {
         }
       }
 
+      // Advance TTS narration: pull word-boundary events from the worker,
+      // move the reading cursor, and repaint so the spoken-word highlight
+      // tracks and the viewport auto-scrolls to follow the voice.
+      if self.speech.is_some() {
+        self.drain_speech();
+      }
+
       // Manage the "Loaded in X.Xs" indicator: tick through the 500 ms
       // hold so the message appears promptly, then expire after 3 s.
       {
@@ -308,13 +315,18 @@ impl Editor {
           .as_ref()
           .map(|(t, _, _)| t.elapsed().as_secs_f32() < 0.55)
           .unwrap_or(false);
-        let timeout = event_poll_timeout(
+        let mut timeout = event_poll_timeout(
           self.needs_redraw,
           self.tutorial_demo_mode,
           streaming_active,
           pending_pdf,
           load_transitioning,
         );
+        // While narrating, poll fast so the spoken-word highlight stays in
+        // sync with the reading clock between word boundaries.
+        if self.is_narrating() {
+          timeout = std::time::Duration::from_millis(FAST_EVENT_POLL_MS);
+        }
 
         // Check for demo script actions
         if self.tutorial_demo_mode {
@@ -374,6 +386,13 @@ impl Editor {
                   "Ignoring key event with kind: {:?} (only processing Press events)",
                   key_event.kind
                 ));
+                continue;
+              }
+
+              // Any key press stops narration (press again to act normally).
+              if self.is_narrating() {
+                self.stop_narration();
+                self.mark_dirty();
                 continue;
               }
 

@@ -46,6 +46,7 @@ mod selection;
 mod selection_basic;
 mod selection_text;
 mod selection_words;
+pub(crate) mod speech;
 mod status_line;
 pub(crate) mod streaming;
 pub(crate) mod streaming_loader;

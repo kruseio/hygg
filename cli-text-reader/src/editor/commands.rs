@@ -178,6 +178,7 @@ impl Editor {
       RegisteredCommand::Credits => self.handle_credits_command(),
       RegisteredCommand::About => self.handle_about_command(),
       RegisteredCommand::Ocr(enable) => self.handle_ocr_command(enable),
+      RegisteredCommand::Speak(action) => self.handle_speak_command(action),
       RegisteredCommand::ToggleHighlighter => {
         self.show_highlighter = !self.show_highlighter;
         self.save_current_config();

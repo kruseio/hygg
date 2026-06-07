@@ -202,6 +202,7 @@ impl Editor {
       pdf_pending: None,
       pdf_load_started_at: None,
       pdf_load_finished: None,
+      speech: None,
     }
   }
 

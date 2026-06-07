@@ -1,3 +1,5 @@
+use super::speech::SpeakAction;
+
 #[derive(Debug, PartialEq)]
 pub(crate) struct CommandCompletion {
   pub(crate) replacement: Option<String>,
@@ -19,6 +21,7 @@ pub(crate) enum RegisteredCommand {
   Progress,
   Quit,
   Shell(String),
+  Speak(SpeakAction),
   ToggleHighlighter,
   Tutorial(TutorialCommand),
   Unknown,
@@ -37,6 +40,7 @@ struct CommandSpec {
 }
 
 const OCR_ARGS: &[&str] = &["on", "off"];
+const SPEAK_ARGS: &[&str] = &["stop"];
 const TUTORIAL_ARGS: &[&str] = &["on", "off", "{n}"];
 
 const COMMANDS: &[CommandSpec] = &[
@@ -63,6 +67,7 @@ const COMMANDS: &[CommandSpec] = &[
   CommandSpec { name: "q", arguments: &[] },
   CommandSpec { name: "q!", arguments: &[] },
   CommandSpec { name: "quit", arguments: &[] },
+  CommandSpec { name: "speak", arguments: SPEAK_ARGS },
   CommandSpec { name: "tutorial", arguments: TUTORIAL_ARGS },
   CommandSpec { name: "z", arguments: &[] },
 ];
@@ -107,6 +112,8 @@ pub(crate) fn classify_command(input: &str) -> RegisteredCommand {
     ("about", []) => RegisteredCommand::About,
     ("ocr", ["on"]) => RegisteredCommand::Ocr(true),
     ("ocr", ["off"]) => RegisteredCommand::Ocr(false),
+    ("speak", []) => RegisteredCommand::Speak(SpeakAction::Start),
+    ("speak", ["stop"]) => RegisteredCommand::Speak(SpeakAction::Stop),
     ("z", []) => RegisteredCommand::ToggleHighlighter,
     _ => RegisteredCommand::Unknown,
   }
@@ -128,6 +135,8 @@ pub(crate) fn command_help_lines() -> Vec<String> {
     "    :z                     Toggle line highlighter".to_string(),
     "    :p                     Toggle progress display".to_string(),
     "    :ocr on, :ocr off      Toggle PDF OCR for this PDF and future launches"
+      .to_string(),
+    "    :speak, :speak stop    Narrate from the cursor (any key stops)"
       .to_string(),
     "    :cursor, :c            Toggle cursor visibility".to_string(),
     "    :h                     Highlight selected text (in visual mode)"
