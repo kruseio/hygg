@@ -2,3 +2,11 @@ use_small_heuristics = "Max"
 max_width = 80
 wrap_comments = true
 tab_spaces = 2
+
+# Vendored upstream forks are kept verbatim for easy re-sync, so rustfmt leaves
+# them untouched. `cargo fmt` has no per-package --exclude, so this is how the
+# fork crates are skipped (see also the FORKS exclusions in ci.sh).
+ignore = [
+  "hygg-cff-parser",
+  "hygg-pdf-extract",
+]
