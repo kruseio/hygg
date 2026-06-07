@@ -179,6 +179,8 @@ impl Editor {
       RegisteredCommand::About => self.handle_about_command(),
       RegisteredCommand::Ocr(enable) => self.handle_ocr_command(enable),
       RegisteredCommand::Speak(action) => self.handle_speak_command(action),
+      RegisteredCommand::Voice(id) => self.handle_voice_command(id),
+      RegisteredCommand::Speed(speed) => self.handle_speed_command(speed),
       RegisteredCommand::ToggleHighlighter => {
         self.show_highlighter = !self.show_highlighter;
         self.save_current_config();

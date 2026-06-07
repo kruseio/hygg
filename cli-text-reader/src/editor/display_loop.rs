@@ -71,6 +71,12 @@ impl Editor {
       if self.speech.is_some() {
         self.drain_speech();
       }
+      // While narration is spinning up (model download / engine load / first
+      // synth) no word events arrive, so repaint each tick to animate the
+      // `T[ ]` loading spinner.
+      if self.is_tts_preparing() {
+        self.mark_dirty();
+      }
 
       // Manage the "Loaded in X.Xs" indicator: tick through the 500 ms
       // hold so the message appears promptly, then expire after 3 s.
@@ -394,6 +400,13 @@ impl Editor {
                 self.stop_narration();
                 self.mark_dirty();
                 continue;
+              }
+              // A finished/failed narration leaves residual state (e.g. an
+              // error message in the status line); the next key press dismisses
+              // it, then is handled normally.
+              if self.speech.is_some() {
+                self.speech = None;
+                self.mark_dirty();
               }
 
               // Enhanced debug logging for Windows key events

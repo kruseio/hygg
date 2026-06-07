@@ -93,4 +93,9 @@ pub struct Editor {
   pub pdf_load_finished: Option<(Instant, f32, String)>,
   // TTS narration state (Phase 1: fake voice driving highlight + auto-scroll).
   pub speech: Option<SpeechState>,
+  // Live narration voice id + speed used by `:speak`. Seeded from
+  // TTS_VOICE/TTS_SPEED (env or ~/.config/hygg/.env) or the af_heart default,
+  // and changed at runtime by the `:voice` / `:speed` commands.
+  pub tts_voice: String,
+  pub tts_speed: f32,
 }

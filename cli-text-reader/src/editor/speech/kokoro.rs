@@ -12,8 +12,10 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::File;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use espeak_rs::text_to_phonemes;
 use ndarray::Array3;
@@ -81,7 +83,11 @@ pub(super) fn voices_path() -> PathBuf {
   model_dir().join("voices-v1.0.bin")
 }
 
-fn download_to(url: &str, dest: &Path) -> Result<(), String> {
+fn download_to(
+  url: &str,
+  dest: &Path,
+  cancel: &AtomicBool,
+) -> Result<(), String> {
   if let Some(parent) = dest.parent() {
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
   }
@@ -92,20 +98,40 @@ fn download_to(url: &str, dest: &Path) -> Result<(), String> {
     .into_body();
   let mut reader = body.into_reader();
   let mut file = File::create(&tmp).map_err(|e| e.to_string())?;
-  std::io::copy(&mut reader, &mut file).map_err(|e| e.to_string())?;
+
+  // Copy in chunks (rather than io::copy) so a stop request aborts this
+  // multi-hundred-MB download promptly instead of running to completion on a
+  // detached thread after the user has already pressed a key.
+  let mut buf = vec![0u8; 64 * 1024];
+  loop {
+    if cancel.load(Ordering::Relaxed) {
+      drop(file);
+      let _ = std::fs::remove_file(&tmp);
+      return Err("cancelled".to_string());
+    }
+    let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
+    if n == 0 {
+      break;
+    }
+    file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+  }
+  file.flush().map_err(|e| e.to_string())?;
+  drop(file);
   std::fs::rename(&tmp, dest).map_err(|e| e.to_string())?;
   Ok(())
 }
 
 /// Ensure the model + voices exist locally, downloading on first use. Returns
 /// the resolved paths. Network is only touched when a file is missing.
-pub(super) fn ensure_models() -> Result<(PathBuf, PathBuf), String> {
+pub(super) fn ensure_models(
+  cancel: &AtomicBool,
+) -> Result<(PathBuf, PathBuf), String> {
   let (model, voices) = (model_path(), voices_path());
   if !model.exists() {
-    download_to(MODEL_URL, &model)?;
+    download_to(MODEL_URL, &model, cancel)?;
   }
   if !voices.exists() {
-    download_to(VOICES_URL, &voices)?;
+    download_to(VOICES_URL, &voices, cancel)?;
   }
   Ok((model, voices))
 }
@@ -400,14 +426,20 @@ fn build_alignments(
       cursor_frames += pause_frames;
       continue;
     }
+    // Always emit one alignment per spoken word — even a word that phonemized
+    // to zero tokens (so it has no duration). Skipping it would desync the
+    // player's positional word↔alignment mapping and drop later words.
     let (adj_start, adj_end) = (start + index_offset, end + index_offset);
-    if adj_start < adj_end && adj_end <= durations.len() {
-      let word_frames: f32 = durations[adj_start..adj_end].iter().sum();
-      let start_sec = cursor_frames / FRAMES_PER_SEC;
-      let end_sec = (cursor_frames + word_frames) / FRAMES_PER_SEC;
-      alignments.push(WordAlignment { word: word.clone(), start_sec, end_sec });
-      cursor_frames += word_frames;
-    }
+    let word_frames: f32 = if adj_start < adj_end && adj_end <= durations.len()
+    {
+      durations[adj_start..adj_end].iter().sum()
+    } else {
+      0.0
+    };
+    let start_sec = cursor_frames / FRAMES_PER_SEC;
+    let end_sec = (cursor_frames + word_frames) / FRAMES_PER_SEC;
+    alignments.push(WordAlignment { word: word.clone(), start_sec, end_sec });
+    cursor_frames += word_frames;
   }
 
   // Linearly scale alignment times to the actual audio length to kill drift.

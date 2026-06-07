@@ -9,7 +9,7 @@ use std::io::{self, Write};
 use super::core::{Editor, EditorMode};
 
 const PROGRESS_SLOT_WIDTH: usize = 4;
-const PDF_LOADING_SLOT_WIDTH: usize = 9;
+const PDF_LOADING_SLOT_WIDTH: usize = 14; // "P[x] O[x] T[x]"
 const PDF_LOADING_FRAMES: [&str; 4] = ["◰", "◳", "◲", "◱"];
 
 impl Editor {
@@ -121,14 +121,24 @@ impl Editor {
         )?;
       }
       _ => {
-        // Clear the command line in normal mode
+        // Normal mode: surface a narration failure here, else clear the line.
         execute!(stdout, MoveTo(0, (self.height - 1) as u16))?;
-        execute!(
-          stdout,
-          crossterm::terminal::Clear(
-            crossterm::terminal::ClearType::CurrentLine
-          )
-        )?;
+        if let Some(err) = self.tts_error_message() {
+          write!(stdout, "⚠ narration: {err}")?;
+          execute!(
+            stdout,
+            crossterm::terminal::Clear(
+              crossterm::terminal::ClearType::UntilNewLine
+            )
+          )?;
+        } else {
+          execute!(
+            stdout,
+            crossterm::terminal::Clear(
+              crossterm::terminal::ClearType::CurrentLine
+            )
+          )?;
+        }
       }
     }
     Ok(())
@@ -256,7 +266,10 @@ impl Editor {
         write!(buffer, "-- TUTORIAL --")?;
       }
       _ => {
-        // Normal mode - just clear the line
+        // Normal mode: surface a narration failure here, else leave it blank.
+        if let Some(err) = self.tts_error_message() {
+          write!(buffer, "⚠ narration: {err}")?;
+        }
       }
     }
 
@@ -367,7 +380,8 @@ impl Editor {
       || self.pdf_streaming.as_ref().is_some_and(|s| !s.fully_loaded);
     let ocr_loading =
       self.pdf_streaming.as_ref().is_some_and(|s| s.ocr_loading);
-    if !parser_loading && !ocr_loading {
+    let tts_loading = self.is_tts_preparing();
+    if !parser_loading && !ocr_loading && !tts_loading {
       return " ".repeat(PDF_LOADING_SLOT_WIDTH);
     }
 
@@ -377,7 +391,12 @@ impl Editor {
       .unwrap_or(0);
     let frame_idx =
       (elapsed_ms / 120 % PDF_LOADING_FRAMES.len() as u128) as usize;
-    pdf_loading_slots_message_for_state(parser_loading, ocr_loading, frame_idx)
+    pdf_loading_slots_message_for_state(
+      parser_loading,
+      ocr_loading,
+      tts_loading,
+      frame_idx,
+    )
   }
 
   fn pdf_loading_slots_x(&self) -> usize {
@@ -414,9 +433,10 @@ impl Editor {
 fn pdf_loading_slots_message_for_state(
   parser_loading: bool,
   ocr_loading: bool,
+  tts_loading: bool,
   frame_idx: usize,
 ) -> String {
-  if !parser_loading && !ocr_loading {
+  if !parser_loading && !ocr_loading && !tts_loading {
     return " ".repeat(PDF_LOADING_SLOT_WIDTH);
   }
 
@@ -433,7 +453,15 @@ fn pdf_loading_slots_message_for_state(
   } else {
     "    ".to_string()
   };
-  format!("{parser} {ocr}")
+  let tts = if tts_loading {
+    format!(
+      "T[{}]",
+      PDF_LOADING_FRAMES[(frame_idx + 1) % PDF_LOADING_FRAMES.len()]
+    )
+  } else {
+    "    ".to_string()
+  };
+  format!("{parser} {ocr} {tts}")
 }
 
 #[cfg(test)]
@@ -487,7 +515,7 @@ mod tests {
 
   #[test]
   fn pdf_loading_slots_keep_fixed_width_when_inactive() {
-    let message = pdf_loading_slots_message_for_state(false, false, 0);
+    let message = pdf_loading_slots_message_for_state(false, false, false, 0);
 
     assert_eq!(message, " ".repeat(PDF_LOADING_SLOT_WIDTH));
     assert_eq!(message.chars().count(), PDF_LOADING_SLOT_WIDTH);
@@ -495,17 +523,26 @@ mod tests {
 
   #[test]
   fn pdf_loading_slots_hide_completed_parser_slot() {
-    let message = pdf_loading_slots_message_for_state(false, true, 0);
+    let message = pdf_loading_slots_message_for_state(false, true, false, 0);
 
-    assert_eq!(message, "     O[◲]");
+    assert_eq!(message, "     O[◲]     ");
     assert_eq!(message.chars().count(), PDF_LOADING_SLOT_WIDTH);
   }
 
   #[test]
   fn pdf_loading_slots_hide_completed_ocr_slot() {
-    let message = pdf_loading_slots_message_for_state(true, false, 0);
+    let message = pdf_loading_slots_message_for_state(true, false, false, 0);
 
-    assert_eq!(message, "P[◰]     ");
+    assert_eq!(message, "P[◰]          ");
+    assert_eq!(message.chars().count(), PDF_LOADING_SLOT_WIDTH);
+  }
+
+  #[test]
+  fn pdf_loading_slots_show_tts_spinner() {
+    let message = pdf_loading_slots_message_for_state(false, false, true, 0);
+
+    assert_eq!(message, "          T[◳]");
+    assert!(message.contains("T[◳]"));
     assert_eq!(message.chars().count(), PDF_LOADING_SLOT_WIDTH);
   }
 

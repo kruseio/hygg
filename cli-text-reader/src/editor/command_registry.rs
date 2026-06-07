@@ -22,6 +22,8 @@ pub(crate) enum RegisteredCommand {
   Quit,
   Shell(String),
   Speak(SpeakAction),
+  Voice(String),
+  Speed(f32),
   ToggleHighlighter,
   Tutorial(TutorialCommand),
   Unknown,
@@ -41,6 +43,22 @@ struct CommandSpec {
 
 const OCR_ARGS: &[&str] = &["on", "off"];
 const SPEAK_ARGS: &[&str] = &["stop"];
+// Curated high-quality English voices for tab-completion; any Kokoro voice id
+// (or a blend like "af_heart.6+am_michael.4") is still accepted when typed.
+const VOICE_ARGS: &[&str] = &[
+  "af_heart",
+  "af_bella",
+  "af_nicole",
+  "af_sarah",
+  "af_aoede",
+  "af_kore",
+  "am_michael",
+  "am_fenrir",
+  "am_puck",
+  "bf_emma",
+  "bm_george",
+];
+const SPEED_ARGS: &[&str] = &["{n}"];
 const TUTORIAL_ARGS: &[&str] = &["on", "off", "{n}"];
 
 const COMMANDS: &[CommandSpec] = &[
@@ -68,7 +86,9 @@ const COMMANDS: &[CommandSpec] = &[
   CommandSpec { name: "q!", arguments: &[] },
   CommandSpec { name: "quit", arguments: &[] },
   CommandSpec { name: "speak", arguments: SPEAK_ARGS },
+  CommandSpec { name: "speed", arguments: SPEED_ARGS },
   CommandSpec { name: "tutorial", arguments: TUTORIAL_ARGS },
+  CommandSpec { name: "voice", arguments: VOICE_ARGS },
   CommandSpec { name: "z", arguments: &[] },
 ];
 
@@ -114,6 +134,11 @@ pub(crate) fn classify_command(input: &str) -> RegisteredCommand {
     ("ocr", ["off"]) => RegisteredCommand::Ocr(false),
     ("speak", []) => RegisteredCommand::Speak(SpeakAction::Start),
     ("speak", ["stop"]) => RegisteredCommand::Speak(SpeakAction::Stop),
+    ("voice", [id]) => RegisteredCommand::Voice((*id).to_string()),
+    ("speed", [value]) => value
+      .parse::<f32>()
+      .map(RegisteredCommand::Speed)
+      .unwrap_or(RegisteredCommand::Unknown),
     ("z", []) => RegisteredCommand::ToggleHighlighter,
     _ => RegisteredCommand::Unknown,
   }
@@ -137,6 +162,10 @@ pub(crate) fn command_help_lines() -> Vec<String> {
     "    :ocr on, :ocr off      Toggle PDF OCR for this PDF and future launches"
       .to_string(),
     "    :speak, :speak stop    Narrate from the cursor (any key stops)"
+      .to_string(),
+    "    :voice <id>            Narration voice (e.g. af_heart, am_michael)"
+      .to_string(),
+    "    :speed <n>             Narration speed, 0.5-2.0 (e.g. 1.25)"
       .to_string(),
     "    :cursor, :c            Toggle cursor visibility".to_string(),
     "    :h                     Highlight selected text (in visual mode)"
@@ -238,4 +267,43 @@ fn replace_last_word(input: &str, replacement: &str) -> String {
 
 pub(crate) fn top_level_commands() -> Vec<&'static str> {
   COMMANDS.iter().map(|command| command.name).collect()
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn classifies_voice_with_id() {
+    assert_eq!(
+      classify_command("voice af_bella"),
+      RegisteredCommand::Voice("af_bella".to_string())
+    );
+    // Blend syntax is a single token and must pass through untouched.
+    assert_eq!(
+      classify_command("voice af_heart.6+am_michael.4"),
+      RegisteredCommand::Voice("af_heart.6+am_michael.4".to_string())
+    );
+  }
+
+  #[test]
+  fn classifies_speed_and_rejects_non_numeric() {
+    assert_eq!(classify_command("speed 1.25"), RegisteredCommand::Speed(1.25));
+    assert_eq!(classify_command("speed 2"), RegisteredCommand::Speed(2.0));
+    // Non-numeric speed is not a valid command.
+    assert_eq!(classify_command("speed fast"), RegisteredCommand::Unknown);
+  }
+
+  #[test]
+  fn voice_and_speed_without_args_are_not_setters() {
+    // Bare `:voice` / `:speed` carry no value, so they are not setters.
+    assert_eq!(classify_command("voice"), RegisteredCommand::Unknown);
+    assert_eq!(classify_command("speed"), RegisteredCommand::Unknown);
+  }
+
+  #[test]
+  fn voice_completes_known_ids() {
+    let completion = complete_command("voice af_he");
+    assert_eq!(completion.replacement.as_deref(), Some("voice af_heart"));
+  }
 }

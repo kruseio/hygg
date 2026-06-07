@@ -18,9 +18,9 @@ mod player;
 mod vocab;
 
 use std::io::{Result as IoResult, Write};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -71,6 +71,22 @@ pub(crate) enum SpeechMsg {
   Finished,
 }
 
+// Narration lifecycle, shared from the worker thread so the UI can show
+// feedback while the (heavy, first-run) engine spins up.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum TtsStatus {
+  // Downloading the model, loading the ONNX engine, or synthesizing the first
+  // chunk — anything before audio starts. Drives the `T[ ]` loading spinner.
+  Preparing,
+  // Audio is playing and word-boundary events are flowing.
+  Speaking,
+  // The worker failed before/while speaking; carries a human-readable reason.
+  // Only constructed by the Kokoro worker (feature = "tts"); the default
+  // build reads it (status line) but never produces it.
+  #[allow(dead_code)]
+  Failed(String),
+}
+
 // Live narration state held on the Editor. Std-only, so it compiles in the
 // default build with no feature flag — the heavy engine arrives in Phase 2.
 pub(crate) struct SpeechState {
@@ -81,6 +97,9 @@ pub(crate) struct SpeechState {
   // Currently spoken word as a document byte range, or None between words.
   pub current: Option<(usize, usize)>,
   pub playing: bool,
+  // Lifecycle phase for status-line feedback (spinner / error), updated by the
+  // worker. Shared so the long first-run model download is visible.
+  pub status: Arc<Mutex<TtsStatus>>,
 }
 
 // Byte ranges of whitespace-separated words within a single line. UTF-8 safe:
@@ -185,7 +204,15 @@ fn spawn_fake_narration(spans: Vec<WordSpan>, speed: f32) -> SpeechState {
     .name("hygg-tts-fake".into())
     .spawn(move || run_fake_voice(spans, tx, cancel_worker, speed))
     .ok();
-  SpeechState { rx, cancel, worker, current: None, playing: true }
+  // The fake voice has nothing to prepare, so it is "speaking" immediately.
+  SpeechState {
+    rx,
+    cancel,
+    worker,
+    current: None,
+    playing: true,
+    status: Arc::new(Mutex::new(TtsStatus::Speaking)),
+  }
 }
 
 impl Editor {
@@ -218,8 +245,11 @@ impl Editor {
           (*s, text)
         })
         .collect();
-      let (voice, speed) = crate::config::tts_settings();
-      self.speech = Some(player::spawn_kokoro_narration(words, voice, speed));
+      self.speech = Some(player::spawn_kokoro_narration(
+        words,
+        self.tts_voice.clone(),
+        self.tts_speed,
+      ));
       self.mark_dirty();
     }
 
@@ -234,7 +264,7 @@ impl Editor {
     if spans.is_empty() {
       return;
     }
-    self.speech = Some(spawn_fake_narration(spans, 1.0));
+    self.speech = Some(spawn_fake_narration(spans, self.tts_speed));
     self.mark_dirty();
   }
 
@@ -249,6 +279,27 @@ impl Editor {
 
   pub(crate) fn is_narrating(&self) -> bool {
     self.speech.as_ref().is_some_and(|s| s.playing)
+  }
+
+  // True while narration is spinning up (model download / engine load / first
+  // synth). Drives the `T[ ]` loading spinner and keeps the frame repainting.
+  pub(crate) fn is_tts_preparing(&self) -> bool {
+    self.speech.as_ref().is_some_and(|s| {
+      s.playing
+        && s
+          .status
+          .lock()
+          .map(|st| *st == TtsStatus::Preparing)
+          .unwrap_or(false)
+    })
+  }
+
+  // The worker's failure reason, if it errored, for the status line.
+  pub(crate) fn tts_error_message(&self) -> Option<String> {
+    match &*self.speech.as_ref()?.status.lock().ok()? {
+      TtsStatus::Failed(msg) => Some(msg.clone()),
+      _ => None,
+    }
   }
 
   // Drain word-boundary events: advance the spoken-word highlight, move the
@@ -512,6 +563,7 @@ mod tests {
       worker: None,
       current: Some((6, 10)), // "beta"
       playing: true,
+      status: Arc::new(Mutex::new(TtsStatus::Speaking)),
     });
 
     let mut buffer = Vec::new();
@@ -548,6 +600,7 @@ mod tests {
       worker: None,
       current: None,
       playing: true,
+      status: Arc::new(Mutex::new(TtsStatus::Speaking)),
     });
 
     // "target" on line 2: abs offset = len("line zero")+1+len("line one")+1.

@@ -104,6 +104,10 @@ impl Editor {
       .map(|(w, h)| (w as usize, h as usize))
       .unwrap_or((80, 24));
 
+    // Startup narration voice + speed (env / .env / af_heart default); the
+    // `:voice` and `:speed` commands mutate these live.
+    let (tts_voice, tts_speed) = crate::config::tts_settings();
+
     crate::debug::debug_log_state(
       "editor",
       "document_hash",
@@ -203,6 +207,8 @@ impl Editor {
       pdf_load_started_at: None,
       pdf_load_finished: None,
       speech: None,
+      tts_voice,
+      tts_speed,
     }
   }
 

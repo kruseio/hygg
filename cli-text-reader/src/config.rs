@@ -58,7 +58,6 @@ fn config_bool(
   })
 }
 
-#[cfg(feature = "tts")]
 fn config_string(
   key: &str,
   file_values: &HashMap<String, String>,
@@ -66,7 +65,6 @@ fn config_string(
   std::env::var(key).ok().or_else(|| file_values.get(key).cloned())
 }
 
-#[cfg(feature = "tts")]
 fn config_f32(key: &str, file_values: &HashMap<String, String>) -> Option<f32> {
   std::env::var(key)
     .ok()
@@ -74,19 +72,21 @@ fn config_f32(key: &str, file_values: &HashMap<String, String>) -> Option<f32> {
     .or_else(|| file_values.get(key).and_then(|v| v.parse().ok()))
 }
 
-/// TTS narration voice id and speed. Reads `TTS_VOICE` / `TTS_SPEED` from the
-/// environment, then `~/.config/hygg/.env`, falling back to sensible defaults.
-/// (Add `TTS_VOICE=af_sarah` / `TTS_SPEED=1.0` to that file to customize.)
-#[cfg(feature = "tts")]
+/// Kokoro's highest-quality voice, used as the narration default.
+pub const DEFAULT_TTS_VOICE: &str = "af_heart";
+
+/// Startup narration voice id and speed. Reads `TTS_VOICE` / `TTS_SPEED` from
+/// the environment, then `~/.config/hygg/.env` if it exists, falling back to
+/// the default voice (`af_heart`) at speed 1.0. These are only the *startup*
+/// values; `:voice` and `:speed` change them live while reading.
 pub fn tts_settings() -> (String, f32) {
   let file_values = get_config_env_path()
     .ok()
-    .filter(|_| ensure_config_file().is_ok())
     .and_then(|path| dotenvy::from_path_iter(path).ok())
     .map(|iter| iter.filter_map(Result::ok).collect::<HashMap<_, _>>())
     .unwrap_or_default();
   let voice = config_string("TTS_VOICE", &file_values)
-    .unwrap_or_else(|| "af_sarah".to_string());
+    .unwrap_or_else(|| DEFAULT_TTS_VOICE.to_string());
   let speed = config_f32("TTS_SPEED", &file_values).unwrap_or(1.0);
   (voice, speed)
 }
