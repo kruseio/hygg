@@ -61,12 +61,95 @@ for trying a voice without changing the saved configuration.
 
 ## Voice ids
 `TTS_VOICE` must be a Kokoro voice id from the downloaded `voices-v1.0.bin`
-voice file. Known examples include:
+voice file. hygg passes the id straight through to the model, so any voice
+present in that file works. The default is `af_sarah`.
 
-- `af_sarah`
-- `af_nicole`
+Voice ids follow the pattern `<lang><gender>_<name>`. The first letter is the
+language/accent (`a` American English, `b` British English, `e` Spanish,
+`f` French, `h` Hindi, `i` Italian, `j` Japanese, `p` Brazilian Portuguese,
+`z` Mandarin Chinese) and the second is the gender (`f` female, `m` male).
 
-Voice blending is also supported by combining voice ids with weights:
+The grade column is Kokoro's own quality grade, from A (best) to F (worst),
+based on audio quality and how much data the voice was trained on.
+
+hygg converts text to phonemes with espeak-ng using `en-us` only, so the voice
+id changes the speaker's timbre, not the language. The English voices below read
+text correctly; the non-English voices are still pronounced as English and are
+best treated as experimental accent/timbre options. For the highest quality, try
+`af_heart` or `af_bella`.
+
+### American English
+| Voice id | Gender | Grade | Notes |
+| --- | --- | --- | --- |
+| `af_heart` | female | A | highest quality ❤️ |
+| `af_bella` | female | A- | expressive 🔥 |
+| `af_nicole` | female | B- | soft, headphone feel 🎧 |
+| `af_aoede` | female | C+ | |
+| `af_kore` | female | C+ | |
+| `af_sarah` | female | C+ | default |
+| `af_alloy` | female | C | |
+| `af_nova` | female | C | |
+| `af_sky` | female | C- | |
+| `af_jessica` | female | D | |
+| `af_river` | female | D | |
+| `am_fenrir` | male | C+ | |
+| `am_michael` | male | C+ | |
+| `am_puck` | male | C+ | |
+| `am_echo` | male | D | |
+| `am_eric` | male | D | |
+| `am_liam` | male | D | |
+| `am_onyx` | male | D | |
+| `am_santa` | male | D- | |
+| `am_adam` | male | F+ | |
+
+### British English
+| Voice id | Gender | Grade |
+| --- | --- | --- |
+| `bf_emma` | female | B- |
+| `bf_isabella` | female | C |
+| `bf_alice` | female | D |
+| `bf_lily` | female | D |
+| `bm_fable` | male | C |
+| `bm_george` | male | C |
+| `bm_lewis` | male | D+ |
+| `bm_daniel` | male | D |
+
+### Other languages
+These voices ship in the same file but are still phonemized as `en-us`, so they
+apply their speaker's character to English-pronounced text rather than speaking
+their native language.
+
+| Voice id | Language | Gender | Grade |
+| --- | --- | --- | --- |
+| `jf_alpha` | Japanese | female | C+ |
+| `jf_gongitsune` | Japanese | female | C |
+| `jf_tebukuro` | Japanese | female | C |
+| `jf_nezumi` | Japanese | female | C- |
+| `jm_kumo` | Japanese | male | C- |
+| `zf_xiaobei` | Mandarin Chinese | female | D |
+| `zf_xiaoni` | Mandarin Chinese | female | D |
+| `zf_xiaoxiao` | Mandarin Chinese | female | D |
+| `zf_xiaoyi` | Mandarin Chinese | female | D |
+| `zm_yunjian` | Mandarin Chinese | male | D |
+| `zm_yunxi` | Mandarin Chinese | male | D |
+| `zm_yunxia` | Mandarin Chinese | male | D |
+| `zm_yunyang` | Mandarin Chinese | male | D |
+| `ef_dora` | Spanish | female | — |
+| `em_alex` | Spanish | male | — |
+| `em_santa` | Spanish | male | — |
+| `ff_siwis` | French | female | B- |
+| `hf_alpha` | Hindi | female | C |
+| `hf_beta` | Hindi | female | C |
+| `hm_omega` | Hindi | male | C |
+| `hm_psi` | Hindi | male | C |
+| `if_sara` | Italian | female | C |
+| `im_nicola` | Italian | male | C |
+| `pf_dora` | Brazilian Portuguese | female | — |
+| `pm_alex` | Brazilian Portuguese | male | — |
+| `pm_santa` | Brazilian Portuguese | male | — |
+
+## Voice blending
+Combine voice ids with weights to blend them:
 ```sh
 TTS_VOICE=af_sarah.4+af_nicole.6 hygg doc.pdf
 ```
