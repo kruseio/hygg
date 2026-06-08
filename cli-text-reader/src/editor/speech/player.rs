@@ -17,9 +17,14 @@ use rodio::{OutputStream, Sink};
 use super::kokoro::{self, KokoroEngine, SAMPLE_RATE, WordAlignment};
 use super::{SpeechMsg, SpeechState, TtsStatus, WordSpan};
 
-// Conservative word budget per synthesis call — well under the model's token
-// limit even for long words (~50 words ≈ a few hundred tokens).
-const WORDS_PER_CHUNK: usize = 50;
+// Narration utterance sizing. Short, sentence-aligned utterances keep Kokoro
+// accurate (long inputs make it slur or drop words) and start playing fast; the
+// lower bound keeps each chunk's playback long enough to hide the next chunk's
+// synthesis (avoiding sink underruns). These are quality/latency knobs —
+// `KokoroEngine::synthesize` still splits anything near the model token limit,
+// so they are not a correctness boundary.
+const MIN_CHUNK_WORDS: usize = 8;
+const MAX_CHUNK_WORDS: usize = 24;
 
 type Word = (WordSpan, String);
 type Chunk = (Vec<f32>, Vec<WordAlignment>);
@@ -72,8 +77,7 @@ fn run(
     OutputStream::try_default().map_err(|e| e.to_string())?;
   let sink = Sink::try_new(&handle).map_err(|e| e.to_string())?;
 
-  let chunks: Vec<Vec<Word>> =
-    words.chunks(WORDS_PER_CHUNK).map(<[Word]>::to_vec).collect();
+  let chunks = build_utterance_chunks(words);
 
   // Anchor the highlight clock to when the first audio is actually queued —
   // NOT to now. Synthesizing the first chunk (and, on first run, downloading
@@ -169,6 +173,37 @@ fn synth_chunk(
   Ok(Some(engine.synthesize(&text, voice, speed)?))
 }
 
+// Group consecutive on-screen words into narration utterances. Prefer to break
+// after sentence-ending punctuation (natural prosody and the most reliable unit
+// for the model), but never below MIN_CHUNK_WORDS (so a chunk's audio is long
+// enough to cover the next chunk's synthesis) nor above MAX_CHUNK_WORDS (so the
+// model stays accurate and well under its token limit).
+fn build_utterance_chunks(words: Vec<Word>) -> Vec<Vec<Word>> {
+  let mut chunks: Vec<Vec<Word>> = Vec::new();
+  let mut cur: Vec<Word> = Vec::new();
+  for word in words {
+    let ends_sentence = ends_sentence(&word.1);
+    cur.push(word);
+    if (cur.len() >= MIN_CHUNK_WORDS && ends_sentence)
+      || cur.len() >= MAX_CHUNK_WORDS
+    {
+      chunks.push(std::mem::take(&mut cur));
+    }
+  }
+  if !cur.is_empty() {
+    chunks.push(cur);
+  }
+  chunks
+}
+
+// Does this on-screen word end a sentence? Looks past trailing quotes/brackets
+// so `world."` and `(done.)` still count.
+fn ends_sentence(word: &str) -> bool {
+  word
+    .trim_end_matches(['"', '\'', ')', ']', '»', '”'])
+    .ends_with(['.', '!', '?'])
+}
+
 // A single punctuation token in the *alignment* stream (filtered out so it
 // never claims a highlight slot).
 fn is_punct(word: &str) -> bool {
@@ -232,6 +267,51 @@ mod tests {
       col_start: 0,
       col_end: 1,
     }
+  }
+
+  fn word(text: &str) -> Word {
+    (span_at(0), text.to_string())
+  }
+
+  // Breaks right after a sentence end once past the minimum; the remainder
+  // becomes its own (short) trailing chunk. No words are lost.
+  #[test]
+  fn utterance_chunks_break_on_sentence_past_minimum() {
+    let mut words: Vec<Word> = (0..8).map(|i| word(&format!("w{i}"))).collect();
+    words.push(word("end.")); // 9th word ends a sentence (>= MIN_CHUNK_WORDS)
+    words.extend((0..3).map(|i| word(&format!("x{i}"))));
+
+    let chunks = build_utterance_chunks(words);
+
+    assert_eq!(chunks.iter().map(Vec::len).collect::<Vec<_>>(), vec![9, 3]);
+  }
+
+  // A long run with no sentence punctuation is hard-capped at MAX_CHUNK_WORDS.
+  #[test]
+  fn utterance_chunks_cap_runs_without_punctuation() {
+    let words: Vec<Word> = (0..30).map(|i| word(&format!("w{i}"))).collect();
+
+    let chunks = build_utterance_chunks(words);
+
+    assert_eq!(chunks.iter().map(Vec::len).collect::<Vec<_>>(), vec![24, 6]);
+    assert_eq!(chunks.iter().map(Vec::len).sum::<usize>(), 30);
+  }
+
+  // Short consecutive sentences are merged until the minimum, so we never emit
+  // a one-word utterance (which could underrun the audio sink).
+  #[test]
+  fn utterance_chunks_merge_short_sentences() {
+    let words: Vec<Word> =
+      ["Yes.", "No.", "Maybe.", "I.", "do.", "not.", "know.", "yet.", "more"]
+        .iter()
+        .map(|t| word(t))
+        .collect();
+
+    let chunks = build_utterance_chunks(words);
+
+    // First break only once 8 words have accumulated (at "yet."), not at "Yes."
+    assert_eq!(chunks[0].len(), 8);
+    assert_eq!(chunks.iter().map(Vec::len).sum::<usize>(), 9);
   }
 
   // Regression: a standalone-punctuation on-screen word (here ",") must not

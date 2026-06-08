@@ -38,6 +38,11 @@ pub(super) const SAMPLE_RATE: u32 = 24_000;
 const FRAMES_PER_SEC: f32 = 40.0;
 const STYLE_DIM: usize = 256;
 const MAX_STYLE_ROWS: usize = 510;
+// The model rejects inputs past ~510 phoneme tokens (its style table has 511
+// rows and the ONNX graph errors with "invalid expand shape" beyond that), and
+// gets less accurate as it approaches the limit. Synthesis splits text whose
+// phoneme stream exceeds this, leaving comfortable margin.
+const MAX_TOKENS: usize = 480;
 
 // espeak-ng keeps global state and is not thread-safe; serialize all calls.
 static ESPEAK_LOCK: Mutex<()> = Mutex::new(());
@@ -178,6 +183,28 @@ impl KokoroEngine {
     if tokens.is_empty() {
       return Ok((Vec::new(), Vec::new()));
     }
+
+    // Too long for the model: split on a word boundary and stitch the halves so
+    // no words are dropped (the chunker keeps most inputs well under this).
+    if tokens.len() > MAX_TOKENS {
+      let words: Vec<&str> = text.split_whitespace().collect();
+      if words.len() > 1 {
+        let mid = words.len() / 2;
+        let (mut audio, mut alignments) =
+          self.synthesize(&words[..mid].join(" "), voice, speed)?;
+        let (tail_audio, tail_aligns) =
+          self.synthesize(&words[mid..].join(" "), voice, speed)?;
+        let shift = audio.len() as f32 / SAMPLE_RATE as f32;
+        audio.extend(tail_audio);
+        alignments.extend(tail_aligns.into_iter().map(|mut a| {
+          a.start_sec += shift;
+          a.end_sec += shift;
+          a
+        }));
+        return Ok((audio, alignments));
+      }
+    }
+
     let styles = self.mix_styles(voice, tokens.len())?;
 
     // Pad with BOS/EOS (id 0); durations line up with this padded stream.
@@ -460,6 +487,41 @@ fn build_alignments(
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  // Input past the model's token limit (which otherwise errors with "invalid
+  // expand shape") must be split and stitched, not dropped or rejected.
+  #[test]
+  #[ignore = "requires the Kokoro model + espeak-ng"]
+  fn synthesizes_overlong_input_by_splitting() {
+    if !model_path().exists() {
+      return;
+    }
+    let mut engine =
+      KokoroEngine::load(&model_path(), &voices_path()).expect("load engine");
+    let unit = "Git is a distributed version control system that lets \
+      developers collaborate on a shared repository by committing snapshots and \
+      pushing changes to remote servers. ";
+    let text = unit.repeat(3); // ~70 words / >510 tokens
+    assert!(
+      tokenize(&phonemize(&text)).len() > MAX_TOKENS,
+      "test text should exceed the model token limit"
+    );
+
+    let (audio, aligns) =
+      engine.synthesize(&text, "af_heart", 1.0).expect("must not error");
+
+    assert!(!audio.is_empty(), "split synthesis should still produce audio");
+    for pair in aligns.windows(2) {
+      assert!(pair[1].start_sec >= pair[0].start_sec, "monotonic timings");
+    }
+    // Essentially every spoken word should still be aligned (none dropped).
+    let words = text.split_whitespace().count();
+    assert!(
+      aligns.len() >= words - words / 5,
+      "expected ~{words} alignments across the split, got {}",
+      aligns.len()
+    );
+  }
 
   #[test]
   fn split_words_and_punct_separates_trailing_marks() {
