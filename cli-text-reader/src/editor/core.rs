@@ -104,7 +104,7 @@ impl Editor {
       .map(|(w, h)| (w as usize, h as usize))
       .unwrap_or((80, 24));
 
-    // Startup narration voice + speed (env / .env / af_heart default); the
+    // Startup narration voice + speed (env / .env / built-in defaults); the
     // `:voice` and `:speed` commands mutate these live.
     let (tts_voice, tts_speed) = crate::config::tts_settings();
 

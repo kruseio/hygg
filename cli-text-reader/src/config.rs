@@ -75,9 +75,13 @@ fn config_f32(key: &str, file_values: &HashMap<String, String>) -> Option<f32> {
 /// Kokoro's highest-quality voice, used as the narration default.
 pub const DEFAULT_TTS_VOICE: &str = "af_heart";
 
+/// Narration speed that gives Kokoro enough forward motion without sounding
+/// rushed.
+pub const DEFAULT_TTS_SPEED: f32 = 1.3;
+
 /// Startup narration voice id and speed. Reads `TTS_VOICE` / `TTS_SPEED` from
 /// the environment, then `~/.config/hygg/.env` if it exists, falling back to
-/// the default voice (`af_heart`) at speed 1.0. These are only the *startup*
+/// the default voice (`af_heart`) at speed 1.3. These are only the *startup*
 /// values; `:voice` and `:speed` change them live while reading.
 pub fn tts_settings() -> (String, f32) {
   let file_values = get_config_env_path()
@@ -87,7 +91,8 @@ pub fn tts_settings() -> (String, f32) {
     .unwrap_or_default();
   let voice = config_string("TTS_VOICE", &file_values)
     .unwrap_or_else(|| DEFAULT_TTS_VOICE.to_string());
-  let speed = config_f32("TTS_SPEED", &file_values).unwrap_or(1.0);
+  let speed =
+    config_f32("TTS_SPEED", &file_values).unwrap_or(DEFAULT_TTS_SPEED);
   (voice, speed)
 }
 

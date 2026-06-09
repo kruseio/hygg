@@ -35,7 +35,7 @@ Configuration is read in this order:
 2. `~/.config/hygg/.env`
 3. Built-in defaults
 
-The default voice is `af_sarah`. The default speed is `1.0`.
+The default voice is `af_heart`. The default speed is `1.3`.
 
 Use a different voice for one command:
 ```sh
@@ -62,7 +62,7 @@ for trying a voice without changing the saved configuration.
 ## Voice ids
 `TTS_VOICE` must be a Kokoro voice id from the downloaded `voices-v1.0.bin`
 voice file. hygg passes the id straight through to the model, so any voice
-present in that file works. The default is `af_sarah`.
+present in that file works. The default is `af_heart`.
 
 Voice ids follow the pattern `<lang><gender>_<name>`. The first letter is the
 language/accent (`a` American English, `b` British English, `e` Spanish,
@@ -81,12 +81,12 @@ best treated as experimental accent/timbre options. For the highest quality, try
 ### American English
 | Voice id | Gender | Grade | Notes |
 | --- | --- | --- | --- |
-| `af_heart` | female | A | highest quality ❤️ |
+| `af_heart` | female | A | default, highest quality ❤️ |
 | `af_bella` | female | A- | expressive 🔥 |
 | `af_nicole` | female | B- | soft, headphone feel 🎧 |
 | `af_aoede` | female | C+ | |
 | `af_kore` | female | C+ | |
-| `af_sarah` | female | C+ | default |
+| `af_sarah` | female | C+ | |
 | `af_alloy` | female | C | |
 | `af_nova` | female | C | |
 | `af_sky` | female | C- | |
