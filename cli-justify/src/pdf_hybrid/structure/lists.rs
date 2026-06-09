@@ -3,9 +3,17 @@ use crate::text_utils::{char_len, leading_whitespace};
 use super::layout_signals::looks_like_git_log_graph_line;
 use super::should_keep_pdf_line_layout;
 
-pub(crate) fn parse_list_marker(
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ListMarkerKind {
+  Bullet,
+  OptionFlag,
+  FormatSpecifier,
+  Numbered,
+}
+
+pub(crate) fn parse_list_marker_with_kind(
   line: &str,
-) -> Option<(String, String, String)> {
+) -> Option<(String, String, String, ListMarkerKind)> {
   let indent = leading_whitespace(line).to_string();
   let trimmed = line.trim_start_matches([' ', '\t']);
 
@@ -20,7 +28,12 @@ pub(crate) fn parse_list_marker(
   for bullet in ["•", "-", "*", "◦"] {
     let marker = format!("{bullet} ");
     if let Some(rest) = trimmed.strip_prefix(&marker) {
-      return Some((indent, marker, rest.trim().to_string()));
+      return Some((
+        indent,
+        marker,
+        rest.trim().to_string(),
+        ListMarkerKind::Bullet,
+      ));
     }
   }
 
@@ -35,7 +48,12 @@ pub(crate) fn parse_list_marker(
       let trimmed_rest = rest.trim_start();
       if !trimmed_rest.is_empty() {
         let marker = format!("{flag} ");
-        return Some((indent, marker, trimmed_rest.to_string()));
+        return Some((
+          indent,
+          marker,
+          trimmed_rest.to_string(),
+          ListMarkerKind::OptionFlag,
+        ));
       }
     }
   }
@@ -50,7 +68,12 @@ pub(crate) fn parse_list_marker(
       let trimmed_rest = rest.trim_start();
       if !trimmed_rest.is_empty() {
         let marker = format!("{spec} ");
-        return Some((indent, marker, trimmed_rest.to_string()));
+        return Some((
+          indent,
+          marker,
+          trimmed_rest.to_string(),
+          ListMarkerKind::FormatSpecifier,
+        ));
       }
     }
   }
@@ -79,7 +102,14 @@ pub(crate) fn parse_list_marker(
 
   let marker = format!("{}{} ", &trimmed[..idx], delimiter);
   let content = chars.as_str().trim().to_string();
-  Some((indent, marker, content))
+  Some((indent, marker, content, ListMarkerKind::Numbered))
+}
+
+pub(crate) fn parse_list_marker(
+  line: &str,
+) -> Option<(String, String, String)> {
+  parse_list_marker_with_kind(line)
+    .map(|(indent, marker, content, _kind)| (indent, marker, content))
 }
 
 /// Recognises an option-flag token at the start of `trimmed` and returns

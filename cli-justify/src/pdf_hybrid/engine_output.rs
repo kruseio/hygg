@@ -8,7 +8,8 @@ use super::code_blocks::{
 };
 use super::engine::FormatterEngine;
 use super::structure::{
-  looks_like_code_block_line, looks_like_command_prompt_line,
+  code_line_continues, looks_like_code_block_line,
+  looks_like_code_continuation_line, looks_like_command_prompt_line,
   looks_like_toc_entry, normalize_preserved_compact_layout_line,
   should_keep_pdf_line_layout,
 };
@@ -31,6 +32,7 @@ impl FormatterEngine {
   pub(super) fn close_code_block_and_clear_parent_indent(&mut self) {
     self.close_code_block_padding_and_reset();
     self.pending_code_block_parent_callout_indent = None;
+    self.code_continuation_indent_width = None;
   }
 
   pub(super) fn begin_preserved_layout_scope(&mut self) {
@@ -62,6 +64,21 @@ impl FormatterEngine {
     let preserve = line_indent == session_indent || extra_indent <= 12;
     if !preserve {
       self.shell_session_indent = None;
+      return false;
+    }
+
+    self.begin_preserved_layout_scope();
+    self.emit_preserved_layout_line(line, true);
+    true
+  }
+
+  pub(super) fn handle_code_continuation_line(&mut self, line: &str) -> bool {
+    let Some(base_indent_width) = self.code_continuation_indent_width else {
+      return false;
+    };
+
+    if !looks_like_code_continuation_line(line, base_indent_width) {
+      self.code_continuation_indent_width = None;
       return false;
     }
 
@@ -151,5 +168,12 @@ impl FormatterEngine {
     if starts_shell_prompt {
       self.shell_session_indent = Some(leading_whitespace(line).to_string());
     }
+
+    self.code_continuation_indent_width =
+      if is_code_line && code_line_continues(line.trim()) {
+        Some(char_len(leading_whitespace(line)))
+      } else {
+        None
+      };
   }
 }

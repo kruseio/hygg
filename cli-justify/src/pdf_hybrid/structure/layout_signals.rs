@@ -1,5 +1,7 @@
 use crate::text_utils::is_ascii_numeric;
 
+use super::command_lines::looks_like_shell_command_line;
+
 const CODE_MARKERS: [&str; 14] = [
   "::", "->", "=>", "==", "!=", "<=", ">=", "&&", "||", ":=", "+=", "-=", "/*",
   "*/",
@@ -220,6 +222,9 @@ pub(crate) fn looks_like_code_block_line(line: &str) -> bool {
   }
 
   if looks_like_command_prompt_line(trimmed) {
+    return true;
+  }
+  if looks_like_shell_command_line(trimmed) {
     return true;
   }
   if looks_like_numbered_label_caption(trimmed) {
