@@ -5,7 +5,7 @@ pub use crate::core_types::{
 
 use crate::editor::streaming::{LoadedPage, PageSlot, PdfStreamingState};
 use crate::highlights::HighlightData;
-use crate::progress::generate_hash;
+use crate::progress::{generate_hash, save_progress_full};
 use arboard::Clipboard;
 use cli_pdf_to_text::PdfLineKind;
 use crossterm::terminal;
@@ -324,6 +324,43 @@ impl Editor {
     }
   }
 
+  pub(crate) fn save_progress_snapshot(
+    &mut self,
+    force: bool,
+  ) -> Result<(), Box<dyn std::error::Error>> {
+    if self.total_lines == 0 {
+      return Ok(());
+    }
+    if self.pdf_pending.is_some() && self.pdf_streaming.is_none() {
+      return Ok(());
+    }
+
+    let current_line = self.offset + self.cursor_y;
+    if !force
+      && current_line == self.last_offset
+      && self.offset == self.last_saved_viewport_offset
+    {
+      return Ok(());
+    }
+
+    let (page, line_in_page) = match self.current_pdf_position() {
+      Some((p, l)) => (Some(p), Some(l)),
+      None => (None, None),
+    };
+    save_progress_full(
+      self.document_hash,
+      current_line,
+      self.total_lines,
+      Some(self.offset),
+      Some(self.cursor_y),
+      page,
+      line_in_page,
+    )?;
+    self.last_offset = current_line;
+    self.last_saved_viewport_offset = self.offset;
+    Ok(())
+  }
+
   // Mark editor as needing redraw
   pub fn mark_dirty(&mut self) {
     self.needs_redraw = true;
@@ -564,6 +601,7 @@ impl Editor {
       StreamReady::Ok {
         stream,
         target_page,
+        restore_line_in_page: ready_restore_line_in_page,
         preloaded_pages,
         pages_receiver,
         cancel,
@@ -605,7 +643,8 @@ impl Editor {
         // Land at the saved row within the target page; clamp to the page's
         // current rendered height so a shrunk page or missing line_in_page
         // still produces a valid position.
-        let line_in_page = restore_line_in_page
+        let line_in_page = ready_restore_line_in_page
+          .or(restore_line_in_page)
           .unwrap_or(0)
           .min(target_page_lines.saturating_sub(1));
         let document_line = target_line_start + line_in_page;

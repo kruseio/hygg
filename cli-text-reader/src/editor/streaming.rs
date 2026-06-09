@@ -273,6 +273,7 @@ pub enum StreamReady {
   Ok {
     stream: SharedPdfStream,
     target_page: usize,
+    restore_line_in_page: Option<usize>,
     /// Raw page text for every page extracted by the opener thread before
     /// the editor's first render. Includes the target page and a window
     /// of neighbours so the viewport is stable from the very first frame.

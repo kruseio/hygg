@@ -33,6 +33,70 @@ use crate::progress::load_progress;
 
 const PDF_PRELOAD_RADIUS: usize = 10;
 
+#[derive(Clone, Copy, Debug, Default)]
+struct SavedPdfPosition {
+  target_page: Option<usize>,
+  line_in_page: Option<usize>,
+  cursor_y: Option<usize>,
+  flat_offset: Option<usize>,
+}
+
+impl SavedPdfPosition {
+  fn from_progress(progress: crate::progress::Progress) -> Self {
+    let target_page = progress.page.map(|page| page as usize);
+    Self {
+      target_page,
+      line_in_page: progress.line_in_page,
+      cursor_y: progress.cursor_y,
+      flat_offset: target_page.is_none().then_some(progress.offset),
+    }
+  }
+}
+
+fn load_saved_pdf_position(document_hash: u64) -> SavedPdfPosition {
+  load_progress(document_hash)
+    .map(SavedPdfPosition::from_progress)
+    .unwrap_or_default()
+}
+
+fn infer_pdf_position_from_flat_offset(
+  stream: &cli_pdf_to_text::PdfStream,
+  flat_offset: usize,
+  col: usize,
+) -> Option<(usize, usize)> {
+  let total_pages = stream.total_pages();
+  if total_pages == 0 {
+    return None;
+  }
+
+  let mut remaining = flat_offset;
+  for page in 1..=total_pages {
+    let page_lines = stream
+      .extract_page(page)
+      .map(|raw| {
+        crate::editor::streaming::LoadedPage::from_raw(raw, col)
+          .standalone_lines
+          .len()
+          .max(1)
+      })
+      .unwrap_or(1);
+
+    if remaining < page_lines {
+      return Some((page, remaining));
+    }
+    remaining = remaining.saturating_sub(page_lines);
+
+    if page < total_pages {
+      if remaining == 0 {
+        return Some((page + 1, 0));
+      }
+      remaining = remaining.saturating_sub(1);
+    }
+  }
+
+  Some((total_pages, 0))
+}
+
 pub fn run_cli_text_reader(
   lines: Vec<String>,
   col: usize,
@@ -125,13 +189,10 @@ fn run_cli_text_reader_pdf_path_inner(
   // Spawn the open in the background so the editor can paint immediately.
   let (ready_tx, ready_rx) = std::sync::mpsc::channel::<StreamReady>();
   let path_for_thread = canonical_str.clone();
-  let (saved_target_page, saved_line_in_page, saved_cursor_y) =
-    match load_progress(document_hash) {
-      Ok(p) => {
-        (p.page.map(|n| n as usize).unwrap_or(1), p.line_in_page, p.cursor_y)
-      }
-      Err(_) => (1, None, None),
-    };
+  let saved_position = load_saved_pdf_position(document_hash);
+  let saved_target_page = saved_position.target_page.unwrap_or(1);
+  let saved_line_in_page = saved_position.line_in_page;
+  let saved_cursor_y = saved_position.cursor_y;
 
   // Size of the synchronous preload window around the cursor's saved page.
   // Picked so the viewport is fully covered by real content on first render
@@ -149,7 +210,22 @@ fn run_cli_text_reader_pdf_path_inner(
           if total_pages == 0 {
             StreamReady::Err("PDF parsed but reports zero pages".to_string())
           } else {
-            let target_page = saved_target_page.clamp(1, total_pages);
+            let (target_page, restore_line_in_page) = if let Some(target_page) =
+              saved_position.target_page
+            {
+              (target_page.clamp(1, total_pages), saved_position.line_in_page)
+            } else if let Some(flat_offset) = saved_position.flat_offset {
+              match infer_pdf_position_from_flat_offset(
+                &stream,
+                flat_offset,
+                col,
+              ) {
+                Some((page, line)) => (page.clamp(1, total_pages), Some(line)),
+                None => (1, None),
+              }
+            } else {
+              (1, None)
+            };
             let preloaded_pages: Vec<_> = if bundled_ocr {
               Vec::new()
             } else {
@@ -175,6 +251,7 @@ fn run_cli_text_reader_pdf_path_inner(
             StreamReady::Ok {
               stream: shared,
               target_page,
+              restore_line_in_page,
               preloaded_pages,
               pages_receiver: pages_rx,
               cancel,
@@ -280,5 +357,36 @@ mod tests {
   fn ocr_pdf_streams_with_smaller_initial_preload() {
     assert_eq!(pdf_preload_radius(false), 10);
     assert_eq!(pdf_preload_radius(true), 0);
+  }
+
+  #[test]
+  fn flat_offset_restore_can_infer_later_pdf_page() {
+    let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+      .join("../test-data/pdf/progit-1-50.pdf");
+    if !pdf_path.exists() {
+      return;
+    }
+    let stream = cli_pdf_to_text::PdfStream::open(
+      pdf_path.to_str().expect("test path should be utf-8"),
+    )
+    .expect("test PDF should open");
+    let first_page_lines = stream
+      .extract_page(1)
+      .map(|raw| {
+        crate::editor::streaming::LoadedPage::from_raw(raw, 80)
+          .standalone_lines
+          .len()
+          .max(1)
+      })
+      .unwrap_or(1);
+
+    assert_eq!(
+      infer_pdf_position_from_flat_offset(&stream, 0, 80),
+      Some((1, 0))
+    );
+    assert_eq!(
+      infer_pdf_position_from_flat_offset(&stream, first_page_lines, 80),
+      Some((2, 0))
+    );
   }
 }

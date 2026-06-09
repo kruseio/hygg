@@ -9,7 +9,6 @@ use crossterm::{
 use std::io::{self, IsTerminal, Result as IoResult, Write};
 
 use super::core::{Editor, EditorMode, ViewMode};
-use crate::progress::save_progress_full;
 
 const FAST_EVENT_POLL_MS: u64 = 16;
 const PDF_LOADING_EVENT_POLL_MS: u64 = 120;
@@ -505,30 +504,11 @@ impl Editor {
         std::thread::sleep(std::time::Duration::from_millis(50));
       }
 
-      // Save progress with exact viewport state
-      let current_line = self.offset + self.cursor_y;
-      if current_line != self.last_offset
-        || self.offset != self.last_saved_viewport_offset
-      {
-        let (page, line_in_page) = match self.current_pdf_position() {
-          Some((p, l)) => (Some(p), Some(l)),
-          None => (None, None),
-        };
-        save_progress_full(
-          self.document_hash,
-          current_line,
-          self.total_lines,
-          Some(self.offset),
-          Some(self.cursor_y),
-          page,
-          line_in_page,
-        )?;
-        self.last_offset = current_line;
-        self.last_saved_viewport_offset = self.offset;
-      }
+      self.save_progress_snapshot(false)?;
       self.debug_log("Main loop iteration complete\n");
     }
 
+    self.save_progress_snapshot(true)?;
     Ok(())
   }
 }
