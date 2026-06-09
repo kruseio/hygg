@@ -244,6 +244,25 @@ fn is_table_header(line: &str) -> bool {
   )
 }
 
+fn has_shell_prompt_prefix(trimmed: &str) -> bool {
+  for prompt in ["$ ", "% ", "PS> ", ">>> ", ">> "] {
+    if trimmed
+      .strip_prefix(prompt)
+      .is_some_and(|rest| !rest.trim_start().is_empty())
+    {
+      return true;
+    }
+  }
+
+  if let Some((first, rest)) = trimmed.split_once(' ') {
+    return (first.ends_with('$') || first.ends_with('#'))
+      && (first.contains('@') || first.contains(':'))
+      && !rest.trim_start().is_empty();
+  }
+
+  false
+}
+
 fn split_command_candidate(mut trimmed: &str) -> &str {
   for prompt in ["$ ", "# ", "> ", "% ", "PS> ", ">>> ", ">> "] {
     if let Some(rest) = trimmed.strip_prefix(prompt) {
@@ -390,7 +409,10 @@ fn looks_like_code_line(line: &str) -> bool {
   if trimmed.is_empty() {
     return false;
   }
-  if is_fence_line(trimmed) || looks_like_known_command(trimmed) {
+  if is_fence_line(trimmed)
+    || has_shell_prompt_prefix(trimmed)
+    || looks_like_known_command(trimmed)
+  {
     return true;
   }
   if trimmed.starts_with("---")
@@ -1064,6 +1086,29 @@ mod tests {
     assert_eq!(
       spans.iter().map(|s| s.line).collect::<Vec<_>>(),
       vec![0, 0, 0, 3, 3, 3]
+    );
+  }
+
+  #[test]
+  fn build_word_spans_skips_shell_prompt_command_blocks() {
+    let lines = vec![
+      "Then, compile and install:".to_string(),
+      "  $ tar -zxf git-2.8.0.tar.gz".to_string(),
+      "  $ cd git-2.8.0".to_string(),
+      "  $ make configure".to_string(),
+      "  $ ./configure --prefix=/usr".to_string(),
+      "  $ make all doc info".to_string(),
+      "  $ sudo make install install-doc install-html install-info".to_string(),
+      "After this is done, you can also get Git via Git itself for updates:"
+        .to_string(),
+    ];
+    let spans = build_word_spans(&lines, &text_kinds(lines.len()));
+
+    assert!(spans.iter().any(|span| span.line == 0));
+    assert!(spans.iter().any(|span| span.line == 7));
+    assert!(
+      !spans.iter().any(|span| (1..=6).contains(&span.line)),
+      "shell prompt command lines should not be narrated"
     );
   }
 
