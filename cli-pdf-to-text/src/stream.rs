@@ -141,7 +141,7 @@ impl PdfStream {
     .and_then(Result::ok)
     .unwrap_or_default();
 
-    let text_rows = positioned_visual_text_rows(&self.doc, page_0based);
+    let native_text_rows = positioned_visual_text_rows(&self.doc, page_0based);
     #[cfg(feature = "pdf-ocr-bundled")]
     let allow_unlabeled_vector_regions = self.ocr_engine.is_some();
     #[cfg(not(feature = "pdf-ocr-bundled"))]
@@ -153,13 +153,13 @@ impl PdfStream {
       &self.doc,
       page_0based,
       col,
-      &text_rows,
+      &native_text_rows,
       allow_unlabeled_vector_regions,
     ));
 
     #[cfg(feature = "pdf-ocr-bundled")]
-    let text_rows = {
-      let mut text_rows = text_rows;
+    let overlay_text_rows = {
+      let mut text_rows = native_text_rows.clone();
       if let Some(engine) = self.ocr_engine.as_ref() {
         let ocr_rows = ocr_visual_text_rows(
           &self.doc,
@@ -177,12 +177,12 @@ impl PdfStream {
       }
       text_rows
     };
+    #[cfg(not(feature = "pdf-ocr-bundled"))]
+    let overlay_text_rows = native_text_rows.clone();
+
     if image_rows.is_empty() {
-      let PdfPageForAnsi { lines, line_kinds } = if text_rows.is_empty() {
-        text_only_page_lines(&raw_text, col)
-      } else {
-        compose_visual_page(text_rows, Vec::new(), col)
-      };
+      let PdfPageForAnsi { lines, line_kinds } =
+        text_only_page_lines(&raw_text, col);
       return Some(PdfRenderedPage {
         raw_text,
         lines,
@@ -191,8 +191,14 @@ impl PdfStream {
       });
     }
 
-    let PdfPageForAnsi { lines, line_kinds } =
-      compose_visual_page(text_rows, image_rows, col);
+    let text_rows =
+      positioned_sanitized_text_rows(&self.doc, page_0based, &raw_text, col);
+    let PdfPageForAnsi { lines, line_kinds } = compose_visual_page_with_overlay(
+      text_rows,
+      overlay_text_rows,
+      image_rows,
+      col,
+    );
     Some(PdfRenderedPage { raw_text, lines, line_kinds, contains_images: true })
   }
 }
@@ -216,6 +222,8 @@ struct VisualImageRows {
   region: PdfRegion,
   lines: Vec<String>,
 }
+
+const PDF_TEXT_PT_PER_CHAR: f32 = 5.0;
 
 #[derive(Clone, Copy, Debug)]
 struct PdfRegion {
@@ -839,9 +847,34 @@ fn pdf_image_height_rows(
   ((bbox_height / bbox_width) * width_cells as f32).round().max(1.0) as usize
 }
 
+#[cfg(test)]
 fn compose_visual_page(
   text_rows: Vec<VisualTextRow>,
+  image_rows: Vec<VisualImageRows>,
+  col: usize,
+) -> PdfPageForAnsi {
+  let overlay_text_rows = text_rows.clone();
+  compose_visual_page_with_overlay(
+    text_rows,
+    overlay_text_rows,
+    image_rows,
+    col,
+  )
+}
+
+fn compose_visual_page_with_overlay(
+  text_rows: Vec<VisualTextRow>,
+  overlay_text_rows: Vec<VisualTextRow>,
   mut image_rows: Vec<VisualImageRows>,
+  col: usize,
+) -> PdfPageForAnsi {
+  let _ = overlay_text_rows_on_images(overlay_text_rows, &mut image_rows);
+  compose_visual_page_events(text_rows, image_rows, col)
+}
+
+fn compose_visual_page_events(
+  text_rows: Vec<VisualTextRow>,
+  image_rows: Vec<VisualImageRows>,
   col: usize,
 ) -> PdfPageForAnsi {
   enum Event {
@@ -849,7 +882,6 @@ fn compose_visual_page(
     Image(VisualImageRows),
   }
 
-  let text_rows = overlay_text_rows_on_images(text_rows, &mut image_rows);
   let mut events: Vec<Event> =
     Vec::with_capacity(text_rows.len() + image_rows.len());
   events.extend(text_rows.into_iter().map(Event::Text));
@@ -886,11 +918,14 @@ fn compose_visual_page(
         let indent =
           (((row.left - page_left) / 5.0).round()).clamp(0.0, 20.0) as usize;
         let text_width = col.saturating_sub(indent).max(1);
-        let wrapped_lines = if row.text.chars().count() <= text_width {
+        let mut wrapped_lines = if row.text.chars().count() <= text_width {
           vec![row.text]
         } else {
           cli_justify::justify(&row.text, text_width)
         };
+        if wrapped_lines.last().is_some_and(|line| line.is_empty()) {
+          wrapped_lines.pop();
+        }
         for wrapped in wrapped_lines {
           lines.push(format!("{}{}", " ".repeat(indent), wrapped));
           line_kinds.push(PdfLineKind::Text);
@@ -1085,7 +1120,6 @@ fn normalized_visual_text(text: &str) -> String {
     .collect()
 }
 
-#[cfg(test)]
 fn positioned_sanitized_text_rows(
   doc: &pdf_oxide::PdfDocument,
   page_0based: usize,
@@ -1275,8 +1309,6 @@ fn extract_visual_text_rows(
   });
 
   const SAME_ROW_TOL: f32 = 3.0;
-  const PT_PER_CHAR: f32 = 5.0;
-
   let mut rows = Vec::new();
   let mut row_start = 0usize;
   let mut row_anchor_y = lines[0].bbox.top();
@@ -1298,13 +1330,12 @@ fn extract_visual_text_rows(
       let mut prev_right: Option<f32> = None;
       for line in row {
         for word in &line.words {
-          if let Some(pr) = prev_right {
-            let gap_pt = (word.bbox.left() - pr).max(0.0);
-            let gap_chars = ((gap_pt / PT_PER_CHAR).round() as usize).max(1);
-            for _ in 0..gap_chars {
-              body.push(' ');
-            }
-          }
+          push_pdf_word_gap(
+            &mut body,
+            prev_right,
+            word.bbox.left(),
+            PDF_TEXT_PT_PER_CHAR,
+          );
           body.push_str(&word.text);
           prev_right = Some(word.bbox.right());
         }
@@ -1364,7 +1395,6 @@ fn extract_page_text_lines(
   // a column or two of correct on body fonts in the PDFs we test against.
   // Cap the resulting indent so an outlier x-coordinate can't produce a
   // multi-line waste of whitespace.
-  const PT_PER_CHAR: f32 = 5.0;
   const MAX_INDENT_CHARS: usize = 20;
 
   // Build rows first as `(anchor_y, row_left, body_text)` so we can
@@ -1401,13 +1431,12 @@ fn extract_page_text_lines(
       let mut prev_right: Option<f32> = None;
       for line in row.iter() {
         for word in &line.words {
-          if let Some(pr) = prev_right {
-            let gap_pt = (word.bbox.left() - pr).max(0.0);
-            let gap_chars = ((gap_pt / PT_PER_CHAR).round() as usize).max(1);
-            for _ in 0..gap_chars {
-              body.push(' ');
-            }
-          }
+          push_pdf_word_gap(
+            &mut body,
+            prev_right,
+            word.bbox.left(),
+            PDF_TEXT_PT_PER_CHAR,
+          );
           body.push_str(&word.text);
           prev_right = Some(word.bbox.right());
         }
@@ -1500,8 +1529,8 @@ fn extract_page_text_lines(
       output.push('\n');
     }
     let (_, row_left, body) = &rows[i];
-    let indent_chars =
-      (((row_left - page_left) / PT_PER_CHAR).round()).max(0.0) as usize;
+    let indent_chars = (((row_left - page_left) / PDF_TEXT_PT_PER_CHAR).round())
+      .max(0.0) as usize;
     let indent_chars = indent_chars.min(MAX_INDENT_CHARS);
     for _ in 0..indent_chars {
       output.push(' ');
@@ -1510,6 +1539,25 @@ fn extract_page_text_lines(
     output.push('\n');
   }
   Some(output)
+}
+
+fn push_pdf_word_gap(
+  body: &mut String,
+  prev_right: Option<f32>,
+  word_left: f32,
+  pt_per_char: f32,
+) {
+  let Some(prev_right) = prev_right else {
+    return;
+  };
+
+  let gap_pt = word_left - prev_right;
+  if gap_pt <= pt_per_char * 0.25 {
+    return;
+  }
+
+  let gap_chars = ((gap_pt / pt_per_char).round() as usize).max(1);
+  body.extend(std::iter::repeat_n(' ', gap_chars));
 }
 
 fn is_digits_only(s: &str) -> bool {
@@ -1549,6 +1597,10 @@ pub type SharedPdfStream = Arc<PdfStream>;
 mod tests {
   use super::*;
   use std::path::Path;
+
+  fn normalize_spaces(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+  }
 
   #[test]
   fn opens_and_extracts_individual_pages() {
@@ -1691,7 +1743,7 @@ mod tests {
       lines: vec!["\x1b[38;2;1;2;3m\x1b[48;2;4;5;6m▀\x1b[0m".into()],
     }];
 
-    let page = compose_visual_page(text_rows, image_rows, 80);
+    let page = compose_visual_page_events(text_rows, image_rows, 80);
 
     assert_eq!(
       page.line_kinds,
@@ -1726,7 +1778,8 @@ mod tests {
       ],
     }];
 
-    let page = compose_visual_page(text_rows, image_rows, 80);
+    let page =
+      compose_visual_page_with_overlay(Vec::new(), text_rows, image_rows, 80);
 
     assert_eq!(
       page.line_kinds,
@@ -1830,6 +1883,141 @@ mod tests {
 
     assert_eq!(page.lines, vec!["diagram label"]);
     assert_eq!(page.line_kinds, vec![PdfLineKind::Text]);
+  }
+
+  #[test]
+  fn visual_row_wrapping_does_not_emit_blank_paragraph_marker() {
+    let text_rows = vec![VisualTextRow {
+      top: 100.0,
+      left: 20.0,
+      text: "one two three four five six seven".to_string(),
+    }];
+
+    let page = compose_visual_page(text_rows, Vec::new(), 12);
+
+    assert!(
+      page.lines.iter().all(|line| !line.trim().is_empty()),
+      "wrapping one visual row should not insert blank lines: {:?}",
+      page.lines
+    );
+  }
+
+  #[test]
+  fn tiny_pdf_word_gaps_join_same_word_fragments() {
+    let mut body = "knowi".to_string();
+    push_pdf_word_gap(&mut body, Some(10.0), 10.8, PDF_TEXT_PT_PER_CHAR);
+    body.push_str("ng");
+
+    assert_eq!(body, "knowing");
+
+    push_pdf_word_gap(&mut body, Some(20.0), 33.0, PDF_TEXT_PT_PER_CHAR);
+    body.push_str("next");
+
+    assert_eq!(body, "knowing   next");
+  }
+
+  #[test]
+  fn progit_visual_text_reflows_intro_without_fragment_words_or_blank_rows() {
+    let pdf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+      .join("../test-data/pdf/progit-1-50.pdf");
+    if !pdf_path.exists() {
+      return;
+    }
+    let stream = PdfStream::open(pdf_path.to_str().expect("utf-8 path"))
+      .expect("PdfStream should open valid test PDF");
+
+    let mut rendered = None;
+    for page in 1..=stream.total_pages().min(50) {
+      let Some(page) = stream.extract_page_with_images(page, 80) else {
+        continue;
+      };
+      let text = page.lines.join("\n");
+      let normalized = normalize_spaces(&text);
+      if normalized.contains("more deeply describing what GitHub") {
+        rendered = Some(text);
+        break;
+      }
+    }
+    let rendered = rendered.expect("expected Pro Git GitHub intro excerpt");
+    let lines: Vec<&str> = rendered.lines().collect();
+    let start = lines
+      .iter()
+      .position(|line| normalize_spaces(line).contains("unavoidable. Instead"))
+      .expect("expected excerpt start");
+    let end = lines
+      .iter()
+      .position(|line| {
+        normalize_spaces(line).contains("to use for your own code")
+      })
+      .expect("expected excerpt end");
+    let excerpt = lines[start..=end].join("\n");
+
+    assert!(
+      !excerpt.contains("\n\n"),
+      "excerpt should not contain visual-row blank separators:\n{excerpt}"
+    );
+    assert!(excerpt.contains("knowing"), "expected joined word:\n{excerpt}");
+    assert!(excerpt.contains("valuable"), "expected joined word:\n{excerpt}");
+    assert!(
+      normalize_spaces(&excerpt)
+        .contains("more deeply describing what GitHub is"),
+      "expected reflowed GitHub clause:\n{excerpt}"
+    );
+    assert!(
+      !excerpt.contains("knowi ng") && !excerpt.contains("valuab le"),
+      "same-word fragments should not contain inserted spaces:\n{excerpt}"
+    );
+  }
+
+  #[test]
+  fn progit_image_page_uses_paragraph_reflow_for_visible_text() {
+    let pdf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+      .join("../test-data/pdf/progit-1-50.pdf");
+    if !pdf_path.exists() {
+      return;
+    }
+    let stream = PdfStream::open(pdf_path.to_str().expect("utf-8 path"))
+      .expect("PdfStream should open valid test PDF");
+
+    let mut rendered_page = None;
+    for page in 1..=stream.total_pages().min(50) {
+      let Some(page) = stream.extract_page_with_images(page, 80) else {
+        continue;
+      };
+      let text = page.lines.join("\n");
+      let normalized = normalize_spaces(&text);
+      if normalized.contains("What is")
+        && normalized.contains("version control")
+      {
+        rendered_page = Some(page);
+        break;
+      }
+    }
+    let page =
+      rendered_page.expect("expected Pro Git version-control intro page");
+    let normalized_lines: Vec<String> =
+      page.lines.iter().map(|line| normalize_spaces(line)).collect();
+
+    assert!(
+      !normalized_lines.iter().any(|line| line == "that records"),
+      "visual row fragments should not render as standalone prose lines:\n{}",
+      page.lines.join("\n")
+    );
+    assert!(
+      normalized_lines.iter().any(|line| {
+        line
+          .contains("that records changes to a file or set of files over time")
+      }),
+      "paragraph reflow should keep the continuation full-width:\n{}",
+      page.lines.join("\n")
+    );
+    assert!(
+      normalized_lines
+        .iter()
+        .any(|line| line.contains("specific versions later")),
+      "same paragraph should continue through 'versions later':\n{}",
+      page.lines.join("\n")
+    );
   }
 
   #[test]

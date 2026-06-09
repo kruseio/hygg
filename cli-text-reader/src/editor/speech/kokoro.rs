@@ -470,10 +470,13 @@ fn build_alignments(
   }
 
   // Linearly scale alignment times to the actual audio length to kill drift.
+  // This matters most for `:speed 1.5` / `:speed 2`: the model returns shorter
+  // audio, and clamping the correction near 1.0 makes word events lag behind
+  // playback until they arrive in visible catch-up bursts.
   let aligned_sec = cursor_frames / FRAMES_PER_SEC;
   let audio_sec = audio_len as f32 / SAMPLE_RATE as f32;
   if aligned_sec > 0.0 {
-    let scale = (audio_sec / aligned_sec).clamp(0.8, 1.25);
+    let scale = audio_sec / aligned_sec;
     if (scale - 1.0).abs() > 0.005 {
       for a in &mut alignments {
         a.start_sec *= scale;
@@ -529,6 +532,25 @@ mod tests {
       split_words_and_punct("Hello, world!"),
       vec!["Hello", ",", "world", "!"]
     );
+  }
+
+  #[test]
+  fn build_alignments_scales_to_fast_audio_duration() {
+    let word_map = vec![
+      ("specific".to_string(), 0, 1),
+      ("versions".to_string(), 1, 2),
+      ("later".to_string(), 2, 3),
+    ];
+    let durations = vec![0.0, 40.0, 40.0, 40.0, 0.0];
+
+    let alignments =
+      build_alignments(&word_map, &durations, 1, 2.0, SAMPLE_RATE as usize);
+
+    assert_eq!(alignments.len(), 3);
+    assert!((alignments[0].start_sec - 0.0).abs() < 0.001);
+    assert!((alignments[1].start_sec - 0.333).abs() < 0.01);
+    assert!((alignments[2].start_sec - 0.667).abs() < 0.01);
+    assert!((alignments[2].end_sec - 1.0).abs() < 0.001);
   }
 
   // Real synthesis against the downloaded model. Ignored by default (needs the

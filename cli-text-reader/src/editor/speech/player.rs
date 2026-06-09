@@ -24,7 +24,8 @@ use super::{SpeechMsg, SpeechState, TtsStatus, WordSpan};
 // `KokoroEngine::synthesize` still splits anything near the model token limit,
 // so they are not a correctness boundary.
 const MIN_CHUNK_WORDS: usize = 8;
-const MAX_CHUNK_WORDS: usize = 24;
+const MAX_CHUNK_WORDS: usize = 36;
+const MAX_FAST_CHUNK_WORDS: usize = 54;
 
 type Word = (WordSpan, String);
 type Chunk = (Vec<f32>, Vec<WordAlignment>);
@@ -77,7 +78,7 @@ fn run(
     OutputStream::try_default().map_err(|e| e.to_string())?;
   let sink = Sink::try_new(&handle).map_err(|e| e.to_string())?;
 
-  let chunks = build_utterance_chunks(words);
+  let chunks = build_utterance_chunks(words, speed);
 
   // Anchor the highlight clock to when the first audio is actually queued —
   // NOT to now. Synthesizing the first chunk (and, on first run, downloading
@@ -177,15 +178,22 @@ fn synth_chunk(
 // after sentence-ending punctuation (natural prosody and the most reliable unit
 // for the model), but never below MIN_CHUNK_WORDS (so a chunk's audio is long
 // enough to cover the next chunk's synthesis) nor above MAX_CHUNK_WORDS (so the
-// model stays accurate and well under its token limit).
-fn build_utterance_chunks(words: Vec<Word>) -> Vec<Vec<Word>> {
+// model stays accurate and well under its token limit). The cap is intentionally
+// large enough for common 25-35 word book sentences; splitting those mid-sentence
+// makes Kokoro add an audible phrase break even when playback is gapless.
+fn build_utterance_chunks(words: Vec<Word>, speed: f32) -> Vec<Vec<Word>> {
+  let speed = speed.clamp(1.0, 2.0);
+  let min_chunk_words = ((MIN_CHUNK_WORDS as f32) * speed).round() as usize;
+  let max_chunk_words = (((MAX_CHUNK_WORDS as f32) * speed).round() as usize)
+    .min(MAX_FAST_CHUNK_WORDS);
+
   let mut chunks: Vec<Vec<Word>> = Vec::new();
   let mut cur: Vec<Word> = Vec::new();
   for word in words {
     let ends_sentence = ends_sentence(&word.1);
     cur.push(word);
-    if (cur.len() >= MIN_CHUNK_WORDS && ends_sentence)
-      || cur.len() >= MAX_CHUNK_WORDS
+    if (cur.len() >= min_chunk_words && ends_sentence)
+      || cur.len() >= max_chunk_words
     {
       chunks.push(std::mem::take(&mut cur));
     }
@@ -281,7 +289,7 @@ mod tests {
     words.push(word("end.")); // 9th word ends a sentence (>= MIN_CHUNK_WORDS)
     words.extend((0..3).map(|i| word(&format!("x{i}"))));
 
-    let chunks = build_utterance_chunks(words);
+    let chunks = build_utterance_chunks(words, 1.0);
 
     assert_eq!(chunks.iter().map(Vec::len).collect::<Vec<_>>(), vec![9, 3]);
   }
@@ -289,12 +297,44 @@ mod tests {
   // A long run with no sentence punctuation is hard-capped at MAX_CHUNK_WORDS.
   #[test]
   fn utterance_chunks_cap_runs_without_punctuation() {
-    let words: Vec<Word> = (0..30).map(|i| word(&format!("w{i}"))).collect();
+    let words: Vec<Word> = (0..40).map(|i| word(&format!("w{i}"))).collect();
 
-    let chunks = build_utterance_chunks(words);
+    let chunks = build_utterance_chunks(words, 1.0);
 
-    assert_eq!(chunks.iter().map(Vec::len).collect::<Vec<_>>(), vec![24, 6]);
-    assert_eq!(chunks.iter().map(Vec::len).sum::<usize>(), 30);
+    assert_eq!(chunks.iter().map(Vec::len).collect::<Vec<_>>(), vec![36, 4]);
+    assert_eq!(chunks.iter().map(Vec::len).sum::<usize>(), 40);
+  }
+
+  // Faster playback leaves less real time for synth-ahead, so chunks grow with
+  // speed. This keeps short sentences from becoming gap-prone boundaries at 2x.
+  #[test]
+  fn utterance_chunks_merge_short_sentences_at_fast_speed() {
+    let first = "What is version control and why should you care?";
+    let second = "Version control is a system that records changes to a file or set of files over time so that you can recall specific versions later.";
+    let words: Vec<Word> =
+      format!("{first} {second}").split_whitespace().map(word).collect();
+
+    let normal_chunks = build_utterance_chunks(words.clone(), 1.0);
+    let fast_chunks = build_utterance_chunks(words, 2.0);
+
+    assert_eq!(
+      normal_chunks.iter().map(Vec::len).collect::<Vec<_>>(),
+      vec![9, 25]
+    );
+    assert_eq!(fast_chunks.iter().map(Vec::len).collect::<Vec<_>>(), vec![34]);
+  }
+
+  // Regression: a normal-length book sentence should stay in one utterance.
+  // Splitting the Pro Git intro sentence at 24 words made Kokoro pause around
+  // "GitHub is and how to" even though there was no sentence break there.
+  #[test]
+  fn utterance_chunks_keep_normal_book_sentence_together() {
+    let sentence = "Instead of an example of Git hosting, I have decided to turn that part of the book into more deeply describing what GitHub is and how to effectively use it.";
+    let words: Vec<Word> = sentence.split_whitespace().map(word).collect();
+
+    let chunks = build_utterance_chunks(words, 1.0);
+
+    assert_eq!(chunks.iter().map(Vec::len).collect::<Vec<_>>(), vec![30]);
   }
 
   // Short consecutive sentences are merged until the minimum, so we never emit
@@ -307,7 +347,7 @@ mod tests {
         .map(|t| word(t))
         .collect();
 
-    let chunks = build_utterance_chunks(words);
+    let chunks = build_utterance_chunks(words, 1.0);
 
     // First break only once 8 words have accumulated (at "yet."), not at "Yes."
     assert_eq!(chunks[0].len(), 8);
