@@ -25,6 +25,11 @@ ci () {
   cargo +nightly fix --allow-dirty --workspace "${FORKS[@]}"
   cargo +nightly clippy --workspace "${FORKS[@]}" --all-targets --all-features -- -D warnings
   cargo +nightly fmt --all
+
+  # Source hygiene: no authored .rs file may exceed the LOC budget. Run after
+  # fmt so the counts reflect canonical formatting.
+  "$(dirname "${BASH_SOURCE[0]}")/loc-gate.sh"
+
   cargo +nightly test --workspace "${FORKS[@]}"
 
   cargo +nightly udeps --workspace "${FORKS[@]}" --all-targets
