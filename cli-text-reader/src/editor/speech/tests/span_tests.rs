@@ -37,3 +37,30 @@ fn build_word_spans_matches_persistent_offset_space() {
     WordSpan { abs_start: 16, abs_end: 19, line: 1, col_start: 6, col_end: 9 }
   );
 }
+
+#[test]
+fn splits_glued_sentence_into_separate_spans() {
+  // PDF extraction glues a sentence end onto the next sentence ("over.The").
+  // Narration must see two words — "over." (so the period becomes a pause) and
+  // "The" — each with its own highlight span, the period kept on the left half.
+  let lines = vec!["all over.The next".to_string()];
+  let spans = build_word_spans(&lines, &text_kinds(1));
+
+  let texts: Vec<&str> =
+    spans.iter().map(|s| &lines[s.line][s.col_start..s.col_end]).collect();
+  assert_eq!(texts, vec!["all", "over.", "The", "next"]);
+  // Sub-ranges tile the glued token with no gap or overlap.
+  assert_eq!(spans[1].col_end, spans[2].col_start);
+}
+
+#[test]
+fn does_not_split_decimals_or_abbreviations() {
+  // "3.14" (digit before), "U.S" (uppercase before), "e.g." (lowercase after)
+  // are left whole — only a lowercase→mark→uppercase boundary splits.
+  let lines = vec!["pi 3.14 the U.S and e.g. this".to_string()];
+  let spans = build_word_spans(&lines, &text_kinds(1));
+
+  let texts: Vec<&str> =
+    spans.iter().map(|s| &lines[s.line][s.col_start..s.col_end]).collect();
+  assert_eq!(texts, vec!["pi", "3.14", "the", "U.S", "and", "e.g.", "this"]);
+}
