@@ -32,6 +32,12 @@ ci () {
 
   cargo +nightly test --workspace "${FORKS[@]}"
 
+  # TTS narration is feature-gated, so the default test run compiles its
+  # phonemize/alignment regression tests out. Run them explicitly to guard the
+  # espeak punctuation -> Kokoro pause-token contract across dep bumps (the
+  # real-espeak test self-locates the build-vendored espeak-ng-data).
+  cargo +nightly test -p cli-text-reader --features tts --lib
+
   cargo +nightly udeps --workspace "${FORKS[@]}" --all-targets
   # cargo udeps --all-targets
 }

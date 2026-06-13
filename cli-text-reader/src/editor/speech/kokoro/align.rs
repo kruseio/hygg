@@ -32,72 +32,112 @@ pub(crate) fn phonemize(text: &str) -> String {
   text_to_phonemes(text, "en-us", None).unwrap_or_default().join("")
 }
 
-/// Tokenize the full phrase (best prosody) and build a per-word token-span map
-/// by phonemizing each word/punctuation item on its own. Ported from Kokoros.
+// The clause marks we split on and tokenize into Kokoro pause tokens.
+const PUNCT: &str = ".,!?:;";
+
+/// A single-character clause mark (`,` `.` `!` `?` `:` `;`).
+pub(crate) fn is_punct_mark(s: &str) -> bool {
+  s.len() == 1 && PUNCT.contains(s)
+}
+
+/// Build the Kokoro token stream and a per-word token-span map.
+///
+/// espeak-rs 0.2 strips clause punctuation from its phoneme output (a comma
+/// vanishes and the words around it run together — `"two, we"` -> `"tˈuːwiː"`),
+/// so feeding the whole phrase through espeak leaves Kokoro with no `,`/`.`
+/// tokens and it never pauses. We restore the pauses by splitting the text into
+/// punctuation-free runs, phonemizing each run on its own (espeak only
+/// coarticulates within a clause anyway, and Kokoro re-derives its prosody from
+/// the tokens, so this preserves quality), and emitting each separating mark as
+/// its own one-token span. Building the stream and the spans together keeps
+/// every word span aligned to the model's per-token `durations`.
 pub(crate) fn tokenize_with_alignment(text: &str) -> (Vec<i64>, WordMap) {
-  let all_tokens = tokenize(&phonemize(text));
+  assemble_tokens(&split_words_and_punct(text), |phrase| {
+    tokenize(&phonemize(phrase))
+  })
+}
 
-  let items = split_words_and_punct(text);
-  let mut counts: Vec<usize> = Vec::with_capacity(items.len());
-  let mut is_punct: Vec<bool> = Vec::with_capacity(items.len());
-  for item in &items {
-    if item.len() == 1 && ".,!?:;".contains(item.as_str()) {
-      counts.push(0);
-      is_punct.push(true);
-    } else {
-      counts.push(tokenize(&phonemize(item)).len());
-      is_punct.push(false);
-    }
-  }
+/// Core of [`tokenize_with_alignment`], with the espeak phonemizer injected so
+/// the run/punct/span bookkeeping is unit-testable without espeak. `phon` maps
+/// a phrase (a space-joined run of words, or a single word) to its phoneme
+/// tokens. Clause marks are tokenized directly — espeak drops them, so we add
+/// them back as Kokoro pause tokens.
+pub(super) fn assemble_tokens(
+  items: &[String],
+  mut phon: impl FnMut(&str) -> Vec<i64>,
+) -> (Vec<i64>, WordMap) {
+  let mut all_tokens: Vec<i64> = Vec::new();
+  let mut word_map: WordMap = Vec::with_capacity(items.len());
 
-  // Rescale per-item counts so they sum to the full token length (espeak
-  // coarticulation makes per-word sums drift from the full-phrase count).
-  let target = all_tokens.len();
-  let sum: usize = counts.iter().sum();
-  if sum != target && sum > 0 {
-    let scale = target as f64 / sum as f64;
-    let mut frac: Vec<(usize, f64)> = Vec::with_capacity(counts.len());
-    let mut new_sum = 0usize;
-    for (i, &c) in counts.clone().iter().enumerate() {
-      let scaled = c as f64 * scale;
-      counts[i] = scaled.floor() as usize;
-      new_sum += counts[i];
-      frac.push((i, scaled - scaled.floor()));
+  let mut i = 0;
+  while i < items.len() {
+    // A clause mark: one pause token, kept as its own span so the following
+    // words still index the right per-token durations.
+    if is_punct_mark(&items[i]) {
+      let start = all_tokens.len();
+      all_tokens.extend(tokenize(&items[i]));
+      word_map.push((items[i].clone(), start, all_tokens.len()));
+      i += 1;
+      continue;
     }
-    let mut remaining = target.saturating_sub(new_sum);
-    frac.sort_by(|a, b| {
-      b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-    });
-    for (i, _) in frac {
-      if remaining == 0 {
-        break;
-      }
-      counts[i] += 1;
-      remaining -= 1;
+    // A maximal run of words between marks: phonemize together for prosody,
+    // then split its tokens across the words by per-word phoneme length.
+    let run_start = i;
+    while i < items.len() && !is_punct_mark(&items[i]) {
+      i += 1;
     }
-  }
-
-  let mut word_map = Vec::with_capacity(items.len());
-  let mut cursor = 0usize;
-  for (idx, item) in items.iter().enumerate() {
-    let cnt = counts.get(idx).copied().unwrap_or(0);
-    if is_punct[idx] {
-      word_map.push((item.clone(), cursor, cursor));
-    } else {
-      let end = cursor + cnt;
-      word_map.push((item.clone(), cursor, end));
-      cursor = end;
+    let run = &items[run_start..i];
+    let run_tokens = phon(&run.join(" "));
+    let raw: Vec<usize> = run.iter().map(|w| phon(w).len()).collect();
+    let counts = apportion(&raw, run_tokens.len());
+    let mut cursor = all_tokens.len();
+    all_tokens.extend(&run_tokens);
+    for (word, cnt) in run.iter().zip(counts) {
+      word_map.push((word.clone(), cursor, cursor + cnt));
+      cursor += cnt;
     }
-  }
-  // Cover any rounding shortfall by extending the last real word.
-  if cursor < target
-    && let Some(last) = (0..word_map.len()).rev().find(|&i| !is_punct[i])
-  {
-    let (w, s, _) = &word_map[last];
-    word_map[last] = (w.clone(), *s, target);
   }
 
   (all_tokens, word_map)
+}
+
+/// Largest-remainder apportionment: divide `total` into per-bucket counts
+/// weighted by `raw`. espeak coarticulation makes the per-word sum drift from
+/// the run's joint total, so the largest fractional remainders absorb the
+/// difference. Always sums to exactly `total`, so the word spans tile the run
+/// with no gap or overlap. Pure (no espeak), so it is unit-tested directly.
+pub(super) fn apportion(raw: &[usize], total: usize) -> Vec<usize> {
+  let sum: usize = raw.iter().sum();
+  if sum == 0 {
+    // Nothing phonemized (e.g. a lone numeral espeak voiced as silence): dump
+    // the whole run onto the last word so the spans still cover every token.
+    let mut counts = vec![0usize; raw.len()];
+    if let Some(last) = counts.last_mut() {
+      *last = total;
+    }
+    return counts;
+  }
+  let scale = total as f64 / sum as f64;
+  let mut counts = vec![0usize; raw.len()];
+  let mut frac: Vec<(usize, f64)> = Vec::with_capacity(raw.len());
+  let mut assigned = 0usize;
+  for (idx, &c) in raw.iter().enumerate() {
+    let scaled = c as f64 * scale;
+    counts[idx] = scaled.floor() as usize;
+    assigned += counts[idx];
+    frac.push((idx, scaled - scaled.floor()));
+  }
+  let mut remaining = total.saturating_sub(assigned);
+  frac
+    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+  for (idx, _) in frac {
+    if remaining == 0 {
+      break;
+    }
+    counts[idx] += 1;
+    remaining -= 1;
+  }
+  counts
 }
 
 pub(crate) fn split_words_and_punct(s: &str) -> Vec<String> {
