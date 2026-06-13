@@ -120,15 +120,41 @@ fn fake_phon(s: &str) -> Vec<i64> {
 
 #[test]
 fn is_punct_mark_only_matches_single_clause_marks() {
-  // Includes the multi-byte em dash / ellipsis, which the old byte-length
-  // check (`s.len() == 1`) would have missed.
-  for m in [",", ".", "!", "?", ":", ";", "—", "…"] {
+  // Includes the multi-byte em dash / ellipsis / en dash, which the old
+  // byte-length check (`s.len() == 1`) would have missed.
+  for m in [",", ".", "!", "?", ":", ";", "—", "…", "-", "–"] {
     assert!(is_punct_mark(m), "{m:?} should be a clause mark");
   }
-  // A hyphen is NOT a clause mark — "well-known" must stay one word.
-  for s in ["a", "", ",,", "2", " ", "-", "—a"] {
+  for s in ["a", "", ",,", "2", " ", "—a"] {
     assert!(!is_punct_mark(s), "{s:?} should not be a clause mark");
   }
+  // A standalone hyphen is a clause mark, but an interior one is not —
+  // "well-known" must stay a single word.
+  assert_eq!(
+    split_words_and_punct("a well-known fact"),
+    vec!["a", "well-known", "fact"]
+  );
+}
+
+#[test]
+fn assemble_treats_spaced_hyphen_as_em_dash_pause() {
+  // PDFs render an em dash as a spaced ASCII hyphen ("usage - how"). The hyphen
+  // is absent from the vocab, so it must map to the em dash's pause token
+  // rather than tokenizing to nothing (no pause).
+  let items = split_words_and_punct("Git usage - how to");
+  assert!(items.contains(&"-".to_string()), "hyphen item: {items:?}");
+
+  let (tokens, wmap) = assemble_tokens(&items, fake_phon);
+  let dash = tokenize("—");
+  assert_eq!(dash.len(), 1, "em dash must be one vocab token");
+  assert!(
+    tokens.contains(&dash[0]),
+    "spaced hyphen must emit the em-dash pause token: {tokens:?}"
+  );
+
+  // The hyphen sits strictly between the two clauses.
+  let pos = |w: &str| wmap.iter().position(|(t, _, _)| t == w).unwrap();
+  assert!(pos("usage") < pos("-") && pos("-") < pos("how"), "{wmap:?}");
 }
 
 #[test]

@@ -32,15 +32,31 @@ pub(crate) fn phonemize(text: &str) -> String {
   text_to_phonemes(text, "en-us", None).unwrap_or_default().join("")
 }
 
-// The clause marks we split on and tokenize into Kokoro pause tokens. Each is
-// in the Kokoro vocab, so it becomes a single pause token. The em dash (—) and
-// ellipsis (…) are multi-byte, so membership must be tested per `char`.
-const PUNCT: &str = ".,!?:;—…";
+// The clause marks we split on and turn into Kokoro pause tokens. Most are in
+// the Kokoro vocab, so each maps to a single pause token; the ASCII hyphen `-`
+// and en dash `–` are NOT in the vocab, but PDFs routinely use them where the
+// book printed an em dash ("a word - another"), so `pause_tokens` maps them to
+// the em dash (`—`) so they still pause. Membership is tested per `char`
+// because the dashes/ellipsis are multi-byte. A hyphen only ever becomes a mark
+// as a *standalone* token: `split_words_and_punct` peels marks off a word's
+// ends only, so an interior hyphen ("well-known") stays in the word and never
+// pauses.
+const PUNCT: &str = ".,!?:;—…-–";
 
-/// A single clause mark (`,` `.` `!` `?` `:` `;` `—` `…`).
+/// A single clause mark (`,` `.` `!` `?` `:` `;` `—` `…` `-` `–`).
 pub(crate) fn is_punct_mark(s: &str) -> bool {
   let mut chars = s.chars();
   matches!((chars.next(), chars.next()), (Some(c), None) if PUNCT.contains(c))
+}
+
+/// Tokenize a clause mark into its Kokoro pause token(s). The ASCII hyphen and
+/// en dash are absent from the model vocab, so map them to the em dash (which
+/// is present) — otherwise they tokenize to nothing and produce no pause.
+fn pause_tokens(mark: &str) -> Vec<i64> {
+  match mark {
+    "-" | "–" => tokenize("—"),
+    _ => tokenize(mark),
+  }
 }
 
 /// Build the Kokoro token stream and a per-word token-span map.
@@ -78,7 +94,7 @@ pub(super) fn assemble_tokens(
     // words still index the right per-token durations.
     if is_punct_mark(&items[i]) {
       let start = all_tokens.len();
-      all_tokens.extend(tokenize(&items[i]));
+      all_tokens.extend(pause_tokens(&items[i]));
       word_map.push((items[i].clone(), start, all_tokens.len()));
       i += 1;
       continue;
@@ -176,7 +192,7 @@ pub(crate) fn build_alignments(
   let speed_safe = if speed > 1e-6 { speed } else { 1.0 };
   let punct_pause = |label: &str| -> f32 {
     match label {
-      "." | "!" | "?" | "—" | "…" => 0.300,
+      "." | "!" | "?" | "—" | "…" | "-" | "–" => 0.300,
       "," => 0.150,
       ";" | ":" => 0.200,
       _ => 0.0,
