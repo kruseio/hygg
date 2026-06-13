@@ -4,7 +4,10 @@ use crate::editor::speech::kokoro::WordAlignment;
 use crate::editor::speech::{SpeechMsg, WordSpan};
 
 use super::Word;
-use super::chunking::{build_utterance_chunks, map_words_to_alignments};
+use super::chunking::{
+  AudioClock, build_utterance_chunks, chunk_to_synth_text,
+  map_words_to_alignments, trailing_pause_secs,
+};
 use super::worker::spawn_kokoro_narration;
 
 fn span_at(abs: usize) -> WordSpan {
@@ -19,6 +22,76 @@ fn span_at(abs: usize) -> WordSpan {
 
 fn word(text: &str) -> Word {
   (span_at(0), text.to_string())
+}
+
+// A word tagged with the display line it sits on, for paragraph-boundary tests.
+fn word_on(text: &str, line: usize) -> Word {
+  (WordSpan { line, ..span_at(0) }, text.to_string())
+}
+
+#[test]
+fn synth_text_injects_period_at_inner_paragraph_break() {
+  // A heading (no terminal punctuation) swept into the same chunk as the body
+  // gets a "." at the blank-line gap, so the synthesizer pauses after it.
+  let chunk = vec![word_on("Heading", 0), word_on("Body", 2)];
+  assert_eq!(chunk_to_synth_text(&chunk), "Heading. Body");
+
+  // Already punctuated: no doubling.
+  let chunk = vec![word_on("Done.", 0), word_on("Next", 2)];
+  assert_eq!(chunk_to_synth_text(&chunk), "Done. Next");
+
+  // Adjacent lines are a wrapped continuation of one paragraph — no pause.
+  let chunk = vec![word_on("wrapped", 0), word_on("clause", 1)];
+  assert_eq!(chunk_to_synth_text(&chunk), "wrapped clause");
+}
+
+#[test]
+fn trailing_pause_matches_boundary_kind() {
+  // Paragraph break (blank line between): full stop.
+  let pause = trailing_pause_secs(&word_on("title", 0), Some(&word_on("Body", 2)));
+  assert!((pause - 0.50).abs() < f32::EPSILON, "paragraph: {pause}");
+  // Sentence end, same paragraph: shorter stop.
+  let pause = trailing_pause_secs(&word_on("end.", 4), Some(&word_on("Next", 5)));
+  assert!((pause - 0.25).abs() < f32::EPSILON, "sentence: {pause}");
+  // Mid-sentence forced split: stay gapless.
+  let pause = trailing_pause_secs(&word_on("the", 4), Some(&word_on("rest", 5)));
+  assert_eq!(pause, 0.0, "mid-sentence");
+  // Last chunk: nothing follows.
+  assert_eq!(trailing_pause_secs(&word_on("end.", 0), None), 0.0);
+}
+
+#[test]
+fn audio_clock_folds_chunk_resets_into_global_position() {
+  let durs = [2.0f32, 3.0];
+  let mut clock = AudioClock::new();
+  // Within the first chunk: position is the raw value.
+  assert_eq!(clock.observe(0.5, &durs), 0.5);
+  assert_eq!(clock.observe(1.9, &durs), 1.9);
+  // Reset toward zero => rolled onto chunk 1; its base is chunk 0's duration.
+  assert!((clock.observe(0.1, &durs) - 2.1).abs() < 1e-6);
+  assert!((clock.observe(1.0, &durs) - 3.0).abs() < 1e-6);
+}
+
+#[test]
+fn audio_clock_holds_position_during_a_stall() {
+  // A stalled device holds get_pos flat (no reset jump), so the global clock
+  // stops advancing instead of running ahead of the audio.
+  let durs = [5.0f32];
+  let mut clock = AudioClock::new();
+  assert_eq!(clock.observe(1.0, &durs), 1.0);
+  assert_eq!(clock.observe(1.0, &durs), 1.0);
+  assert_eq!(clock.observe(1.0, &durs), 1.0);
+}
+
+#[test]
+fn audio_clock_accepts_a_cumulative_backend() {
+  // If a backend reports a cumulative position that never resets, the reset
+  // jump never fires and the raw value is already the global position.
+  let durs = [2.0f32, 3.0];
+  let mut clock = AudioClock::new();
+  assert_eq!(clock.observe(1.0, &durs), 1.0);
+  assert_eq!(clock.observe(2.5, &durs), 2.5);
+  assert_eq!(clock.observe(4.0, &durs), 4.0);
 }
 
 // Breaks right after a sentence end once past the minimum; the remainder
