@@ -120,10 +120,13 @@ fn fake_phon(s: &str) -> Vec<i64> {
 
 #[test]
 fn is_punct_mark_only_matches_single_clause_marks() {
-  for m in [",", ".", "!", "?", ":", ";"] {
+  // Includes the multi-byte em dash / ellipsis, which the old byte-length
+  // check (`s.len() == 1`) would have missed.
+  for m in [",", ".", "!", "?", ":", ";", "—", "…"] {
     assert!(is_punct_mark(m), "{m:?} should be a clause mark");
   }
-  for s in ["a", "", ",,", "2", " "] {
+  // A hyphen is NOT a clause mark — "well-known" must stay one word.
+  for s in ["a", "", ",,", "2", " ", "-", "—a"] {
     assert!(!is_punct_mark(s), "{s:?} should not be a clause mark");
   }
 }
@@ -177,6 +180,30 @@ fn assemble_inserts_pauses_and_keeps_words_separated() {
 }
 
 #[test]
+fn assemble_treats_em_dash_and_ellipsis_as_pauses() {
+  // "Git usage — how to" lost its pause because the em dash was not a clause
+  // mark; espeak drops it, so it must be re-emitted as a Kokoro pause token.
+  let items = split_words_and_punct("Git usage — how to…");
+  assert!(items.contains(&"—".to_string()), "em dash item: {items:?}");
+  assert!(items.contains(&"…".to_string()), "ellipsis item: {items:?}");
+
+  let (tokens, wmap) = assemble_tokens(&items, fake_phon);
+  let dash = tokenize("—");
+  let dots = tokenize("…");
+  assert_eq!(dash.len(), 1, "em dash must be one vocab token");
+  assert_eq!(dots.len(), 1, "ellipsis must be one vocab token");
+  assert!(tokens.contains(&dash[0]), "em dash pause token missing: {tokens:?}");
+  assert!(
+    tokens.contains(&dots[0]),
+    "ellipsis pause token missing: {tokens:?}"
+  );
+
+  // The em dash sits strictly between the two clauses.
+  let pos = |w: &str| wmap.iter().position(|(t, _, _)| t == w).unwrap();
+  assert!(pos("usage") < pos("—") && pos("—") < pos("how"), "{wmap:?}");
+}
+
+#[test]
 fn assemble_unpunctuated_text_has_no_pause_tokens() {
   let items = split_words_and_punct("just plain words");
   let (tokens, _) = assemble_tokens(&items, fake_phon);
@@ -191,12 +218,21 @@ fn clause_marks_become_pause_tokens_with_real_espeak() {
   if !ensure_espeak_data() || phonemize("test").is_empty() {
     return; // espeak-ng-data unavailable
   }
-  let (tokens, wmap) = tokenize_with_alignment("In Chapter 2, we were here.");
+  let (tokens, wmap) =
+    tokenize_with_alignment("In Chapter 2, the kitchen — we were here.");
   assert!(tokens.contains(&3), "comma pause token missing: {tokens:?}");
   assert!(tokens.contains(&4), "period pause token missing: {tokens:?}");
-  assert!(tokens.len() > 4, "expected real word tokens: {tokens:?}");
+  assert!(
+    tokens.contains(&tokenize("—")[0]),
+    "em-dash pause missing: {tokens:?}"
+  );
+  assert!(tokens.len() > 6, "expected real word tokens: {tokens:?}");
   let pos = |w: &str| wmap.iter().position(|(t, _, _)| t == w).unwrap();
-  assert!(pos("2") < pos(","), "comma must follow '2', not merge into 'we'");
+  assert!(
+    pos("2") < pos(","),
+    "comma must follow '2', not merge into 'kitchen'"
+  );
+  assert!(pos("kitchen") < pos("—") && pos("—") < pos("we"), "{wmap:?}");
 }
 
 // Point espeak at the espeak-ng-data the build vendored under an ancestor's

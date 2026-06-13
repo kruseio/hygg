@@ -32,12 +32,15 @@ pub(crate) fn phonemize(text: &str) -> String {
   text_to_phonemes(text, "en-us", None).unwrap_or_default().join("")
 }
 
-// The clause marks we split on and tokenize into Kokoro pause tokens.
-const PUNCT: &str = ".,!?:;";
+// The clause marks we split on and tokenize into Kokoro pause tokens. Each is
+// in the Kokoro vocab, so it becomes a single pause token. The em dash (—) and
+// ellipsis (…) are multi-byte, so membership must be tested per `char`.
+const PUNCT: &str = ".,!?:;—…";
 
-/// A single-character clause mark (`,` `.` `!` `?` `:` `;`).
+/// A single clause mark (`,` `.` `!` `?` `:` `;` `—` `…`).
 pub(crate) fn is_punct_mark(s: &str) -> bool {
-  s.len() == 1 && PUNCT.contains(s)
+  let mut chars = s.chars();
+  matches!((chars.next(), chars.next()), (Some(c), None) if PUNCT.contains(c))
 }
 
 /// Build the Kokoro token stream and a per-word token-span map.
@@ -146,11 +149,11 @@ pub(crate) fn split_words_and_punct(s: &str) -> Vec<String> {
     let chars: Vec<char> = raw.chars().collect();
     let mut start = 0usize;
     let mut end = chars.len();
-    while start < end && ".,!?:;".contains(chars[start]) {
+    while start < end && PUNCT.contains(chars[start]) {
       out.push(chars[start].to_string());
       start += 1;
     }
-    while end > start && ".,!?:;".contains(chars[end - 1]) {
+    while end > start && PUNCT.contains(chars[end - 1]) {
       end -= 1;
     }
     if start < end {
@@ -173,7 +176,7 @@ pub(crate) fn build_alignments(
   let speed_safe = if speed > 1e-6 { speed } else { 1.0 };
   let punct_pause = |label: &str| -> f32 {
     match label {
-      "." | "!" | "?" => 0.300,
+      "." | "!" | "?" | "—" | "…" => 0.300,
       "," => 0.150,
       ";" | ":" => 0.200,
       _ => 0.0,
@@ -183,7 +186,7 @@ pub(crate) fn build_alignments(
   let mut alignments = Vec::new();
   let mut cursor_frames = 0.0f32;
   for (word, start, end) in word_map {
-    let is_punct = word.len() == 1 && ".,!?:;".contains(word.as_str());
+    let is_punct = is_punct_mark(word);
     if is_punct {
       let pause_frames = punct_pause(word) / speed_safe * FRAMES_PER_SEC;
       let start_sec = cursor_frames / FRAMES_PER_SEC;
