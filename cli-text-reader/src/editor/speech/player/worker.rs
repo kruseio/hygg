@@ -6,8 +6,10 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use std::num::NonZero;
+
+use rodio::Player;
 use rodio::buffer::SamplesBuffer;
-use rodio::{OutputStream, Sink};
 
 use crate::editor::speech::kokoro::{
   self, KokoroEngine, SAMPLE_RATE, WordAlignment,
@@ -62,10 +64,10 @@ fn run(
   let (model, voices) = kokoro::ensure_models(cancel)?;
   let mut engine = KokoroEngine::load(&model, &voices)?;
 
-  // The output stream must outlive the sink; keep it on this thread.
-  let (_stream, handle) =
-    OutputStream::try_default().map_err(|e| e.to_string())?;
-  let sink = Sink::try_new(&handle).map_err(|e| e.to_string())?;
+  // The output stream must outlive the player; keep it on this thread.
+  let stream =
+    rodio::DeviceSinkBuilder::open_default_sink().map_err(|e| e.to_string())?;
+  let sink = Player::connect_new(stream.mixer());
 
   let chunks = build_utterance_chunks(words, speed);
 
@@ -85,7 +87,11 @@ fn run(
       break;
     };
     let chunk_dur = audio.len() as f32 / SAMPLE_RATE as f32;
-    sink.append(SamplesBuffer::new(1, SAMPLE_RATE, audio));
+    sink.append(SamplesBuffer::new(
+      NonZero::new(1).unwrap(),
+      NonZero::new(SAMPLE_RATE).unwrap(),
+      audio,
+    ));
 
     // Audio for this chunk is now queued: start the clock on the first chunk
     // and flip the UI from the loading spinner to "speaking".

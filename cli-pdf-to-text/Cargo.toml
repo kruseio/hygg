@@ -33,7 +33,7 @@ getopts = "0.2"
 # Our thin fork of pdf-extract 0.10, wired to the patched hygg-cff-parser
 # (Adobe Expert-encoded-CFF panic fix). Still imported as `pdf_extract`.
 pdf-extract = { package = "hygg-pdf-extract", version = "0.1", path = "../hygg-pdf-extract" }
-lopdf = "0.40"
+lopdf = "0.41"
 rayon = "1"
 # pdf_oxide is the streaming-path backend. It parses PDFs lazily — opening
 # the 31 MB / 1310-page pdfreference1.7old.pdf takes ~100 ms instead of the

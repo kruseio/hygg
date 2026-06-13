@@ -26,9 +26,10 @@ pub(crate) struct WordAlignment {
 
 pub(crate) fn phonemize(text: &str) -> String {
   let _guard = ESPEAK_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-  text_to_phonemes(text, "en-us", None, true, false)
-    .unwrap_or_default()
-    .join("")
+  // espeak-rs 0.2 always strips inline language-switch markers (old
+  // `remove_lang_switch_flags = true`) and keeps stress (old
+  // `remove_stress = false`), so those two flags are gone from the signature.
+  text_to_phonemes(text, "en-us", None).unwrap_or_default().join("")
 }
 
 /// Tokenize the full phrase (best prosody) and build a per-word token-span map
