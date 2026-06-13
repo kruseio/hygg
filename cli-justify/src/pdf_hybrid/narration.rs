@@ -14,6 +14,21 @@ enum NarrationSkipReason {
   Code,
   Table,
   Toc,
+  PageNumber,
+}
+
+// A standalone page number left in the text by PDF extraction (a header/footer
+// folio). Read aloud it is a bare number dropped mid-paragraph, so narration
+// skips it. Kept strict — a short line that is *only* digits, optionally with a
+// "Page"/"p." prefix — so real numeric prose ("1984 was…") is not dropped.
+fn looks_like_page_number(trimmed: &str) -> bool {
+  let body = trimmed
+    .strip_prefix("Page ")
+    .or_else(|| trimmed.strip_prefix("page "))
+    .or_else(|| trimmed.strip_prefix("p. "))
+    .unwrap_or(trimmed)
+    .trim();
+  !body.is_empty() && body.len() <= 4 && body.bytes().all(|b| b.is_ascii_digit())
 }
 
 pub fn pdf_hybrid_narration_skip_mask(lines: &[String]) -> Vec<bool> {
@@ -61,6 +76,11 @@ fn narration_skip_reasons(
     if is_fence_line(trimmed) {
       reasons[idx] = Some(NarrationSkipReason::Code);
       in_fenced_code = true;
+      continue;
+    }
+
+    if looks_like_page_number(trimmed) {
+      reasons[idx] = Some(NarrationSkipReason::PageNumber);
       continue;
     }
 

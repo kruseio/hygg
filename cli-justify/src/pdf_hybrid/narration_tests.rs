@@ -5,6 +5,32 @@ fn lines(input: &[&str]) -> Vec<String> {
 }
 
 #[test]
+fn skips_standalone_page_numbers() {
+  let mask = pdf_hybrid_narration_skip_mask(&lines(&[
+    "the end of a paragraph.",
+    "",
+    "42",
+    "",
+    "The next chapter begins here.",
+    "Page 7",
+  ]));
+
+  assert_eq!(mask, vec![false, false, true, false, false, true]);
+}
+
+#[test]
+fn keeps_numeric_prose_and_long_numbers() {
+  // A number inside a sentence, and a digit run longer than a folio, must still
+  // be narrated — only a short, isolated, digits-only line is a page number.
+  let mask = pdf_hybrid_narration_skip_mask(&lines(&[
+    "It was released in 1984 to acclaim.",
+    "123456",
+  ]));
+
+  assert_eq!(mask, vec![false, false]);
+}
+
+#[test]
 fn skips_shell_prompt_command_blocks() {
   let mask = pdf_hybrid_narration_skip_mask(&lines(&[
     "Then, compile and install:",
