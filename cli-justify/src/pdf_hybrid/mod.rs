@@ -6,6 +6,7 @@ mod engine_output;
 mod figure_labels;
 mod page_stream;
 mod structure;
+mod tables;
 mod wrapping;
 mod wrapping_plain;
 
@@ -191,6 +192,81 @@ mod tests {
       akrom_line.contains("Jon Freed"),
       "expected Jon Freed on same row as Akrom K, got: {akrom_line:?}"
     );
+  }
+
+  #[test]
+  fn realigns_overwide_multi_column_table_instead_of_smushing() {
+    // Issue #92: a multi-column device-comparison table whose rows are wider
+    // than the terminal must be re-aligned into a compressed grid, not
+    // word-wrapped so each row's trailing columns spill onto a short-indented
+    // continuation line.
+    let input = concat!(
+      "12-bit differential ADC (channels)         1 (9)        1 (13)        1        1 (2)\n",
+      "10-bit DAC (outputs)                       1 (1)        1 (1)         1 (1)    1 (1)\n",
+      "Peripheral Touch Controller (PTC)          0            0             1        1\n",
+    );
+    let out = justify_pdf_hybrid(input, 80);
+    for line in &out {
+      assert!(
+        line.chars().count() <= 80,
+        "no line may exceed the width, got: {line:?}"
+      );
+    }
+    // Each data row keeps all of its values together on one logical line.
+    let adc = out
+      .iter()
+      .find(|l| l.contains("12-bit differential ADC"))
+      .expect("ADC row present");
+    assert!(
+      adc.contains("1 (9)") && adc.contains("1 (13)") && adc.contains("1 (2)"),
+      "row's columns should not be dumped onto continuation lines, got: {adc:?}"
+    );
+    // Value columns line up: the "1 (1)" run on the DAC row sits at the same
+    // column as the value cells above/below it.
+    let dac = out.iter().find(|l| l.contains("10-bit DAC")).unwrap();
+    let adc_first_val = adc.find("1 (9)").unwrap();
+    let dac_first_val = dac.find("1 (1)").unwrap();
+    assert_eq!(
+      adc_first_val, dac_first_val,
+      "first value column should be aligned, got:\n{adc}\n{dac}"
+    );
+  }
+
+  #[test]
+  fn leaves_narrow_multi_column_table_untouched() {
+    // A multi-column block that already fits must pass through verbatim — the
+    // table path only re-renders blocks that actually overflow.
+    let input = concat!(
+      "Reg          Access         Reset\n",
+      "CTRLA        R/W            0x00\n",
+      "CTRLB        R/W            0x0000\n",
+    );
+    let out = justify_pdf_hybrid(input, 80);
+    assert!(
+      out.iter().any(|l| l == "CTRLB        R/W            0x0000"),
+      "fitting rows should be preserved byte-for-byte, got: {out:?}"
+    );
+  }
+
+  #[test]
+  fn does_not_capture_two_column_option_table_as_grid() {
+    // The progit "-p / --stat" option table has a single wide gap per row and
+    // must keep its one-row-per-line list rendering, untouched by the
+    // multi-column table path.
+    let input = concat!(
+      " -p                        Show the patch introduced with each commit and a lot more text that overflows the line width comfortably here.\n",
+      " --stat                   Show statistics for files modified in each commit and even more padding text to be sure we overflow eighty cols.\n",
+    );
+    let out = justify_pdf_hybrid(input, 80);
+    let p_row = out
+      .iter()
+      .position(|l| l.trim_start().starts_with("-p "))
+      .expect("-p row present");
+    let stat_row = out
+      .iter()
+      .position(|l| l.trim_start().starts_with("--stat "))
+      .expect("--stat row present");
+    assert!(p_row < stat_row, "rows should stay in order, got: {out:?}");
   }
 
   #[test]

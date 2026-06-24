@@ -70,6 +70,40 @@ impl FormatterEngine {
     true
   }
 
+  /// Start buffering a multi-column table row. The buffer keeps growing while
+  /// `process_line` sees further table rows and is drained by
+  /// `flush_pending_table` once the run ends.
+  pub(super) fn handle_table_block_row(&mut self, line: &str) -> bool {
+    if !super::tables::looks_like_table_block_row(line) {
+      return false;
+    }
+    self.pending_table_rows.push(line.to_string());
+    true
+  }
+
+  /// Drain the buffered table. A block that already fits is replayed verbatim
+  /// through the normal preserved-layout path (so nothing changes for tables
+  /// that were never broken); only a block with at least one over-wide row is
+  /// re-aligned into a compressed grid.
+  pub(super) fn flush_pending_table(&mut self) {
+    if self.pending_table_rows.is_empty() {
+      return;
+    }
+    let rows = std::mem::take(&mut self.pending_table_rows);
+
+    let overflows = rows.iter().any(|row| char_len(row) > self.line_width);
+    if !overflows {
+      for row in &rows {
+        self.handle_preserved_pdf_layout_line(row);
+      }
+      return;
+    }
+
+    self.begin_preserved_layout_scope();
+    self.close_code_block_and_clear_parent_indent();
+    self.out.extend(super::tables::render_table_block(&rows, self.line_width));
+  }
+
   pub(super) fn handle_preserved_pdf_layout_line(
     &mut self,
     line: &str,

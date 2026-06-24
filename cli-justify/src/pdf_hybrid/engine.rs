@@ -17,6 +17,7 @@ pub(super) struct FormatterEngine {
   pub(super) line_width: usize,
   pub(super) out: Vec<String>,
   pub(super) pending: Option<PendingPdfBlock>,
+  pub(super) pending_table_rows: Vec<String>,
   pub(super) pending_toc_row: Option<PendingAlignedTocRow>,
   pub(super) in_aligned_toc: bool,
   pub(super) in_code_block: bool,
@@ -34,6 +35,7 @@ impl FormatterEngine {
       line_width,
       out: Vec::new(),
       pending: None,
+      pending_table_rows: Vec::new(),
       pending_toc_row: None,
       in_aligned_toc: false,
       in_code_block: false,
@@ -47,6 +49,16 @@ impl FormatterEngine {
   }
 
   pub(super) fn process_line(&mut self, line: &str) {
+    // A buffered table absorbs every following multi-column row; the first
+    // line that breaks the run flushes the table before normal dispatch.
+    if !self.pending_table_rows.is_empty() {
+      if super::tables::looks_like_table_block_row(line) {
+        self.pending_table_rows.push(line.to_string());
+        return;
+      }
+      self.flush_pending_table();
+    }
+
     if self.pending_deep_callout_bottom_margin && !line.trim().is_empty() {
       self.apply_pending_deep_callout_bottom_margin();
     }
@@ -58,6 +70,7 @@ impl FormatterEngine {
       || self.handle_list_item_start(line)
       || self.handle_list_item_continuation(line)
       || line.trim().is_empty() && self.handle_blank_line()
+      || self.handle_table_block_row(line)
       || self.handle_preserved_pdf_layout_line(line)
     {
       return;
@@ -67,6 +80,7 @@ impl FormatterEngine {
   }
 
   pub(super) fn finish(mut self) -> Vec<String> {
+    self.flush_pending_table();
     flush_pending_aligned_toc_row(
       &mut self.pending_toc_row,
       &mut self.out,
