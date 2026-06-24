@@ -7,5 +7,6 @@ pub use justify_text::justify;
 pub use pdf_hybrid::{
   PartialParagraph, PdfPageJustified, inter_page_blank_count,
   justify_pdf_hybrid, justify_pdf_page, justify_pdf_seam,
+  pdf_hybrid_narration_skip_mask,
 };
 pub use wrap::wrap_preserve_whitespace;

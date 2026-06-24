@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use super::core_types::{BufferState, EditorState, ViewMode};
 use crate::demo_script::DemoScript;
+use crate::editor::speech::SpeechState;
 use crate::editor::streaming::{PdfStreamingState, PendingPdfStream};
 use crate::highlights::HighlightData;
 use crate::interactive_tutorial_buffer::TutorialSuccessCondition;
@@ -90,4 +91,11 @@ pub struct Editor {
   pub pdf_pending: Option<PendingPdfStream>,
   pub pdf_load_started_at: Option<(Instant, String)>,
   pub pdf_load_finished: Option<(Instant, f32, String)>,
+  // TTS narration state (Phase 1: fake voice driving highlight + auto-scroll).
+  pub speech: Option<SpeechState>,
+  // Live narration voice id + speed used by `:speak`. Seeded from
+  // TTS_VOICE/TTS_SPEED (env or ~/.config/hygg/.env) or built-in defaults, and
+  // changed at runtime by the `:voice` / `:speed` commands.
+  pub tts_voice: String,
+  pub tts_speed: f32,
 }

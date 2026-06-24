@@ -126,7 +126,9 @@ pub fn load_progress(
 
   for line in reader.lines() {
     let line = line?;
-    let event: Event = serde_json::from_str(&line)?;
+    let Ok(event) = serde_json::from_str::<Event>(&line) else {
+      continue;
+    };
 
     let Event::UpdateProgress {
       document_hash: hash,

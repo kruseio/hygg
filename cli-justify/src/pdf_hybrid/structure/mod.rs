@@ -1,3 +1,4 @@
+mod command_lines;
 mod layout_headings;
 mod layout_signals;
 mod lists;
@@ -9,13 +10,17 @@ use self::layout_headings::{
   looks_like_multi_column_row, looks_like_numbered_label_heading,
   looks_like_page_header_or_footer, looks_like_single_word_section_heading,
 };
+pub(super) use command_lines::{
+  code_line_continues, looks_like_code_continuation_line,
+};
 pub(super) use layout_signals::{
   looks_like_code_block_line, looks_like_command_prompt_line,
   looks_like_git_log_graph_line, looks_like_toc_entry,
 };
 pub(super) use lists::{
-  is_list_continuation_line, looks_like_table_or_figure_caption,
-  parse_list_marker, should_start_new_pdf_paragraph,
+  ListMarkerKind, is_list_continuation_line,
+  looks_like_table_or_figure_caption, parse_list_marker,
+  parse_list_marker_with_kind, should_start_new_pdf_paragraph,
 };
 pub(super) use toc::{
   AlignedTocRow, AlignedTocRowStart, normalize_preserved_compact_layout_line,

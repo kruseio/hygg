@@ -21,6 +21,11 @@ workspace = true
 [features]
 default = []
 pdf-ocr-bundled = ["cli-pdf-to-text/pdf-ocr-bundled"]
+tts = ["cli-text-reader/tts"]
+
+[[test]]
+name = "integration_test"
+path = "tests/integration_test/main.rs"
 
 [dependencies]
 cli-pdf-to-text = { version = "0.1", path = "../cli-pdf-to-text" }

@@ -25,7 +25,18 @@ ci () {
   cargo +nightly fix --allow-dirty --workspace "${FORKS[@]}"
   cargo +nightly clippy --workspace "${FORKS[@]}" --all-targets --all-features -- -D warnings
   cargo +nightly fmt --all
+
+  # Source hygiene: no authored .rs file may exceed the LOC budget. Run after
+  # fmt so the counts reflect canonical formatting.
+  "$(dirname "${BASH_SOURCE[0]}")/loc-gate.sh"
+
   cargo +nightly test --workspace "${FORKS[@]}"
+
+  # TTS narration is feature-gated, so the default test run compiles its
+  # phonemize/alignment regression tests out. Run them explicitly to guard the
+  # espeak punctuation -> Kokoro pause-token contract across dep bumps (the
+  # real-espeak test self-locates the build-vendored espeak-ng-data).
+  cargo +nightly test -p cli-text-reader --features tts --lib
 
   cargo +nightly udeps --workspace "${FORKS[@]}" --all-targets
   # cargo udeps --all-targets
