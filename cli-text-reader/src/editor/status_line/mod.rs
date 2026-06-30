@@ -1,4 +1,5 @@
 mod completion;
+mod layout;
 mod mode;
 mod progress;
 

@@ -18,6 +18,7 @@ pub(crate) enum RegisteredCommand {
   NoHighlight,
   NoTutorial,
   Ocr(bool),
+  PageNumbers,
   Progress,
   Quit,
   Shell(String),
@@ -80,6 +81,8 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
   CommandSpec { name: "notutorial", arguments: &[] },
   CommandSpec { name: "ocr", arguments: OCR_ARGS },
   CommandSpec { name: "p", arguments: &[] },
+  CommandSpec { name: "pagenumbers", arguments: &[] },
+  CommandSpec { name: "pn", arguments: &[] },
   CommandSpec { name: "prev", arguments: &[] },
   CommandSpec { name: "previous", arguments: &[] },
   CommandSpec { name: "q", arguments: &[] },
@@ -109,6 +112,7 @@ pub(crate) fn classify_command(input: &str) -> RegisteredCommand {
 
   match (command, args.as_slice()) {
     ("p", []) => RegisteredCommand::Progress,
+    ("pagenumbers" | "pn", []) => RegisteredCommand::PageNumbers,
     ("cursor" | "c", []) => RegisteredCommand::Cursor,
     ("help" | "commands", []) => RegisteredCommand::Help,
     ("notutorial", []) => RegisteredCommand::NoTutorial,
@@ -159,6 +163,8 @@ pub(crate) fn command_help_lines() -> Vec<String> {
     "    :back, :prev, :previous Previous tutorial step".to_string(),
     "    :z                     Toggle line highlighter".to_string(),
     "    :p                     Toggle progress display".to_string(),
+    "    :pagenumbers, :pn      Toggle page numbers in status bar (PDF only)"
+      .to_string(),
     "    :ocr on, :ocr off      Toggle PDF OCR for this PDF and future launches"
       .to_string(),
     "    :speak, :speak stop    Narrate from the cursor (any key stops)"

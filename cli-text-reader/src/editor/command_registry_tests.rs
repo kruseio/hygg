@@ -66,6 +66,8 @@ fn registry_classifies_dispatch_commands() {
   assert_eq!(classify_command("ocr on"), RegisteredCommand::Ocr(true));
   assert_eq!(classify_command("ocr off"), RegisteredCommand::Ocr(false));
   assert_eq!(classify_command("ocron"), RegisteredCommand::Unknown);
+  assert_eq!(classify_command("pagenumbers"), RegisteredCommand::PageNumbers);
+  assert_eq!(classify_command("pn"), RegisteredCommand::PageNumbers);
   assert_eq!(
     classify_command("tutorial 3"),
     RegisteredCommand::Tutorial(TutorialCommand::Step(3))

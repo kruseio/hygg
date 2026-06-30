@@ -17,16 +17,7 @@ impl Editor {
     if self.view_mode == super::super::core::ViewMode::Normal
       && !self.tutorial_demo_mode
     {
-      if self.show_progress {
-        self.draw_progress_indicator(stdout)?;
-      } else {
-        let y = self.height as u16 - 2;
-        self.draw_pdf_loading_slots(
-          stdout,
-          self.progress_indicator_x() as u16,
-          y,
-        )?;
-      }
+      self.draw_status_bar(stdout)?;
     }
 
     Ok(())
@@ -146,16 +137,7 @@ impl Editor {
     if self.view_mode == super::super::core::ViewMode::Normal
       && !self.tutorial_demo_mode
     {
-      if self.show_progress {
-        self.draw_progress_indicator_buffered(buffer)?;
-      } else {
-        let y = self.height as u16 - 2;
-        self.draw_pdf_loading_slots_buffered(
-          buffer,
-          self.progress_indicator_x() as u16,
-          y,
-        )?;
-      }
+      self.draw_status_bar(buffer)?;
     }
 
     Ok(())

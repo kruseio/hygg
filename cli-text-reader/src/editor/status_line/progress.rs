@@ -1,11 +1,64 @@
-use crossterm::{QueueableCommand, cursor::MoveTo, execute};
+use crossterm::{cursor::MoveTo, execute};
 use std::io::{self, Write};
 
 use super::super::core::Editor;
+use super::layout::{StatusSlot, draw_right_anchored};
 
-pub(crate) const PROGRESS_SLOT_WIDTH: usize = 4;
 pub(crate) const PDF_LOADING_SLOT_WIDTH: usize = 14; // "P[x] O[x] T[x]"
+// Blank columns kept to the right of the status bar so it never touches the
+// terminal edge.
+const PROGRESS_RIGHT_MARGIN: usize = 2;
+// Blank columns between adjacent status-bar slots.
+const STATUS_SLOT_GAP: usize = 1;
+// Minimum digits reserved per number in the page counter. The real page count
+// is unknown while a PDF is opening, so the slot is sized for at least this
+// many digits up front (covers documents up to 9999 pages) and only grows for
+// larger ones — keeping the indicator from shifting on first load.
+const PAGE_COUNTER_MIN_DIGITS: usize = 4;
 pub(crate) const PDF_LOADING_FRAMES: [&str; 4] = ["◰", "◳", "◲", "◱"];
+
+/// Columns a `{page}/{total} (100%)` counter needs for `total` pages, never
+/// reserving fewer than `PAGE_COUNTER_MIN_DIGITS` digits per number so the
+/// width is stable before the real count is known.
+fn page_counter_width(total: usize) -> usize {
+  let digits = total.to_string().len().max(PAGE_COUNTER_MIN_DIGITS);
+  // "{d}/{d} (100%)": two numbers, a '/', and the literal " (100%)".
+  digits * 2 + 1 + " (100%)".len()
+}
+
+/// Reading position / page counter, drawn at the right edge of the status bar.
+struct ProgressSlot<'a> {
+  editor: &'a Editor,
+}
+
+impl StatusSlot for ProgressSlot<'_> {
+  fn reserved_width(&self) -> usize {
+    self.editor.progress_indicator_slot_width()
+  }
+
+  fn render(&self) -> Option<String> {
+    // Reserved even when hidden (so the loading slot beside it stays put), but
+    // only drawn when progress display is on.
+    self.editor.show_progress.then(|| self.editor.progress_indicator_message())
+  }
+}
+
+/// PDF parser / OCR / TTS loading spinners, drawn just left of the progress
+/// slot. Always reserves its full width so the progress slot never shifts as
+/// spinners come and go.
+struct PdfLoadingSlot<'a> {
+  editor: &'a Editor,
+}
+
+impl StatusSlot for PdfLoadingSlot<'_> {
+  fn reserved_width(&self) -> usize {
+    PDF_LOADING_SLOT_WIDTH
+  }
+
+  fn render(&self) -> Option<String> {
+    Some(self.editor.pdf_loading_slots_message())
+  }
+}
 
 impl Editor {
   // Draw position information in the status line
@@ -50,76 +103,113 @@ impl Editor {
     Ok(())
   }
 
-  // Draw progress indicator in the status line area
-  pub(crate) fn draw_progress_indicator(
+  /// Draw the right-anchored status bar (loading spinners + progress / page
+  /// counter). Works on any writer, so the immediate and buffered render paths
+  /// share one implementation. Slots are listed rightmost-first; each declares
+  /// its reserved width via `StatusSlot`, so adding a future element is just a
+  /// matter of implementing the trait and inserting it here.
+  pub(crate) fn draw_status_bar<W: Write>(
     &self,
-    stdout: &mut io::Stdout,
+    out: &mut W,
   ) -> io::Result<()> {
-    let message = self.progress_indicator_message();
-
     self.debug_log(&format!(
-      "Drawing progress indicator: {} (view_mode: {:?}, demo: {})",
-      message, self.view_mode, self.tutorial_demo_mode
+      "Drawing status bar: {} (view_mode: {:?}, demo: {})",
+      self.progress_indicator_message(),
+      self.view_mode,
+      self.tutorial_demo_mode
     ));
-    let x = self.progress_indicator_x() as u16;
-    let y = self.height as u16 - 2;
-    self.draw_pdf_loading_slots(stdout, x, y)?;
-    execute!(stdout, MoveTo(x, y))?;
-    write!(stdout, "{message}")?;
-    execute!(
-      stdout,
-      crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine)
-    )?;
-
-    Ok(())
-  }
-
-  // Buffered version of draw_progress_indicator
-  pub(crate) fn draw_progress_indicator_buffered(
-    &self,
-    buffer: &mut Vec<u8>,
-  ) -> io::Result<()> {
-    let message = self.progress_indicator_message();
-
-    self.debug_log(&format!(
-      "Drawing progress indicator: {} (view_mode: {:?}, demo: {})",
-      message, self.view_mode, self.tutorial_demo_mode
-    ));
-    let x = self.progress_indicator_x() as u16;
-    let y = self.height as u16 - 2;
-    self.draw_pdf_loading_slots_buffered(buffer, x, y)?;
-    buffer.queue(MoveTo(x, y))?;
-    write!(buffer, "{message}")?;
-    buffer.queue(crossterm::terminal::Clear(
-      crossterm::terminal::ClearType::UntilNewLine,
-    ))?;
-
-    Ok(())
+    let progress = ProgressSlot { editor: self };
+    let loading = PdfLoadingSlot { editor: self };
+    draw_right_anchored(
+      out,
+      self.width,
+      self.height as u16 - 2,
+      PROGRESS_RIGHT_MARGIN,
+      STATUS_SLOT_GAP,
+      &[&progress, &loading],
+    )
   }
 
   pub(crate) fn progress_indicator_message(&self) -> String {
-    if self.pdf_pending.is_some()
-      || self.pdf_streaming.as_ref().is_some_and(|s| !s.fully_loaded)
-    {
-      return format!("{:>width$}", "--%", width = PROGRESS_SLOT_WIDTH);
-    }
-
-    // Calculate actual position in document (offset + cursor position + 1 for
-    // 1-based indexing)
-    let current_position =
-      (self.offset + self.cursor_y + 1).min(self.total_lines);
-    let progress = if self.total_lines > 0 {
-      (current_position as f64 / self.total_lines as f64 * 100.0)
-        .round()
-        .min(100.0)
+    // The percentage is line-based, so it drifts while pages stream in and
+    // `total_lines` keeps growing. Hold it at `--` until the parser finishes
+    // rather than show a number that walks backwards.
+    let percent = if self.progress_is_loading() {
+      "--".to_string()
     } else {
-      100.0 // Empty document is 100% read
+      self.read_progress_percent().to_string()
     };
-    format!("{:>width$}", format!("{progress}%"), width = PROGRESS_SLOT_WIDTH)
+
+    // PDFs carry a physical page structure readers navigate by, so show the
+    // absolute page alongside the percentage (e.g. `37/250 (18%)`). The page
+    // counter is shown as soon as the page count is known — including while
+    // the document is still streaming — so it never pops in late and shifts
+    // the rest of the indicator. Flowed formats (EPUB, plain text, …) have no
+    // fixed pages and fall back to the percentage alone.
+    match self.current_page_indicator() {
+      Some((page, total_pages)) => format!("{page}/{total_pages} ({percent}%)"),
+      None => format!("{percent}%"),
+    }
   }
 
-  pub(crate) fn progress_indicator_x(&self) -> usize {
-    self.width.saturating_sub(PROGRESS_SLOT_WIDTH).saturating_sub(2)
+  /// True while page content is still being parsed/streamed, so position- and
+  /// percentage-derived values can't be trusted yet.
+  fn progress_is_loading(&self) -> bool {
+    self.pdf_pending.is_some()
+      || self.pdf_streaming.as_ref().is_some_and(|s| !s.fully_loaded)
+  }
+
+  /// Reading progress as a whole-number percentage of lines consumed, clamped
+  /// to `0..=100`. An empty document counts as fully read.
+  fn read_progress_percent(&self) -> u32 {
+    if self.total_lines == 0 {
+      return 100;
+    }
+    // offset + cursor position, +1 for 1-based indexing.
+    let current_position =
+      (self.offset + self.cursor_y + 1).min(self.total_lines);
+    ((current_position as f64 / self.total_lines as f64 * 100.0).round() as u32)
+      .min(100)
+  }
+
+  /// `(current_page_1based, total_pages)` to actually render, or `None` when
+  /// the page counter is off or no real page table exists yet (the format has
+  /// no physical pages, or a PDF is still opening). Page numbers are only
+  /// available for PDFs, whose page table gives an authoritative count; flowed
+  /// formats (EPUB, DOCX, plain text, …) have no fixed pages.
+  fn current_page_indicator(&self) -> Option<(u32, usize)> {
+    if !self.show_page_numbers {
+      return None;
+    }
+    let total_pages = self.pdf_streaming.as_ref()?.pages.len();
+    if total_pages == 0 {
+      return None;
+    }
+    let (page, _) = self.current_pdf_position()?;
+    Some((page, total_pages))
+  }
+
+  /// Whether this session renders a PDF through the streaming pipeline — true
+  /// from the moment the open is kicked off (`pdf_pending`), before any page
+  /// table exists, through streaming and full load.
+  fn is_pdf_session(&self) -> bool {
+    self.pdf_pending.is_some() || self.pdf_streaming.is_some()
+  }
+
+  /// Columns reserved for the progress indicator, held stable for the whole
+  /// session so its left edge — and the loading spinners packed beside it —
+  /// never shift as contents fill in. With page numbers on for a PDF the real
+  /// count isn't known until the open finishes, so reserving the exact
+  /// `{total}/{total} (100%)` would jump the instant streaming begins; instead
+  /// reserve a digit-floored page counter that the real value only ever fills
+  /// into. Otherwise it is just the percentage (`100%`).
+  pub(crate) fn progress_indicator_slot_width(&self) -> usize {
+    if self.show_page_numbers && self.is_pdf_session() {
+      let total = self.pdf_streaming.as_ref().map_or(0, |s| s.pages.len());
+      page_counter_width(total)
+    } else {
+      "100%".len()
+    }
   }
 
   fn pdf_loading_slots_message(&self) -> String {
@@ -144,36 +234,6 @@ impl Editor {
       tts_loading,
       frame_idx,
     )
-  }
-
-  fn pdf_loading_slots_x(&self) -> usize {
-    self.progress_indicator_x().saturating_sub(PDF_LOADING_SLOT_WIDTH + 1)
-  }
-
-  pub(crate) fn draw_pdf_loading_slots(
-    &self,
-    stdout: &mut io::Stdout,
-    progress_x: u16,
-    y: u16,
-  ) -> io::Result<()> {
-    let x = self.pdf_loading_slots_x().min(progress_x as usize) as u16;
-    let message = self.pdf_loading_slots_message();
-    execute!(stdout, MoveTo(x, y))?;
-    write!(stdout, "{message}")?;
-    Ok(())
-  }
-
-  pub(crate) fn draw_pdf_loading_slots_buffered(
-    &self,
-    buffer: &mut Vec<u8>,
-    progress_x: u16,
-    y: u16,
-  ) -> io::Result<()> {
-    let x = self.pdf_loading_slots_x().min(progress_x as usize) as u16;
-    let message = self.pdf_loading_slots_message();
-    buffer.queue(MoveTo(x, y))?;
-    write!(buffer, "{message}")?;
-    Ok(())
   }
 }
 

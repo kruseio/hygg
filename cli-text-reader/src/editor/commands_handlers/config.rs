@@ -9,6 +9,7 @@ impl Editor {
       enable_line_highlighter: Some(self.show_highlighter),
       show_cursor: Some(self.show_cursor),
       show_progress: Some(self.show_progress),
+      show_page_numbers: Some(self.show_page_numbers),
       pdf_ocr: None,        // Keep existing value
       tutorial_shown: None, // Keep existing value
     };

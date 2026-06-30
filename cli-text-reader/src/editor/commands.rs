@@ -159,6 +159,7 @@ impl Editor {
 
     match registered_command {
       RegisteredCommand::Progress => self.handle_progress_command(),
+      RegisteredCommand::PageNumbers => self.handle_page_numbers_command(),
       RegisteredCommand::Cursor => self.handle_cursor_command(),
       RegisteredCommand::Help => self.handle_help_command(),
       RegisteredCommand::NoTutorial => self.handle_notutorial_command(),

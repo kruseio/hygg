@@ -11,6 +11,7 @@ pub struct AppConfig {
   pub enable_line_highlighter: Option<bool>,
   pub show_cursor: Option<bool>,
   pub show_progress: Option<bool>,
+  pub show_page_numbers: Option<bool>,
   pub pdf_ocr: Option<bool>,
   pub tutorial_shown: Option<bool>,
 }
@@ -23,7 +24,7 @@ fn ensure_config_file() -> Result<(), Box<dyn std::error::Error>> {
   let config_path = get_config_env_path()?;
   ensure_config_file_with_defaults(
     &config_path,
-    "ENABLE_TUTORIAL=true\nENABLE_LINE_HIGHLIGHTER=true\nSHOW_CURSOR=true\nSHOW_PROGRESS=true\nPDF_OCR=false\nTUTORIAL_SHOWN=false\n",
+    "ENABLE_TUTORIAL=true\nENABLE_LINE_HIGHLIGHTER=true\nSHOW_CURSOR=true\nSHOW_PROGRESS=true\nSHOW_PAGE_NUMBERS=false\nPDF_OCR=false\nTUTORIAL_SHOWN=false\n",
   )
 }
 
@@ -42,6 +43,7 @@ pub fn load_config() -> AppConfig {
       config_bool("ENABLE_LINE_HIGHLIGHTER", &file_values);
     config.show_cursor = config_bool("SHOW_CURSOR", &file_values);
     config.show_progress = config_bool("SHOW_PROGRESS", &file_values);
+    config.show_page_numbers = config_bool("SHOW_PAGE_NUMBERS", &file_values);
     config.pdf_ocr = config_bool("PDF_OCR", &file_values);
     config.tutorial_shown = config_bool("TUTORIAL_SHOWN", &file_values);
   }
@@ -113,12 +115,16 @@ pub fn save_config(
     config.show_cursor.or(existing_config.show_cursor).unwrap_or(true);
   let show_progress =
     config.show_progress.or(existing_config.show_progress).unwrap_or(true);
+  let show_page_numbers = config
+    .show_page_numbers
+    .or(existing_config.show_page_numbers)
+    .unwrap_or(false);
   let pdf_ocr = config.pdf_ocr.or(existing_config.pdf_ocr).unwrap_or(false);
   let tutorial_shown =
     config.tutorial_shown.or(existing_config.tutorial_shown).unwrap_or(false);
 
   let content = format!(
-    "ENABLE_TUTORIAL={enable_tutorial}\nENABLE_LINE_HIGHLIGHTER={enable_line_highlighter}\nSHOW_CURSOR={show_cursor}\nSHOW_PROGRESS={show_progress}\nPDF_OCR={pdf_ocr}\nTUTORIAL_SHOWN={tutorial_shown}\n"
+    "ENABLE_TUTORIAL={enable_tutorial}\nENABLE_LINE_HIGHLIGHTER={enable_line_highlighter}\nSHOW_CURSOR={show_cursor}\nSHOW_PROGRESS={show_progress}\nSHOW_PAGE_NUMBERS={show_page_numbers}\nPDF_OCR={pdf_ocr}\nTUTORIAL_SHOWN={tutorial_shown}\n"
   );
 
   fs::write(config_path, content)?;
