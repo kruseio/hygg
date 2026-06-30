@@ -87,16 +87,30 @@ fn progress_indicator_hides_percentage_until_pdf_parser_finishes() {
     return;
   };
 
-  assert_eq!(editor.progress_indicator_message(), " --%");
+  assert_eq!(editor.progress_indicator_message(), "--%");
 }
 
 #[test]
-fn progress_indicator_shows_percentage_after_pdf_parser_finishes() {
+fn progress_indicator_shows_page_and_percentage_for_pdf() {
   let Some(editor) = editor_with_streaming_parser_state(true) else {
     return;
   };
 
-  assert_eq!(editor.progress_indicator_message(), " 50%");
+  // The fully-loaded fixture has a single page, so the page counter reads
+  // `1/1` while the percentage still reflects the line-based reading position.
+  assert_eq!(editor.progress_indicator_message(), "1/1 (50%)");
+}
+
+#[test]
+fn progress_indicator_shows_percentage_only_without_pages() {
+  // No PDF streaming state means no physical page structure (EPUB, plain
+  // text, …), so only the percentage is shown.
+  let mut editor = Editor::new(vec!["line".to_string(); 100], 80);
+  editor.offset = 49;
+  editor.cursor_y = 0;
+  editor.total_lines = 100;
+
+  assert_eq!(editor.progress_indicator_message(), "50%");
 }
 
 #[test]

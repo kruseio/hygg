@@ -3,8 +3,10 @@ use std::io::{self, Write};
 
 use super::super::core::Editor;
 
-pub(crate) const PROGRESS_SLOT_WIDTH: usize = 4;
 pub(crate) const PDF_LOADING_SLOT_WIDTH: usize = 14; // "P[x] O[x] T[x]"
+// Blank columns kept to the right of the progress indicator so it never
+// touches the terminal edge.
+const PROGRESS_RIGHT_MARGIN: usize = 2;
 pub(crate) const PDF_LOADING_FRAMES: [&str; 4] = ["◰", "◳", "◲", "◱"];
 
 impl Editor {
@@ -61,7 +63,7 @@ impl Editor {
       "Drawing progress indicator: {} (view_mode: {:?}, demo: {})",
       message, self.view_mode, self.tutorial_demo_mode
     ));
-    let x = self.progress_indicator_x() as u16;
+    let x = self.progress_indicator_x_for(message.chars().count()) as u16;
     let y = self.height as u16 - 2;
     self.draw_pdf_loading_slots(stdout, x, y)?;
     execute!(stdout, MoveTo(x, y))?;
@@ -85,7 +87,7 @@ impl Editor {
       "Drawing progress indicator: {} (view_mode: {:?}, demo: {})",
       message, self.view_mode, self.tutorial_demo_mode
     ));
-    let x = self.progress_indicator_x() as u16;
+    let x = self.progress_indicator_x_for(message.chars().count()) as u16;
     let y = self.height as u16 - 2;
     self.draw_pdf_loading_slots_buffered(buffer, x, y)?;
     buffer.queue(MoveTo(x, y))?;
@@ -101,25 +103,57 @@ impl Editor {
     if self.pdf_pending.is_some()
       || self.pdf_streaming.as_ref().is_some_and(|s| !s.fully_loaded)
     {
-      return format!("{:>width$}", "--%", width = PROGRESS_SLOT_WIDTH);
+      return "--%".to_string();
     }
 
-    // Calculate actual position in document (offset + cursor position + 1 for
-    // 1-based indexing)
+    let progress = self.read_progress_percent();
+
+    // PDFs carry a physical page structure readers navigate by, so show the
+    // absolute page alongside the percentage (e.g. `37/250 (18%)`). Flowed
+    // formats (EPUB, plain text, …) have no fixed pages and fall back to the
+    // percentage alone.
+    match self.current_page_indicator() {
+      Some((page, total_pages)) => {
+        format!("{page}/{total_pages} ({progress}%)")
+      }
+      None => format!("{progress}%"),
+    }
+  }
+
+  /// Reading progress as a whole-number percentage of lines consumed, clamped
+  /// to `0..=100`. An empty document counts as fully read.
+  fn read_progress_percent(&self) -> u32 {
+    if self.total_lines == 0 {
+      return 100;
+    }
+    // offset + cursor position, +1 for 1-based indexing.
     let current_position =
       (self.offset + self.cursor_y + 1).min(self.total_lines);
-    let progress = if self.total_lines > 0 {
-      (current_position as f64 / self.total_lines as f64 * 100.0)
-        .round()
-        .min(100.0)
-    } else {
-      100.0 // Empty document is 100% read
-    };
-    format!("{:>width$}", format!("{progress}%"), width = PROGRESS_SLOT_WIDTH)
+    ((current_position as f64 / self.total_lines as f64 * 100.0).round() as u32)
+      .min(100)
+  }
+
+  /// `(current_page_1based, total_pages)` for a streaming PDF whose page table
+  /// is known, or `None` for formats without physical pages.
+  fn current_page_indicator(&self) -> Option<(u32, usize)> {
+    let total_pages = self.pdf_streaming.as_ref()?.pages.len();
+    if total_pages == 0 {
+      return None;
+    }
+    let (page, _) = self.current_pdf_position()?;
+    Some((page, total_pages))
   }
 
   pub(crate) fn progress_indicator_x(&self) -> usize {
-    self.width.saturating_sub(PROGRESS_SLOT_WIDTH).saturating_sub(2)
+    self.progress_indicator_x_for(
+      self.progress_indicator_message().chars().count(),
+    )
+  }
+
+  /// Right-anchor a message of `message_len` columns, leaving
+  /// `PROGRESS_RIGHT_MARGIN` blank columns at the terminal edge.
+  pub(crate) fn progress_indicator_x_for(&self, message_len: usize) -> usize {
+    self.width.saturating_sub(message_len).saturating_sub(PROGRESS_RIGHT_MARGIN)
   }
 
   fn pdf_loading_slots_message(&self) -> String {
