@@ -98,6 +98,7 @@ impl Editor {
       enable_line_highlighter: None, // Keep existing value
       show_cursor: None,             // Keep existing value
       show_progress: None,           // Keep existing value
+      show_page_numbers: None,       // Keep existing value
       pdf_ocr: None,                 // Keep existing value
       tutorial_shown: None,          // Keep existing value
     };
@@ -149,6 +150,7 @@ impl Editor {
       enable_line_highlighter: None, // Keep existing value
       show_cursor: None,             // Keep existing value
       show_progress: None,           // Keep existing value
+      show_page_numbers: None,       // Keep existing value
       pdf_ocr: None,                 // Keep existing value
       tutorial_shown: None,          // Keep existing value
     };

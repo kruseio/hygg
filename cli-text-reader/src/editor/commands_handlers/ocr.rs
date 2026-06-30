@@ -23,6 +23,7 @@ impl Editor {
       enable_line_highlighter: None,
       show_cursor: None,
       show_progress: None,
+      show_page_numbers: None,
       pdf_ocr: Some(enable),
       tutorial_shown: None,
     };

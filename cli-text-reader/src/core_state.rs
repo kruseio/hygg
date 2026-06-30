@@ -26,6 +26,7 @@ pub struct Editor {
   #[allow(dead_code)]
   pub progress_display_until: Option<Instant>,
   pub show_progress: bool,
+  pub show_page_numbers: bool,
   pub cursor_x: usize,
   pub cursor_y: usize,
   pub clipboard: Option<Clipboard>,

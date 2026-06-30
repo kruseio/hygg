@@ -87,6 +87,7 @@ impl Editor {
       total_lines,
       progress_display_until: None,
       show_progress: false,
+      show_page_numbers: false,
       cursor_x: 0,
       cursor_y: height / 2,
       clipboard,

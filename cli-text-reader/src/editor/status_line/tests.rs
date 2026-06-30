@@ -82,19 +82,23 @@ fn pdf_loading_slots_show_tts_spinner() {
 }
 
 #[test]
-fn progress_indicator_hides_percentage_until_pdf_parser_finishes() {
-  let Some(editor) = editor_with_streaming_parser_state(false) else {
+fn progress_indicator_shows_page_with_pending_percentage_while_loading() {
+  let Some(mut editor) = editor_with_streaming_parser_state(false) else {
     return;
   };
+  editor.show_page_numbers = true;
 
-  assert_eq!(editor.progress_indicator_message(), "--%");
+  // While pages are still streaming the page counter is already known, so it
+  // is shown up front; only the line-based percentage is held at `--`.
+  assert_eq!(editor.progress_indicator_message(), "2/2 (--%)");
 }
 
 #[test]
 fn progress_indicator_shows_page_and_percentage_for_pdf() {
-  let Some(editor) = editor_with_streaming_parser_state(true) else {
+  let Some(mut editor) = editor_with_streaming_parser_state(true) else {
     return;
   };
+  editor.show_page_numbers = true;
 
   // The fully-loaded fixture has a single page, so the page counter reads
   // `1/1` while the percentage still reflects the line-based reading position.
@@ -102,15 +106,49 @@ fn progress_indicator_shows_page_and_percentage_for_pdf() {
 }
 
 #[test]
+fn progress_indicator_hides_pages_when_disabled() {
+  // Page numbers default to off, so even a fully-loaded PDF shows only the
+  // percentage until the reader enables them with `:pagenumbers`.
+  let Some(editor) = editor_with_streaming_parser_state(true) else {
+    return;
+  };
+  assert!(!editor.show_page_numbers);
+
+  assert_eq!(editor.progress_indicator_message(), "50%");
+}
+
+#[test]
 fn progress_indicator_shows_percentage_only_without_pages() {
   // No PDF streaming state means no physical page structure (EPUB, plain
-  // text, …), so only the percentage is shown.
+  // text, …), so only the percentage is shown even with the toggle on.
   let mut editor = Editor::new(vec!["line".to_string(); 100], 80);
+  editor.show_page_numbers = true;
   editor.offset = 49;
   editor.cursor_y = 0;
   editor.total_lines = 100;
 
   assert_eq!(editor.progress_indicator_message(), "50%");
+}
+
+#[test]
+fn progress_indicator_position_is_stable_across_load_completion() {
+  let Some(mut editor) = editor_with_streaming_parser_state(true) else {
+    return;
+  };
+  editor.show_page_numbers = true;
+
+  // The reserved slot depends only on the (fixed) total page count, so the
+  // indicator's start column — and the loading spinners drawn beside it —
+  // must not move when streaming finishes and the percentage fills in.
+  let loaded = editor.progress_indicator_layout();
+  editor.pdf_streaming.as_mut().expect("streaming state").fully_loaded = false;
+  let loading = editor.progress_indicator_layout();
+
+  assert_eq!(loaded, loading);
+  // And the rendered text never exceeds the reserved slot, so it can be
+  // right-aligned without shifting.
+  let (slot, _) = loaded;
+  assert!(editor.progress_indicator_message().chars().count() <= slot);
 }
 
 #[test]
