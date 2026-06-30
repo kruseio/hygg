@@ -138,17 +138,33 @@ fn progress_indicator_position_is_stable_across_load_completion() {
   editor.show_page_numbers = true;
 
   // The reserved slot depends only on the (fixed) total page count, so the
-  // indicator's start column — and the loading spinners drawn beside it —
+  // indicator's start column — and the loading spinners packed beside it —
   // must not move when streaming finishes and the percentage fills in.
-  let loaded = editor.progress_indicator_layout();
+  let loaded = editor.progress_indicator_slot_width();
   editor.pdf_streaming.as_mut().expect("streaming state").fully_loaded = false;
-  let loading = editor.progress_indicator_layout();
+  let loading = editor.progress_indicator_slot_width();
 
   assert_eq!(loaded, loading);
   // And the rendered text never exceeds the reserved slot, so it can be
   // right-aligned without shifting.
-  let (slot, _) = loaded;
-  assert!(editor.progress_indicator_message().chars().count() <= slot);
+  assert!(editor.progress_indicator_message().chars().count() <= loaded);
+}
+
+#[test]
+fn page_slot_widens_only_when_page_numbers_enabled() {
+  let Some(mut editor) = editor_with_streaming_parser_state(true) else {
+    return;
+  };
+
+  // Disabled (the default): the bar reserves just the percentage slot, so it
+  // does not account for page numbers.
+  assert!(!editor.show_page_numbers);
+  let percentage_only = editor.progress_indicator_slot_width();
+  assert_eq!(percentage_only, "100%".len());
+
+  // Enabled: the reservation grows to fit the widest page counter.
+  editor.show_page_numbers = true;
+  assert!(editor.progress_indicator_slot_width() > percentage_only);
 }
 
 #[test]
@@ -182,4 +198,73 @@ fn command_completion_text_hides_when_command_uses_line() {
   editor.editor_state.command_completion = Some("about author".to_string());
 
   assert!(editor.command_completion_text(3).is_none());
+}
+
+// --- Status-bar layout primitives -----------------------------------------
+
+use super::layout::{StatusSlot, draw_right_anchored, pack_right_anchored};
+
+/// Minimal `StatusSlot` for exercising the layout engine independently of the
+/// editor's concrete elements.
+struct FixedSlot {
+  width: usize,
+  text: Option<&'static str>,
+}
+
+impl StatusSlot for FixedSlot {
+  fn reserved_width(&self) -> usize {
+    self.width
+  }
+  fn render(&self) -> Option<String> {
+    self.text.map(str::to_string)
+  }
+}
+
+#[test]
+fn pack_right_anchored_packs_slots_leftward_with_gap() {
+  // width 40, margin 2, gap 1, slots [5, 4] given rightmost-first.
+  let starts = pack_right_anchored(40, 2, 1, &[5, 4]);
+  // Rightmost: 40 - 2 - 5 = 33. Next: 33 - 1 - 4 = 28.
+  assert_eq!(starts, vec![33, 28]);
+}
+
+#[test]
+fn pack_right_anchored_saturates_on_narrow_terminal() {
+  assert_eq!(pack_right_anchored(4, 2, 1, &[5, 4]), vec![0, 0]);
+}
+
+#[test]
+fn draw_right_anchored_right_aligns_within_reserved_width() {
+  let progress = FixedSlot { width: 5, text: Some("9%") };
+  let spinner = FixedSlot { width: 4, text: Some("P[.]") };
+  let slots: [&dyn StatusSlot; 2] = [&progress, &spinner];
+
+  let mut buf = Vec::new();
+  draw_right_anchored(&mut buf, 40, 0, 2, 1, &slots).unwrap();
+  let out = String::from_utf8(buf).unwrap();
+
+  // "9%" right-aligned in 5 columns, plus the spinner verbatim.
+  assert!(out.contains("   9%"), "got: {out:?}");
+  assert!(out.contains("P[.]"), "got: {out:?}");
+}
+
+#[test]
+fn unrendered_slot_still_reserves_its_neighbours_column() {
+  fn spinner_output(progress_text: Option<&'static str>) -> String {
+    let progress = FixedSlot { width: 5, text: progress_text };
+    let spinner = FixedSlot { width: 4, text: Some("P[.]") };
+    let slots: [&dyn StatusSlot; 2] = [&progress, &spinner];
+    let mut buf = Vec::new();
+    draw_right_anchored(&mut buf, 40, 0, 2, 1, &slots).unwrap();
+    String::from_utf8(buf).unwrap()
+  }
+
+  // The spinner lands at the same column (MoveTo to col 28 => CSI `1;29H`)
+  // whether or not the rightmost slot draws — reservation, not contents,
+  // fixes the layout.
+  let shown = spinner_output(Some("9%"));
+  let hidden = spinner_output(None);
+  assert!(shown.contains("\u{1b}[1;29H"), "got: {shown:?}");
+  assert!(hidden.contains("\u{1b}[1;29H"), "got: {hidden:?}");
+  assert!(hidden.contains("P[.]"));
 }

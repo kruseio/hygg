@@ -1,13 +1,50 @@
-use crossterm::{QueueableCommand, cursor::MoveTo, execute};
+use crossterm::{cursor::MoveTo, execute};
 use std::io::{self, Write};
 
 use super::super::core::Editor;
+use super::layout::{StatusSlot, draw_right_anchored};
 
 pub(crate) const PDF_LOADING_SLOT_WIDTH: usize = 14; // "P[x] O[x] T[x]"
-// Blank columns kept to the right of the progress indicator so it never
-// touches the terminal edge.
+// Blank columns kept to the right of the status bar so it never touches the
+// terminal edge.
 const PROGRESS_RIGHT_MARGIN: usize = 2;
+// Blank columns between adjacent status-bar slots.
+const STATUS_SLOT_GAP: usize = 1;
 pub(crate) const PDF_LOADING_FRAMES: [&str; 4] = ["◰", "◳", "◲", "◱"];
+
+/// Reading position / page counter, drawn at the right edge of the status bar.
+struct ProgressSlot<'a> {
+  editor: &'a Editor,
+}
+
+impl StatusSlot for ProgressSlot<'_> {
+  fn reserved_width(&self) -> usize {
+    self.editor.progress_indicator_slot_width()
+  }
+
+  fn render(&self) -> Option<String> {
+    // Reserved even when hidden (so the loading slot beside it stays put), but
+    // only drawn when progress display is on.
+    self.editor.show_progress.then(|| self.editor.progress_indicator_message())
+  }
+}
+
+/// PDF parser / OCR / TTS loading spinners, drawn just left of the progress
+/// slot. Always reserves its full width so the progress slot never shifts as
+/// spinners come and go.
+struct PdfLoadingSlot<'a> {
+  editor: &'a Editor,
+}
+
+impl StatusSlot for PdfLoadingSlot<'_> {
+  fn reserved_width(&self) -> usize {
+    PDF_LOADING_SLOT_WIDTH
+  }
+
+  fn render(&self) -> Option<String> {
+    Some(self.editor.pdf_loading_slots_message())
+  }
+}
 
 impl Editor {
   // Draw position information in the status line
@@ -52,51 +89,31 @@ impl Editor {
     Ok(())
   }
 
-  // Draw progress indicator in the status line area
-  pub(crate) fn draw_progress_indicator(
+  /// Draw the right-anchored status bar (loading spinners + progress / page
+  /// counter). Works on any writer, so the immediate and buffered render paths
+  /// share one implementation. Slots are listed rightmost-first; each declares
+  /// its reserved width via `StatusSlot`, so adding a future element is just a
+  /// matter of implementing the trait and inserting it here.
+  pub(crate) fn draw_status_bar<W: Write>(
     &self,
-    stdout: &mut io::Stdout,
+    out: &mut W,
   ) -> io::Result<()> {
-    let message = self.progress_indicator_message();
-    let (slot, x) = self.progress_indicator_layout();
-
     self.debug_log(&format!(
-      "Drawing progress indicator: {} (view_mode: {:?}, demo: {})",
-      message, self.view_mode, self.tutorial_demo_mode
+      "Drawing status bar: {} (view_mode: {:?}, demo: {})",
+      self.progress_indicator_message(),
+      self.view_mode,
+      self.tutorial_demo_mode
     ));
-    let y = self.height as u16 - 2;
-    self.draw_pdf_loading_slots(stdout, x, y)?;
-    execute!(stdout, MoveTo(x, y))?;
-    write!(stdout, "{message:>slot$}")?;
-    execute!(
-      stdout,
-      crossterm::terminal::Clear(crossterm::terminal::ClearType::UntilNewLine)
-    )?;
-
-    Ok(())
-  }
-
-  // Buffered version of draw_progress_indicator
-  pub(crate) fn draw_progress_indicator_buffered(
-    &self,
-    buffer: &mut Vec<u8>,
-  ) -> io::Result<()> {
-    let message = self.progress_indicator_message();
-    let (slot, x) = self.progress_indicator_layout();
-
-    self.debug_log(&format!(
-      "Drawing progress indicator: {} (view_mode: {:?}, demo: {})",
-      message, self.view_mode, self.tutorial_demo_mode
-    ));
-    let y = self.height as u16 - 2;
-    self.draw_pdf_loading_slots_buffered(buffer, x, y)?;
-    buffer.queue(MoveTo(x, y))?;
-    write!(buffer, "{message:>slot$}")?;
-    buffer.queue(crossterm::terminal::Clear(
-      crossterm::terminal::ClearType::UntilNewLine,
-    ))?;
-
-    Ok(())
+    let progress = ProgressSlot { editor: self };
+    let loading = PdfLoadingSlot { editor: self };
+    draw_right_anchored(
+      out,
+      self.width,
+      self.height as u16 - 2,
+      PROGRESS_RIGHT_MARGIN,
+      STATUS_SLOT_GAP,
+      &[&progress, &loading],
+    )
   }
 
   pub(crate) fn progress_indicator_message(&self) -> String {
@@ -174,19 +191,6 @@ impl Editor {
     }
   }
 
-  /// Reserved slot width and the column to start drawing at, right-anchored
-  /// `PROGRESS_RIGHT_MARGIN` columns from the terminal edge.
-  pub(crate) fn progress_indicator_layout(&self) -> (usize, u16) {
-    let slot = self.progress_indicator_slot_width();
-    let x =
-      self.width.saturating_sub(slot).saturating_sub(PROGRESS_RIGHT_MARGIN);
-    (slot, x as u16)
-  }
-
-  pub(crate) fn progress_indicator_x(&self) -> usize {
-    self.progress_indicator_layout().1 as usize
-  }
-
   fn pdf_loading_slots_message(&self) -> String {
     let parser_loading = self.pdf_pending.is_some()
       || self.pdf_streaming.as_ref().is_some_and(|s| !s.fully_loaded);
@@ -209,36 +213,6 @@ impl Editor {
       tts_loading,
       frame_idx,
     )
-  }
-
-  fn pdf_loading_slots_x(&self) -> usize {
-    self.progress_indicator_x().saturating_sub(PDF_LOADING_SLOT_WIDTH + 1)
-  }
-
-  pub(crate) fn draw_pdf_loading_slots(
-    &self,
-    stdout: &mut io::Stdout,
-    progress_x: u16,
-    y: u16,
-  ) -> io::Result<()> {
-    let x = self.pdf_loading_slots_x().min(progress_x as usize) as u16;
-    let message = self.pdf_loading_slots_message();
-    execute!(stdout, MoveTo(x, y))?;
-    write!(stdout, "{message}")?;
-    Ok(())
-  }
-
-  pub(crate) fn draw_pdf_loading_slots_buffered(
-    &self,
-    buffer: &mut Vec<u8>,
-    progress_x: u16,
-    y: u16,
-  ) -> io::Result<()> {
-    let x = self.pdf_loading_slots_x().min(progress_x as usize) as u16;
-    let message = self.pdf_loading_slots_message();
-    buffer.queue(MoveTo(x, y))?;
-    write!(buffer, "{message}")?;
-    Ok(())
   }
 }
 
