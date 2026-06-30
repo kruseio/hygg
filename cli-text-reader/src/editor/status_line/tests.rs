@@ -2,7 +2,9 @@ use super::super::core::Editor;
 use super::progress::{
   PDF_LOADING_SLOT_WIDTH, pdf_loading_slots_message_for_state,
 };
-use crate::editor::streaming::{LoadedPage, PageSlot, PdfStreamingState};
+use crate::editor::streaming::{
+  LoadedPage, PageSlot, PdfStreamingState, PendingPdfStream,
+};
 use cli_pdf_to_text::PdfStream;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, mpsc};
@@ -162,9 +164,36 @@ fn page_slot_widens_only_when_page_numbers_enabled() {
   let percentage_only = editor.progress_indicator_slot_width();
   assert_eq!(percentage_only, "100%".len());
 
-  // Enabled: the reservation grows to fit the widest page counter.
+  // Enabled: the reservation grows to fit a (digit-floored) page counter.
   editor.show_page_numbers = true;
   assert!(editor.progress_indicator_slot_width() > percentage_only);
+}
+
+#[test]
+fn page_slot_reserved_consistently_from_open_through_load() {
+  // Page numbers on, PDF still opening: `pdf_pending` is set but no page table
+  // exists yet. The slot must already reserve page-counter width so nothing
+  // shifts the instant streaming begins.
+  let mut opening = Editor::new(vec!["opening".to_string()], 80);
+  opening.show_page_numbers = true;
+  let (_tx, rx) = mpsc::channel();
+  opening.pdf_pending = Some(PendingPdfStream {
+    receiver: rx,
+    started_at: std::time::Instant::now(),
+    canonical_path_display: "doc.pdf".to_string(),
+    restore_line_in_page: None,
+    restore_cursor_y: None,
+  });
+  let opening_slot = opening.progress_indicator_slot_width();
+  assert!(opening_slot > "100%".len());
+
+  // A typical PDF (page count under the digit floor) reserves exactly the same
+  // width once streaming, so the indicator does not jump from the open splash.
+  let Some(mut streaming) = editor_with_streaming_parser_state(false) else {
+    return;
+  };
+  streaming.show_page_numbers = true;
+  assert_eq!(streaming.progress_indicator_slot_width(), opening_slot);
 }
 
 #[test]

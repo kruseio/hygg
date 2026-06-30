@@ -10,7 +10,21 @@ pub(crate) const PDF_LOADING_SLOT_WIDTH: usize = 14; // "P[x] O[x] T[x]"
 const PROGRESS_RIGHT_MARGIN: usize = 2;
 // Blank columns between adjacent status-bar slots.
 const STATUS_SLOT_GAP: usize = 1;
+// Minimum digits reserved per number in the page counter. The real page count
+// is unknown while a PDF is opening, so the slot is sized for at least this
+// many digits up front (covers documents up to 9999 pages) and only grows for
+// larger ones — keeping the indicator from shifting on first load.
+const PAGE_COUNTER_MIN_DIGITS: usize = 4;
 pub(crate) const PDF_LOADING_FRAMES: [&str; 4] = ["◰", "◳", "◲", "◱"];
+
+/// Columns a `{page}/{total} (100%)` counter needs for `total` pages, never
+/// reserving fewer than `PAGE_COUNTER_MIN_DIGITS` digits per number so the
+/// width is stable before the real count is known.
+fn page_counter_width(total: usize) -> usize {
+  let digits = total.to_string().len().max(PAGE_COUNTER_MIN_DIGITS);
+  // "{d}/{d} (100%)": two numbers, a '/', and the literal " (100%)".
+  digits * 2 + 1 + " (100%)".len()
+}
 
 /// Reading position / page counter, drawn at the right edge of the status bar.
 struct ProgressSlot<'a> {
@@ -158,36 +172,43 @@ impl Editor {
       .min(100)
   }
 
-  /// `(current_page_1based, total_pages)` for a streaming PDF whose page table
-  /// is known, or `None` when the page counter is off or the format has no
-  /// physical pages.
+  /// `(current_page_1based, total_pages)` to actually render, or `None` when
+  /// the page counter is off or no real page table exists yet (the format has
+  /// no physical pages, or a PDF is still opening). Page numbers are only
+  /// available for PDFs, whose page table gives an authoritative count; flowed
+  /// formats (EPUB, DOCX, plain text, …) have no fixed pages.
   fn current_page_indicator(&self) -> Option<(u32, usize)> {
-    let total_pages = self.page_counter_total()?;
-    let (page, _) = self.current_pdf_position()?;
-    Some((page, total_pages))
-  }
-
-  /// Total page count to surface, or `None` when the page counter is disabled
-  /// (the default) or the document has no physical pages. Page numbers are
-  /// only available for PDFs, whose page table gives an authoritative count;
-  /// flowed formats (EPUB, DOCX, plain text, …) have no fixed pages.
-  fn page_counter_total(&self) -> Option<usize> {
     if !self.show_page_numbers {
       return None;
     }
     let total_pages = self.pdf_streaming.as_ref()?.pages.len();
-    (total_pages > 0).then_some(total_pages)
+    if total_pages == 0 {
+      return None;
+    }
+    let (page, _) = self.current_pdf_position()?;
+    Some((page, total_pages))
   }
 
-  /// Columns reserved for the progress indicator. When the page counter is
-  /// shown this is held at the widest it can reach for the current document
-  /// (`{total}/{total} (100%)`) so its left edge — and therefore the loading
-  /// spinners drawn beside it — stay put as the page, percentage, and loading
-  /// placeholder fill in. Otherwise it is just the percentage (`100%`).
+  /// Whether this session renders a PDF through the streaming pipeline — true
+  /// from the moment the open is kicked off (`pdf_pending`), before any page
+  /// table exists, through streaming and full load.
+  fn is_pdf_session(&self) -> bool {
+    self.pdf_pending.is_some() || self.pdf_streaming.is_some()
+  }
+
+  /// Columns reserved for the progress indicator, held stable for the whole
+  /// session so its left edge — and the loading spinners packed beside it —
+  /// never shift as contents fill in. With page numbers on for a PDF the real
+  /// count isn't known until the open finishes, so reserving the exact
+  /// `{total}/{total} (100%)` would jump the instant streaming begins; instead
+  /// reserve a digit-floored page counter that the real value only ever fills
+  /// into. Otherwise it is just the percentage (`100%`).
   pub(crate) fn progress_indicator_slot_width(&self) -> usize {
-    match self.page_counter_total() {
-      Some(total) => format!("{total}/{total} (100%)").len(),
-      None => "100%".len(),
+    if self.show_page_numbers && self.is_pdf_session() {
+      let total = self.pdf_streaming.as_ref().map_or(0, |s| s.pages.len());
+      page_counter_width(total)
+    } else {
+      "100%".len()
     }
   }
 
