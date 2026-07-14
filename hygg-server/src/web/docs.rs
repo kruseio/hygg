@@ -29,31 +29,46 @@ pub(crate) struct DocSource {
   pub(crate) markdown: &'static str,
 }
 
+// The paths below go through `hygg-server/docs/pages/`, which holds a symlink
+// per page pointing back out at the repository's `docs/pages/`. The indirection
+// is what makes this crate publishable: `cargo package` copies only files at or
+// under the package root, so the `../../../docs/pages/*.md` these once named
+// were simply absent from the tarball and every `cargo publish -p hygg-server`
+// died in the verification build — which is why the crate sat at 0.1.15 while
+// the rest of the workspace moved on. Cargo resolves each symlink and writes
+// the *content* into the tarball as a regular file, so the published crate
+// carries real markdown while the repository keeps one copy of it, at the root,
+// where README.md and docs/README.md link to it.
+//
+// Windows caveat: a clone without symlink support (Git's `core.symlinks=false`)
+// leaves these as text files holding their target path, which would embed that
+// path as a page's body. Enable Developer Mode or `git config core.symlinks
+// true` if you build hygg-server there.
 const DOC_SOURCES: &[DocSource] = &[
   DocSource {
     slug: "getting-started",
     title: "Getting Started",
-    markdown: include_str!("../../../docs/pages/getting-started.md"),
+    markdown: include_str!("../../docs/pages/getting-started.md"),
   },
   DocSource {
     slug: "text-to-speech",
     title: "Text to Speech",
-    markdown: include_str!("../../../docs/pages/tts.md"),
+    markdown: include_str!("../../docs/pages/tts.md"),
   },
   DocSource {
     slug: "reference",
     title: "Reference",
-    markdown: include_str!("../../../docs/pages/reference.md"),
+    markdown: include_str!("../../docs/pages/reference.md"),
   },
   DocSource {
     slug: "development",
     title: "Development",
-    markdown: include_str!("../../../docs/pages/development.md"),
+    markdown: include_str!("../../docs/pages/development.md"),
   },
   DocSource {
     slug: "benchmark",
     title: "Benchmark",
-    markdown: include_str!("../../../docs/pages/benchmark.md"),
+    markdown: include_str!("../../docs/pages/benchmark.md"),
   },
 ];
 
