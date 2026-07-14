@@ -3,7 +3,20 @@ target
 test-data/local
 progress.json
 TODO.md
-hygg-server/data/hygg.db
+hygg-server/data/
+# A SQLite DB is also created here if the server is run from the repo root
+# (e.g. `cargo run -p hygg-server`) instead of from hygg-server/.
+/data/
+hygg-server/.env
 test-upload.txt
 AGENTS.md
 .DS_Store
+
+# hygg-pwa: Trunk build output + Playwright MCP scratch (screenshots/fixtures)
+hygg-pwa/dist/
+.playwright-mcp/
+hygg-pwa/.env
+
+# hygg-gui: optional local server URL override + the generated macOS app bundle.
+hygg-gui/.env
+hygg-gui/*.app/

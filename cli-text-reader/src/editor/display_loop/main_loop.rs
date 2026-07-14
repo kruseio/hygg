@@ -1,6 +1,6 @@
 use std::io::{self, IsTerminal};
 
-use super::super::core::Editor;
+use super::super::core::{Editor, SnapshotReason};
 use super::LoopControl;
 
 impl Editor {
@@ -34,11 +34,11 @@ impl Editor {
         LoopControl::Proceed => {}
       }
 
-      self.save_progress_snapshot(false)?;
+      self.save_progress_snapshot(SnapshotReason::Passive)?;
       self.debug_log("Main loop iteration complete\n");
     }
 
-    self.save_progress_snapshot(true)?;
+    self.save_progress_snapshot(SnapshotReason::Exit)?;
     Ok(())
   }
 }

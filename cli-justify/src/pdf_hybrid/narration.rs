@@ -28,7 +28,9 @@ fn looks_like_page_number(trimmed: &str) -> bool {
     .or_else(|| trimmed.strip_prefix("p. "))
     .unwrap_or(trimmed)
     .trim();
-  !body.is_empty() && body.len() <= 4 && body.bytes().all(|b| b.is_ascii_digit())
+  !body.is_empty()
+    && body.len() <= 4
+    && body.bytes().all(|b| b.is_ascii_digit())
 }
 
 pub fn pdf_hybrid_narration_skip_mask(lines: &[String]) -> Vec<bool> {

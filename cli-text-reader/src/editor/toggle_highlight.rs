@@ -77,14 +77,21 @@ impl Editor {
     if overlapping.is_empty() {
       // No overlapping highlights, add new one
       self.debug_log("No overlapping highlights found, adding new highlight");
-      self.highlights.add_highlight(start_pos, end_pos);
+      if self.highlights.add_highlight(start_pos, end_pos) {
+        self.enqueue_highlight_sync(start_pos, end_pos, false);
+      }
     } else {
       // Remove all overlapping highlights
       self.debug_log(&format!(
         "Found {} overlapping highlights, removing them",
         overlapping.len()
       ));
-      self.highlights.remove_overlapping_highlights(start_pos, end_pos);
+      let removed =
+        self.highlights.remove_overlapping_highlights(start_pos, end_pos);
+      // Sync each removal as a tombstone keyed by its exact span.
+      for highlight in removed {
+        self.enqueue_highlight_sync(highlight.start, highlight.end, true);
+      }
     }
 
     // Save highlights to disk

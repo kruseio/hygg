@@ -23,6 +23,12 @@ pub(crate) fn is_code_like_line(trimmed: &str) -> bool {
       || trimmed.starts_with('.'))
 }
 
+// Everything below `is_code_like_line` feeds only the native-only,
+// layout-fidelity `pdf_to_text` path (plaintext-fallback scoring) and the
+// native `stream_recovery` pass. The wasm/PWA build reaches `heuristics` solely
+// through `sanitize::labels` → `is_code_like_line`, so the rest is gated off
+// wasm to avoid dead-code warnings there.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn is_heading_like_line(trimmed: &str) -> bool {
   let word_count = trimmed.split_whitespace().count();
   (2..=10).contains(&word_count)
@@ -30,6 +36,7 @@ pub(crate) fn is_heading_like_line(trimmed: &str) -> bool {
     && !trimmed.ends_with(['.', ',', ';', ':', '!', '?'])
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn is_intro_line(trimmed: &str) -> bool {
   if !trimmed.ends_with(':') || is_code_like_line(trimmed) {
     return false;
@@ -38,6 +45,7 @@ pub(crate) fn is_intro_line(trimmed: &str) -> bool {
   (2..=18).contains(&words)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Default, Clone, Copy)]
 struct TextStats {
   non_empty_lines: usize,
@@ -46,6 +54,7 @@ struct TextStats {
   sparse_intro_blocks: usize,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl TextStats {
   fn quality_score(self) -> usize {
     let richness = self.non_empty_lines
@@ -55,6 +64,7 @@ impl TextStats {
   }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn analyze_text(text: &str) -> TextStats {
   let lines: Vec<&str> = text.lines().collect();
   let mut stats = TextStats::default();
@@ -112,11 +122,13 @@ fn analyze_text(text: &str) -> TextStats {
 /// either at least one detected sparse intro -> code block that the
 /// plaintext path can outscore by >= 120%, or a near-empty layout that
 /// could plausibly be improved by 40+ lines.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn layout_needs_plaintext_fallback(layout_sanitized: &str) -> bool {
   let layout = analyze_text(layout_sanitized);
   layout.sparse_intro_blocks > 0 || layout.non_empty_lines < 20
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn should_prefer_plaintext_output(
   layout_sanitized: &str,
   plaintext_sanitized: &str,
@@ -132,7 +144,7 @@ pub(crate) fn should_prefer_plaintext_output(
     >= layout.quality_score().saturating_mul(120)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
   use super::layout_needs_plaintext_fallback;
 

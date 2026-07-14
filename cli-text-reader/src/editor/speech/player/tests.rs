@@ -48,13 +48,16 @@ fn synth_text_injects_period_at_inner_paragraph_break() {
 #[test]
 fn trailing_pause_matches_boundary_kind() {
   // Paragraph break (blank line between): full stop.
-  let pause = trailing_pause_secs(&word_on("title", 0), Some(&word_on("Body", 2)));
+  let pause =
+    trailing_pause_secs(&word_on("title", 0), Some(&word_on("Body", 2)));
   assert!((pause - 0.50).abs() < f32::EPSILON, "paragraph: {pause}");
   // Sentence end, same paragraph: shorter stop.
-  let pause = trailing_pause_secs(&word_on("end.", 4), Some(&word_on("Next", 5)));
+  let pause =
+    trailing_pause_secs(&word_on("end.", 4), Some(&word_on("Next", 5)));
   assert!((pause - 0.25).abs() < f32::EPSILON, "sentence: {pause}");
   // Mid-sentence forced split: stay gapless.
-  let pause = trailing_pause_secs(&word_on("the", 4), Some(&word_on("rest", 5)));
+  let pause =
+    trailing_pause_secs(&word_on("the", 4), Some(&word_on("rest", 5)));
   assert_eq!(pause, 0.0, "mid-sentence");
   // Last chunk: nothing follows.
   assert_eq!(trailing_pause_secs(&word_on("end.", 0), None), 0.0);

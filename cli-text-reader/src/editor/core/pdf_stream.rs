@@ -1,11 +1,67 @@
 use super::{
   Editor, PDF_BUFFER_INDEX, PdfCursorAnchor, page_and_offset_for_line,
-  reanchored_pdf_line,
+  reanchored_pdf_line, restored_pdf_viewport,
 };
 use crate::editor::streaming::{LoadedPage, PageSlot};
 use cli_pdf_to_text::PdfLineKind;
 
 impl Editor {
+  /// Apply the pending streaming-PDF resume target *once the target page has
+  /// real content*. Until then this is a no-op, so the saved position survives
+  /// a placeholder's 1-line height — the row would clamp to 0, and the word
+  /// anchor would "resolve" against the placeholder's own characters and land
+  /// at the page start (the bundled-OCR resume bug: nothing preloads, so the
+  /// target page is always a placeholder at install). Clears the target after
+  /// applying so later page loads are governed only by the sticky re-anchoring
+  /// in `drain_pdf_stream`.
+  pub(crate) fn apply_pdf_restore_target_if_ready(&mut self) {
+    let Some(target) = self.pdf_restore_target else {
+      return;
+    };
+    let Some(state) = self.pdf_streaming.as_ref() else {
+      return;
+    };
+    let idx = (target.page as usize).saturating_sub(1);
+    // Wait for the page *and its immediate neighbours*: the anchor was saved
+    // against the seam-stitched rendering, and a page's own slice shifts by
+    // its head-partial rows until the previous page loads.
+    if !state.page_render_settled(idx) {
+      return;
+    }
+    let line_start = state.line_start_for_page(idx);
+    let page_lines = state.page_line_count(idx);
+    // The page is loaded: resolve the exact row now. The width-independent
+    // word anchor wins; the saved row (clamped to the page's real height) is
+    // the fallback for saves without one.
+    let cursor_y_hint = target.cursor_y;
+    let line_in_page = match target.word_offset {
+      Some(word) => crate::word_anchor::line_for_word_in_range(
+        &self.lines,
+        &self.line_kinds,
+        line_start,
+        line_start + page_lines,
+        word,
+      ),
+      None => target.line_in_page.min(page_lines.saturating_sub(1)),
+    };
+    let document_line = line_start + line_in_page;
+    let content_height = self.height.saturating_sub(1);
+    let (offset, cursor_y) =
+      restored_pdf_viewport(document_line, content_height, cursor_y_hint);
+    if let Some(buffer) = self.buffers.get_mut(PDF_BUFFER_INDEX) {
+      buffer.offset = offset;
+      buffer.cursor_y = cursor_y;
+    }
+    if self.active_buffer == PDF_BUFFER_INDEX {
+      self.offset = offset;
+      self.cursor_y = cursor_y;
+      self.last_offset = document_line;
+      self.last_saved_viewport_offset = self.offset;
+    }
+    self.pdf_restore_target = None;
+    self.needs_redraw = true;
+  }
+
   pub(crate) fn pdf_cursor_anchor(&self) -> Option<PdfCursorAnchor> {
     let state = self.pdf_streaming.as_ref()?;
     if state.pages.is_empty() {

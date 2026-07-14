@@ -6,6 +6,38 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, mpsc};
 
 #[test]
+fn home_command_flags_exit_to_home_and_ends_the_reader() {
+  let mut editor = Editor::new(vec!["line".to_string()], 80);
+
+  let exit = editor.handle_home_command().expect("home command should succeed");
+
+  // Returning `true` ends the reader loop; the flag tells `run()` to report
+  // `RunOutcome::Home` so the launcher re-shows the library picker.
+  assert!(exit);
+  assert!(editor.exit_to_home);
+}
+
+#[test]
+fn home_command_unwinds_an_open_overlay_before_exiting() {
+  let mut editor = Editor::new(
+    vec!["doc line one".to_string(), "doc line two".to_string()],
+    80,
+  );
+  // Open a read-only overlay (as :help / :credits would) on top of the doc.
+  editor.create_overlay("help", vec!["help text".to_string()]);
+  assert_eq!(editor.view_mode, ViewMode::Overlay);
+
+  editor.handle_home_command().expect("home command should succeed");
+
+  // We unwound back to the underlying document so the progress snapshot saved
+  // on the way out belongs to the document, not the overlay's scratch buffer.
+  assert_eq!(editor.view_mode, ViewMode::Normal);
+  assert_eq!(editor.active_buffer, 0);
+  assert_eq!(editor.total_lines, 2);
+  assert!(editor.exit_to_home);
+}
+
+#[test]
 fn ocr_on_off_do_not_open_overlay_or_split_from_pdf_view() {
   let mut editor = Editor::new(vec!["pdf line".to_string()], 80);
   editor.active_buffer = 0;

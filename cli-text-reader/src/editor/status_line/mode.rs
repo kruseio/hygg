@@ -112,9 +112,21 @@ impl Editor {
         )?;
       }
       _ => {
-        // Normal mode: surface a narration failure here, else clear the line.
+        // Normal mode: prompt to jump to a newer server position, surface a
+        // narration failure, else clear the line.
         execute!(stdout, MoveTo(0, (self.height - 1) as u16))?;
-        if let Some(err) = self.tts_error_message() {
+        if self.server_progress_prompt {
+          write!(
+            stdout,
+            "↯ position updated on another device — :server-progress to jump, or scroll to keep yours"
+          )?;
+          execute!(
+            stdout,
+            crossterm::terminal::Clear(
+              crossterm::terminal::ClearType::UntilNewLine
+            )
+          )?;
+        } else if let Some(err) = self.tts_error_message() {
           write!(stdout, "⚠ narration: {err}")?;
           execute!(
             stdout,
@@ -195,8 +207,14 @@ impl Editor {
         write!(buffer, "-- TUTORIAL --")?;
       }
       _ => {
-        // Normal mode: surface a narration failure here, else leave it blank.
-        if let Some(err) = self.tts_error_message() {
+        // Normal mode: prompt to jump to a newer server position, surface a
+        // narration failure, else leave it blank.
+        if self.server_progress_prompt {
+          write!(
+            buffer,
+            "↯ position updated on another device — :server-progress to jump, or scroll to keep yours"
+          )?;
+        } else if let Some(err) = self.tts_error_message() {
           write!(buffer, "⚠ narration: {err}")?;
         }
       }

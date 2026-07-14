@@ -16,6 +16,10 @@ impl Editor {
   // silent fake voice that still drives the highlight + auto-scroll.
   pub(crate) fn start_narration(&mut self) {
     self.stop_narration();
+    // Master switch (ENABLE_TTS / `--tts off`): narration is inert when off.
+    if !self.tts_enabled {
+      return;
+    }
     let all = build_word_spans(&self.lines, &self.line_kinds);
     let current_line = self.offset + self.cursor_y;
     // Narrate from the first word at or after the reading line. If there is no

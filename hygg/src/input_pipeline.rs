@@ -7,6 +7,9 @@ pub(crate) struct PreparedInput {
   pub(crate) lines: Vec<String>,
   pub(crate) temp_file: Option<String>,
   pub(crate) raw_content: Option<String>,
+  /// Path the document was read from, when it came from a file (not stdin).
+  /// Threaded into the reader so the open is recorded in the `:home` library.
+  pub(crate) source_path: Option<String>,
 }
 
 pub(crate) fn read_stdin_content() -> Option<String> {
@@ -32,6 +35,7 @@ pub(crate) fn prepare_input(
       lines: cli_justify::justify(&content, args.col),
       temp_file: None,
       raw_content: Some(content),
+      source_path: None,
     });
   }
 
@@ -40,6 +44,7 @@ pub(crate) fn prepare_input(
       lines: vec![],
       temp_file: None,
       raw_content: None,
+      source_path: None,
     });
   };
 
@@ -113,6 +118,7 @@ fn process_file_input(
     lines,
     temp_file: Some(temp_file),
     raw_content: Some(content),
+    source_path: Some(file.to_string()),
   })
 }
 
@@ -127,6 +133,15 @@ fn read_content_without_ocr(
   extension: Option<&str>,
 ) -> Result<String, Box<dyn std::error::Error>> {
   match extension {
+    // Plain text reads directly — no pandoc/round-trip needed.
+    Some("txt" | "text") => match std::fs::read_to_string(file) {
+      Ok(content) => Ok(content),
+      Err(e) => {
+        eprintln!("Error:\nUnable to read text file '{file}'\n");
+        eprintln!("Details:\n{e}\n");
+        std::process::exit(1);
+      }
+    },
     Some("epub") => match cli_epub_to_text::epub_to_text(file) {
       Ok(content) => Ok(content),
       Err(e) => {

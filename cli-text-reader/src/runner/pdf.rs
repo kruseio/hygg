@@ -2,88 +2,28 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::debug;
-use crate::editor::Editor;
 use crate::editor::streaming::{PendingPdfStream, StreamReady};
 use crate::editor::streaming_loader::spawn_loader;
-use crate::progress::load_progress;
+use crate::editor::{Editor, RunOutcome};
+
+use super::pdf_position::load_saved_pdf_position;
+// Re-exported so other modules (and `runner::tests`) keep resolving it at the
+// original `runner::pdf::infer_pdf_position_from_flat_offset` path.
+pub(crate) use super::pdf_position::infer_pdf_position_from_flat_offset;
 
 const PDF_PRELOAD_RADIUS: usize = 10;
-
-#[derive(Clone, Copy, Debug, Default)]
-struct SavedPdfPosition {
-  target_page: Option<usize>,
-  line_in_page: Option<usize>,
-  cursor_y: Option<usize>,
-  flat_offset: Option<usize>,
-}
-
-impl SavedPdfPosition {
-  fn from_progress(progress: crate::progress::Progress) -> Self {
-    let target_page = progress.page.map(|page| page as usize);
-    Self {
-      target_page,
-      line_in_page: progress.line_in_page,
-      cursor_y: progress.cursor_y,
-      flat_offset: target_page.is_none().then_some(progress.offset),
-    }
-  }
-}
-
-fn load_saved_pdf_position(document_hash: u64) -> SavedPdfPosition {
-  load_progress(document_hash)
-    .map(SavedPdfPosition::from_progress)
-    .unwrap_or_default()
-}
-
-pub(crate) fn infer_pdf_position_from_flat_offset(
-  stream: &cli_pdf_to_text::PdfStream,
-  flat_offset: usize,
-  col: usize,
-) -> Option<(usize, usize)> {
-  let total_pages = stream.total_pages();
-  if total_pages == 0 {
-    return None;
-  }
-
-  let mut remaining = flat_offset;
-  for page in 1..=total_pages {
-    let page_lines = stream
-      .extract_page(page)
-      .map(|raw| {
-        crate::editor::streaming::LoadedPage::from_raw(raw, col)
-          .standalone_lines
-          .len()
-          .max(1)
-      })
-      .unwrap_or(1);
-
-    if remaining < page_lines {
-      return Some((page, remaining));
-    }
-    remaining = remaining.saturating_sub(page_lines);
-
-    if page < total_pages {
-      if remaining == 0 {
-        return Some((page + 1, 0));
-      }
-      remaining = remaining.saturating_sub(1);
-    }
-  }
-
-  Some((total_pages, 0))
-}
 
 pub fn run_cli_text_reader_pdf_path(
   pdf_path: String,
   col: usize,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<RunOutcome, Box<dyn std::error::Error>> {
   run_cli_text_reader_pdf_path_inner(pdf_path, col, false)
 }
 
 pub fn run_cli_text_reader_pdf_path_with_bundled_ocr(
   pdf_path: String,
   col: usize,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<RunOutcome, Box<dyn std::error::Error>> {
   run_cli_text_reader_pdf_path_inner(pdf_path, col, true)
 }
 
@@ -91,7 +31,7 @@ fn run_cli_text_reader_pdf_path_inner(
   pdf_path: String,
   col: usize,
   bundled_ocr: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<RunOutcome, Box<dyn std::error::Error>> {
   debug::init_debug_logging()?;
   debug::debug_log(
     "main",
@@ -105,6 +45,27 @@ fn run_cli_text_reader_pdf_path_inner(
   let canonical_str = canonical_path.to_string_lossy().to_string();
   let document_hash = crate::progress::generate_hash(&canonical_str);
 
+  // Record this open in the local library index so it shows on `:home` and can
+  // be re-opened to resume. The content-derived `book_id` (for sync) and exact
+  // line count are filled once the stream is available in a later phase.
+  let mut entry = crate::library::LibraryEntry::from_path(
+    document_hash,
+    None,
+    &canonical_str,
+    0,
+  );
+  // Preserve the per-document sync preference across re-opens (a fresh
+  // `from_path` would reset it).
+  if let Some(prev) = crate::library::latest_entry(document_hash) {
+    entry.local_sync_mode = prev.local_sync_mode;
+    entry.server_sync_mode = prev.server_sync_mode;
+    entry.auto_sync_optin = prev.auto_sync_optin;
+  }
+  let entry_sync_mode = entry.effective_sync_mode();
+  if let Err(e) = crate::library::record_open(&entry) {
+    debug::debug_log_error("library", &format!("record_open failed: {e}"));
+  }
+
   // Spawn the open in the background so the editor can paint immediately.
   let (ready_tx, ready_rx) = std::sync::mpsc::channel::<StreamReady>();
   let path_for_thread = canonical_str.clone();
@@ -112,6 +73,9 @@ fn run_cli_text_reader_pdf_path_inner(
   let saved_target_page = saved_position.target_page.unwrap_or(1);
   let saved_line_in_page = saved_position.line_in_page;
   let saved_cursor_y = saved_position.cursor_y;
+  let saved_word_offset = saved_position.word_offset;
+  let saved_updated_at = saved_position.updated_at;
+  let saved_reading_time = saved_position.reading_time_seconds;
 
   // Size of the synchronous preload window around the cursor's saved page.
   // Picked so the viewport is fully covered by real content on first render
@@ -193,6 +157,7 @@ fn run_cli_text_reader_pdf_path_inner(
   let mut editor =
     Editor::new_with_content(vec![String::new()], col, canonical_str.clone());
   editor.document_hash = document_hash;
+  editor.sync_mode = entry_sync_mode;
   editor.pdf_source_path = Some(canonical_str.clone());
   editor.ocr_enabled = bundled_ocr;
   editor.pdf_pending = Some(PendingPdfStream {
@@ -201,6 +166,7 @@ fn run_cli_text_reader_pdf_path_inner(
     canonical_path_display: canonical_str,
     restore_line_in_page: saved_line_in_page,
     restore_cursor_y: saved_cursor_y,
+    restore_word_offset: saved_word_offset,
   });
 
   // Mirror the cursor placement that `poll_pending_pdf_stream` will do once
@@ -221,6 +187,18 @@ fn run_cli_text_reader_pdf_path_inner(
       restore_cursor_y.min(content_height.saturating_sub(1))
     };
   editor.cursor_y = predicted_cursor_y;
+
+  // Seed the local-progress timestamp from the restored position. The PDF
+  // branch of `display_init` skips `load_progress` (the streaming buffer isn't
+  // built yet), so without this `last_local_progress_updated_at` stays None and
+  // `server_progress_is_newer_than_local` treats *every* server row as newer —
+  // making startup reconcile jump to a stale server position on each reopen.
+  // The non-streaming reader seeds this in `display_init` for the same reason.
+  if saved_updated_at > 0 {
+    editor.last_local_progress_updated_at = Some(saved_updated_at);
+  }
+  editor.reading_time_seconds = saved_reading_time;
+  editor.reading_persisted_seconds = saved_reading_time;
 
   let result = editor.run();
 

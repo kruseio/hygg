@@ -43,6 +43,20 @@ impl Editor {
       self.mark_dirty();
     }
 
+    // Drain background sync notifications (server progress changes). Zero cost
+    // when no server is configured.
+    if self.sync.is_some() {
+      self.poll_sync();
+    }
+    // Expire the server-progress prompt once the post-scroll grace passes
+    // (cheap `Option` check; a no-op until the reader scrolls past a prompt).
+    self.tick_server_progress_grace();
+
+    // Accrue active reading time and persist it on a slow cadence while the
+    // user is just reading (no cursor movement to trigger a snapshot).
+    self.accrue_reading_time();
+    self.maybe_flush_reading_time();
+
     // Manage the "Loaded in X.Xs" indicator: tick through the 500 ms
     // hold so the message appears promptly, then expire after 3 s.
     {

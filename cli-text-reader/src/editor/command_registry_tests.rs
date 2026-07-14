@@ -14,6 +14,14 @@ fn empty_completion_lists_top_level_commands() {
 }
 
 #[test]
+fn home_and_rex_both_return_to_the_library() {
+  assert_eq!(classify_command("home"), RegisteredCommand::Home);
+  assert_eq!(classify_command("Rex"), RegisteredCommand::Home);
+  // `:Rex` is case-sensitive (mirrors Vim's netrw command).
+  assert_eq!(classify_command("rex"), RegisteredCommand::Unknown);
+}
+
+#[test]
 fn unique_top_level_prefix_completes_in_place() {
   let completion = complete_command("ocr");
 
@@ -26,7 +34,10 @@ fn ambiguous_top_level_prefix_lists_matches() {
   let completion = complete_command("no");
 
   assert!(completion.replacement.is_none());
-  assert_eq!(completion.suggestions, vec!["nohl", "nohlsearch", "notutorial"]);
+  assert_eq!(
+    completion.suggestions,
+    vec!["nohl", "nohlsearch", "note", "notutorial"]
+  );
 }
 
 #[test]
@@ -71,6 +82,10 @@ fn registry_classifies_dispatch_commands() {
     RegisteredCommand::Tutorial(TutorialCommand::Step(3))
   );
   assert_eq!(
+    classify_command("local-progress"),
+    RegisteredCommand::LocalProgress
+  );
+  assert_eq!(
     classify_command("!echo ok"),
     RegisteredCommand::Shell("echo ok".to_string())
   );
@@ -83,4 +98,5 @@ fn help_metadata_comes_from_registry() {
   assert!(help.contains(":ocr on, :ocr off"));
   assert!(help.contains(":!{cmd}"));
   assert!(help.contains(":tutorial {n}"));
+  assert!(help.contains(":local-progress"));
 }

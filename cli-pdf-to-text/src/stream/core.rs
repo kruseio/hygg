@@ -1,3 +1,4 @@
+#[cfg(not(target_arch = "wasm32"))]
 use hygg_shared::normalize_file_path;
 
 use crate::sanitize::sanitize_layout_text;
@@ -20,16 +21,66 @@ use crate::stream::ocr::{
 
 impl PdfStream {
   /// Open a PDF and parse its catalog. Does not extract any page text.
+  ///
+  /// Path-based; native-only. pdf_oxide gates its filesystem `open` off wasm,
+  /// and there is no filesystem in the browser — the PWA uses [`open_bytes`].
+  #[cfg(not(target_arch = "wasm32"))]
   pub fn open(pdf_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
     Self::open_with_optional_ocr(pdf_path, false)
   }
 
+  #[cfg(not(target_arch = "wasm32"))]
   pub fn open_with_bundled_ocr(
     pdf_path: &str,
   ) -> Result<Self, Box<dyn std::error::Error>> {
     Self::open_with_optional_ocr(pdf_path, true)
   }
 
+  /// Open a PDF from in-memory bytes — filesystem-free, for the browser PWA.
+  ///
+  /// pdf_oxide's `open_from_bytes` parses lazily just like the path-based
+  /// `open`, so per-page extraction stays fast. `canonical_path` is left empty
+  /// (there is no source file); OCR is never enabled on this path (the bundled
+  /// engine is server-side), so scanned PDFs return empty text here.
+  pub fn open_bytes(
+    pdf_bytes: Vec<u8>,
+  ) -> Result<Self, Box<dyn std::error::Error>> {
+    let doc = pdf_oxide::PdfDocument::from_bytes(pdf_bytes)
+      .map_err(|e| format!("pdf_oxide from_bytes failed: {e:?}"))?;
+    let total_pages = doc
+      .page_count()
+      .map_err(|e| format!("pdf_oxide page_count failed: {e:?}"))?;
+    Ok(Self {
+      canonical_path: std::path::PathBuf::new(),
+      doc,
+      total_pages,
+      #[cfg(feature = "pdf-ocr-bundled")]
+      ocr_engine: None,
+    })
+  }
+
+  /// Open an in-memory PDF with the bundled OCR engine attached — for the
+  /// server-side `/convert` endpoint that OCRs scanned uploads. Native-only and
+  /// gated on `pdf-ocr-bundled`; pairs `from_bytes` with the OCR engine the
+  /// path-based `open_with_bundled_ocr` uses.
+  #[cfg(all(not(target_arch = "wasm32"), feature = "pdf-ocr-bundled"))]
+  pub fn open_bytes_with_bundled_ocr(
+    pdf_bytes: Vec<u8>,
+  ) -> Result<Self, Box<dyn std::error::Error>> {
+    let doc = pdf_oxide::PdfDocument::from_bytes(pdf_bytes)
+      .map_err(|e| format!("pdf_oxide from_bytes failed: {e:?}"))?;
+    let total_pages = doc
+      .page_count()
+      .map_err(|e| format!("pdf_oxide page_count failed: {e:?}"))?;
+    Ok(Self {
+      canonical_path: std::path::PathBuf::new(),
+      doc,
+      total_pages,
+      ocr_engine: Some(crate::ocr::bundled_ocr_engine()?),
+    })
+  }
+
+  #[cfg(not(target_arch = "wasm32"))]
   fn open_with_optional_ocr(
     pdf_path: &str,
     enable_ocr: bool,

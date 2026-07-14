@@ -11,6 +11,23 @@ pub(crate) fn render_pdf_images(
   col: usize,
   images: &[pdf_oxide::extractors::PdfImage],
 ) -> Vec<VisualImageRows> {
+  render_pdf_images_sourced(doc, page_0based, col, images)
+    .into_iter()
+    .map(|(rows, _)| rows)
+    .collect()
+}
+
+/// Like [`render_pdf_images`] but also returns the full-resolution decoded
+/// source image behind each ASCII-art block, in the same order/filtering (so a
+/// GUI can render a crisp raster in place of the half-block art without moving
+/// anything). The ASCII-art path stays authoritative for what actually lands in
+/// the composed lines — this only hands back the extra pixels alongside.
+pub(crate) fn render_pdf_images_sourced(
+  doc: &pdf_oxide::PdfDocument,
+  page_0based: usize,
+  col: usize,
+  images: &[pdf_oxide::extractors::PdfImage],
+) -> Vec<(VisualImageRows, image::DynamicImage)> {
   if col == 0 {
     return Vec::new();
   }
@@ -44,7 +61,7 @@ pub(crate) fn render_pdf_images(
       page_width,
       col,
     ) {
-      out.push(rows);
+      out.push((rows, dynamic_image));
     }
   }
   out

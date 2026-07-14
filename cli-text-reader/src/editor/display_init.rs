@@ -5,14 +5,15 @@ use crossterm::{
 };
 use std::io::{self, IsTerminal, Result as IoResult};
 
-use super::core::{Editor, EditorMode, ViewMode};
+use super::core::{Editor, EditorMode, RunOutcome, ViewMode};
 use crate::bookmarks::load_bookmarks;
 use crate::config::load_config;
 use crate::highlights::load_highlights;
+use crate::notes::load_notes;
 use crate::progress::load_progress;
 
 impl Editor {
-  pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+  pub fn run(&mut self) -> Result<RunOutcome, Box<dyn std::error::Error>> {
     let mut stdout = io::stdout();
     let config = load_config();
 
@@ -41,6 +42,41 @@ impl Editor {
       Err(e) => {
         self.debug_log_error(&format!("Failed to load highlights: {e}"));
       }
+    }
+
+    // Load notes
+    match load_notes(self.document_hash) {
+      Ok(note_data) => {
+        self.debug_log(&format!("Loaded {} notes", note_data.notes.len()));
+        self.notes = note_data;
+      }
+      Err(e) => {
+        self.debug_log_error(&format!("Failed to load notes: {e}"));
+      }
+    }
+
+    // Derive the stable cross-device book id once (cheap; from file bytes), and
+    // start the background sync engine when auto-sync is enabled. All sync work
+    // runs off-thread; when no server is configured this leaves `self.sync` as
+    // None and the reader is entirely offline.
+    if self.book_id.is_none() {
+      let path =
+        self.source_path.clone().or_else(|| self.pdf_source_path.clone());
+      if let Some(path) = path {
+        self.book_id =
+          hygg_shared::sync::book_id_for_file(std::path::Path::new(&path));
+      }
+    }
+    let server_config = crate::config::load_server_config();
+    // The automatic-sync scope and this document's opt-in gate what gets
+    // queued; the master switch (`sync_enabled`) gates whether the engine even
+    // runs. `off` (master) leaves the reader fully serverless.
+    self.sync_policy = server_config.auto_sync;
+    if let Some(entry) = crate::library::latest_entry(self.document_hash) {
+      self.auto_sync_optin = entry.auto_sync_optin;
+    }
+    if server_config.sync_enabled && self.sync.is_none() {
+      self.sync = crate::sync::SyncHandle::spawn(&server_config);
     }
 
     // Tutorial will be shown automatically on first launch if enabled
@@ -80,8 +116,20 @@ impl Editor {
             "Restored exact viewport state: offset={viewport_offset}, cursor_y={saved_cursor_y}"
           ));
           } else {
-            // Fallback to old logic for backward compatibility
-            let saved_line = progress.offset;
+            // No exact viewport (older save, or a cross-device position whose
+            // per-line anchors were dropped): resolve the width-independent
+            // word anchor to this reader's own line when present,
+            // else the raw line.
+            let saved_line = match progress.word_offset {
+              Some(word) => crate::word_anchor::line_for_word_in_range(
+                &self.lines,
+                &self.line_kinds,
+                0,
+                self.lines.len(),
+                word,
+              ),
+              None => progress.offset,
+            };
             let content_height = self.height.saturating_sub(1);
             let center_y = content_height / 2;
 
@@ -113,6 +161,9 @@ impl Editor {
           // Update tracking fields
           self.last_offset = progress.offset;
           self.last_saved_viewport_offset = self.offset;
+          self.last_local_progress_updated_at = Some(progress.updated_at);
+          self.reading_time_seconds = progress.reading_time_seconds;
+          self.reading_persisted_seconds = progress.reading_time_seconds;
           skip_first_center = true;
         }
         Err(e) => {
@@ -121,6 +172,13 @@ impl Editor {
           // cursor_y is already initialized to height/2 in the constructor
         }
       };
+    }
+
+    if self.sync.is_some() {
+      self.queue_reconcile_sync_state(true);
+      if let Some(sync) = self.sync.as_ref() {
+        sync.flush_now();
+      }
     }
 
     if std::io::stdout().is_terminal() {
@@ -140,8 +198,14 @@ impl Editor {
 
     self.main_loop(&mut stdout, skip_first_center)?;
 
+    // Flush a final position and stop the background sync thread cleanly.
+    if let Some(sync) = self.sync.as_mut() {
+      sync.flush_now();
+      sync.shutdown();
+    }
+
     self.cleanup(&mut stdout)?;
-    Ok(())
+    Ok(if self.exit_to_home { RunOutcome::Home } else { RunOutcome::Quit })
   }
 
   pub fn cleanup(

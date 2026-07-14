@@ -202,6 +202,18 @@ impl PdfStreamingState {
     }
   }
 
+  /// Whether `page_index`'s rendered slice is final: the page and its
+  /// immediate neighbours are loaded, so seam stitching and the inter-page
+  /// separators are settled. Only then does a page-local anchor saved against
+  /// the fully-loaded rendering resolve to the exact row — earlier, a
+  /// not-yet-skipped head partial shifts the page's lines and characters.
+  pub fn page_render_settled(&self, page_index: usize) -> bool {
+    let loaded = |i: usize| self.pages.get(i).is_some_and(PageSlot::is_loaded);
+    loaded(page_index)
+      && (page_index == 0 || loaded(page_index - 1))
+      && (page_index + 1 >= self.pages.len() || loaded(page_index + 1))
+  }
+
   /// Sum of `page_line_count()` across all pages up to (not including)
   /// `page_index`.
   pub fn line_start_for_page(&self, page_index: usize) -> usize {

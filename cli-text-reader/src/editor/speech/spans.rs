@@ -47,8 +47,7 @@ fn split_glued_sentence(word: &str) -> Vec<(usize, usize)> {
   for w in 1..chars.len() {
     let (i, c) = chars[w];
     let after_lower = chars[w - 1].1.is_lowercase();
-    let before_upper =
-      chars.get(w + 1).is_some_and(|(_, n)| n.is_uppercase());
+    let before_upper = chars.get(w + 1).is_some_and(|(_, n)| n.is_uppercase());
     if matches!(c, '.' | '!' | '?') && after_lower && before_upper {
       let split_at = i + c.len_utf8(); // keep the mark with the left half
       ranges.push((start, split_at));
@@ -78,7 +77,8 @@ pub(crate) fn build_word_spans(
       for (col_start, col_end) in word_byte_ranges(line) {
         // Split glued sentences ("end.Start") so each half narrates and
         // highlights on its own; a normal word yields one full-width range.
-        for (rel_start, rel_end) in split_glued_sentence(&line[col_start..col_end])
+        for (rel_start, rel_end) in
+          split_glued_sentence(&line[col_start..col_end])
         {
           let (ws, we) = (col_start + rel_start, col_start + rel_end);
           spans.push(WordSpan {

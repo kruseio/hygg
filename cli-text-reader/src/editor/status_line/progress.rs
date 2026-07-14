@@ -104,14 +104,13 @@ impl Editor {
       return format!("{:>width$}", "--%", width = PROGRESS_SLOT_WIDTH);
     }
 
-    // Calculate actual position in document (offset + cursor position + 1 for
-    // 1-based indexing)
+    // Width-independent reading percent (shared character fraction), so the
+    // indicator matches what peers and the server show for the same content.
+    // Measured one line past the cursor so reaching the last line reads 100%.
     let current_position =
       (self.offset + self.cursor_y + 1).min(self.total_lines);
     let progress = if self.total_lines > 0 {
-      (current_position as f64 / self.total_lines as f64 * 100.0)
-        .round()
-        .min(100.0)
+      self.reading_percent(current_position).round().min(100.0)
     } else {
       100.0 // Empty document is 100% read
     };

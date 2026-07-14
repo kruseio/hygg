@@ -50,6 +50,27 @@ fn narration_with_no_following_word_does_not_jump_to_top() {
   );
 }
 
+// Master switch: with TTS turned off (`--tts off` / `ENABLE_TTS=false`),
+// `start_narration` must be a no-op even when narratable text follows the
+// cursor, so `:speak` and the narration hotkey do nothing.
+#[test]
+fn narration_does_not_start_when_tts_disabled() {
+  let lines: Vec<String> =
+    (0..50).map(|i| format!("line {i} has several real words here")).collect();
+  let mut editor = Editor::new(lines, 80);
+  editor.tts_enabled = false;
+  editor.offset = 0;
+  editor.cursor_y = 0;
+
+  editor.start_narration();
+
+  assert!(
+    editor.speech.is_none(),
+    "narration must not start while TTS is disabled"
+  );
+  assert!(!editor.is_narrating());
+}
+
 // The complementary case: when there IS a word at/after the cursor, narration
 // starts there and the reading line tracks forward (never jumps to the top).
 #[test]

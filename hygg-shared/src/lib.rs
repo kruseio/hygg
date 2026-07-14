@@ -3,6 +3,10 @@
 //! This crate contains shared utilities used across the hygg project,
 //! including cross-platform path handling and common error types.
 
+pub mod anchor;
+pub mod export;
+pub mod sync;
+
 use std::path::{Path, PathBuf};
 
 /// Error type for path-related operations

@@ -12,3 +12,12 @@ pub fn save_ocr_enabled_config(
     ..Default::default()
   })
 }
+
+pub fn save_tts_enabled_config(
+  enabled: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+  config::save_config(&config::AppConfig {
+    tts_enabled: Some(enabled),
+    ..Default::default()
+  })
+}

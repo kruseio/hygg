@@ -178,6 +178,24 @@ impl Editor {
       RegisteredCommand::Credits => self.handle_credits_command(),
       RegisteredCommand::About => self.handle_about_command(),
       RegisteredCommand::Ocr(enable) => self.handle_ocr_command(enable),
+      RegisteredCommand::Home => self.handle_home_command(),
+      RegisteredCommand::Note => self.handle_note_command(),
+      RegisteredCommand::ServerConnect(url) => self.handle_connect_command(url),
+      RegisteredCommand::ServerDisconnect => self.handle_disconnect_command(),
+      RegisteredCommand::ServerAuth { username, token } => {
+        self.handle_auth_command(username, token)
+      }
+      RegisteredCommand::AutoSync(action) => {
+        self.handle_autosync_command(action)
+      }
+      RegisteredCommand::Sync => self.handle_sync_command(),
+      RegisteredCommand::SyncMode(action) => {
+        self.handle_sync_mode_command(action)
+      }
+      RegisteredCommand::ServerProgress => {
+        self.handle_server_progress_command()
+      }
+      RegisteredCommand::LocalProgress => self.handle_local_progress_command(),
       RegisteredCommand::Speak(action) => self.handle_speak_command(action),
       RegisteredCommand::Voice(id) => self.handle_voice_command(id),
       RegisteredCommand::Speed(speed) => self.handle_speed_command(speed),
@@ -224,6 +242,10 @@ mod tests {
     assert_eq!(classify_command("ocron"), RegisteredCommand::Unknown);
     assert_eq!(classify_command("ocrx"), RegisteredCommand::Unknown);
     assert_eq!(classify_command("ocr on now"), RegisteredCommand::Unknown);
+    assert_eq!(
+      classify_command("local-progress"),
+      RegisteredCommand::LocalProgress
+    );
   }
 
   #[test]

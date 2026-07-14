@@ -1,0 +1,84 @@
+[build]
+rustflags = [
+  # "-C", "target-feature=+crt-static",
+  # "-C", "target-cpu=native",
+]
+
+# macOS only: ad-hoc-sign the hygg-server binary when cargo launches it, so the
+# Application Firewall stops treating it as unsigned and blocking inbound LAN
+# connections. build.rs can't do this (it runs before linking); a `runner` runs
+# after. Transparent passthrough for every other binary. See sign-and-run.sh.
+[target.'cfg(target_os = "macos")']
+runner = ".cargo/sign-and-run.sh"
+
+[patch.crates-io.cli-image-to-ascii]
+path = "cli-image-to-ascii"
+
+[patch.crates-io.cli-justify]
+path = "cli-justify"
+
+[patch.crates-io.hygg-shared]
+path = "hygg-shared"
+
+[patch.crates-io.redirect-stderr]
+path = "redirect-stderr"
+
+[profile.dev]
+opt-level = 0
+debug = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = 'unwind'
+incremental = true
+codegen-units = 256
+rpath = false
+
+[profile.release]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = 'unwind'
+incremental = false
+codegen-units = 1
+rpath = false
+strip = true
+
+[profile.test]
+opt-level = 0
+debug = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+incremental = true
+codegen-units = 256
+rpath = false
+
+[profile.bench]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+incremental = false
+codegen-units = 1
+rpath = false
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 0
+debug = true
+debug-assertions = true
+overflow-checks = true
+incremental = true
+codegen-units = 256
+
+[profile.dev.build-override]
+opt-level = 0
+debug = true
+debug-assertions = true
+overflow-checks = true
+incremental = true
+codegen-units = 256

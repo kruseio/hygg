@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en" class="theme-dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5"
+    />
+    <meta name="theme-color" content="#0b0b0b" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="hygg" />
+    <title>hygg</title>
+
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+
+    <!-- Trunk: copy static PWA assets to dist unhashed (referenced by name). -->
+    <link data-trunk rel="copy-file" href="manifest.webmanifest" />
+    <link data-trunk rel="copy-file" href="sw.js" />
+    <link data-trunk rel="copy-dir" href="assets/icons" data-target-path="icons" />
+
+    <link data-trunk rel="css" href="styles/main.css" />
+    <link data-trunk rel="rust" data-wasm-opt="z" />
+
+    <script>
+      // Capture the install prompt so the in-app banner can trigger it later.
+      window.__hyggDeferredPrompt = null;
+      window.addEventListener("beforeinstallprompt", (e) => {
+        e.preventDefault();
+        window.__hyggDeferredPrompt = e;
+        window.dispatchEvent(new Event("hygg:installable"));
+      });
+      window.__hyggInstall = async () => {
+        const e = window.__hyggDeferredPrompt;
+        if (!e) return "unavailable";
+        e.prompt();
+        const choice = await e.userChoice;
+        window.__hyggDeferredPrompt = null;
+        return choice.outcome;
+      };
+      window.addEventListener("appinstalled", () => {
+        window.__hyggDeferredPrompt = null;
+      });
+      // Register the service worker for offline support — but not inside the
+      // Tauri shell, where the bundle is already local (served over a custom
+      // protocol) so a SW is pointless and its registration can error.
+      if ("serviceWorker" in navigator && !window.__TAURI__) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js").catch(() => {});
+        });
+      }
+    </script>
+  </head>
+  <body></body>
+</html>

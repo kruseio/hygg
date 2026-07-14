@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metadata for hygg-gui. This is the Linux equivalent of the macOS
+  "About" panel: GNOME Software (and KDE Discover) read it to show the app's
+  version, description, developer, license, and links on its detail page.
+  install.sh copies it to ~/.local/share/metainfo/ and substitutes
+  __HYGG_VERSION__ / __HYGG_DATE__ with the live workspace version and commit
+  date. The <launchable> ties it to hygg-gui.desktop; the interactive About /
+  Credits screens live in-app (Settings → About).
+-->
+<component type="desktop-application">
+  <id>com.kruseio.hygg-gui</id>
+  <launchable type="desktop-id">hygg-gui.desktop</launchable>
+  <name>hygg</name>
+  <summary>A calm, offline-first document reader</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-only</project_license>
+  <developer id="com.kruseio">
+    <name>kruseio</name>
+  </developer>
+  <description>
+    <p>
+      hygg is a calm, offline-first reader for PDF, EPUB, and text documents. It
+      renders every document as a justified monospace column that looks the same
+      on the terminal, the browser, and the desktop, and keeps your library and
+      reading position on-device — with optional cross-device sync.
+    </p>
+  </description>
+  <categories>
+    <category>Office</category>
+    <category>Viewer</category>
+    <category>Literature</category>
+  </categories>
+  <keywords>
+    <keyword>pdf</keyword>
+    <keyword>epub</keyword>
+    <keyword>ebook</keyword>
+    <keyword>reader</keyword>
+    <keyword>document</keyword>
+    <keyword>offline</keyword>
+  </keywords>
+  <url type="homepage">https://github.com/kruseio/hygg</url>
+  <url type="bugtracker">https://github.com/kruseio/hygg/issues</url>
+  <url type="vcs-browser">https://github.com/kruseio/hygg</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="__HYGG_VERSION__" date="__HYGG_DATE__"/>
+  </releases>
+</component>

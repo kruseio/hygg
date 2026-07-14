@@ -10,6 +10,7 @@ impl Editor {
       show_cursor: Some(self.show_cursor),
       show_progress: Some(self.show_progress),
       pdf_ocr: None,        // Keep existing value
+      tts_enabled: None,    // Keep existing value
       tutorial_shown: None, // Keep existing value
     };
 

@@ -1,0 +1,57 @@
+# hygg-tauri — native app shell (Tauri v2) that wraps the hygg-pwa Leptos UI and
+# ships it to desktop (Windows, macOS, Linux/GNOME) and mobile (iOS, Android).
+# See ./README.md.
+#
+# A workspace member (like hygg-gui / hygg-pwa) but kept out of `default-members`
+# — a bare `cargo build` skips the heavy Tauri stack; build it with
+# `-p hygg-tauri` or `cargo tauri build`. publish = false, and nothing in the
+# published `hygg` crate's tree references it, so `cargo install hygg` never
+# pulls Tauri — same isolation as hygg-gui / hygg-pwa / hygg-server.
+
+[package]
+name = "hygg-tauri"
+description = "hygg reader — native Tauri v2 shell (desktop + mobile) over the hygg-pwa UI"
+publish = false
+
+version.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "AGPL-3.0-only"
+readme = "README.md"
+repository.workspace = true
+
+[lints]
+workspace = true
+
+# Tauri mobile links the app as a shared library and calls the exported
+# `run()` (via the generated mobile entry point), while desktop uses the binary.
+# The `_lib` suffix avoids the bin/lib name collision Cargo rejects on Windows.
+[lib]
+name = "hygg_tauri_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "hygg-tauri"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# Decode the base64 file payload the frontend sends over IPC (a plain string
+# argument serializes unambiguously; see src/lib.rs).
+base64 = "0.22"
+
+# The exact same native hygg pipeline hygg-gui uses — so a document renders as
+# the identical justified monospace column the CLI, PWA, and GUI show.
+cli-justify = { version = "0.1", path = "../cli-justify" }
+cli-epub-to-text = { version = "0.1", path = "../cli-epub-to-text" }
+cli-pdf-to-text = { version = "0.1", path = "../cli-pdf-to-text", features = [
+  "visual-assets",
+] }
+hygg-shared = { version = "0.1", path = "../hygg-shared" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

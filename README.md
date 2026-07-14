@@ -65,15 +65,15 @@ For further install instructions read the [Getting started page](https://github.
 - [x] Text highlighting
 - [x] Bookmarks
 - [x] Interactive tutorial
-- [ ] Self hosted sync server for docs, progress, bookmarks, highlights and notes
-- [ ] Offline PWA web client
-- [ ] Start screen to show overview of books and progress
+- [x] Self hosted sync server for docs, progress, bookmarks, highlights and notes
+- [x] Offline PWA web client
+- [x] Start screen to show overview of documents and progress
+- [x] Natural sounding ai voice model for text to speech narration
+- [ ] Reading statistics and insights
 - [ ] Minimal build feature flag, for only basic converters, no server integration and no ai
-- [ ] Natural sounding ai voice model for text to speech narration
 - [ ] Run all inference directly in rust no external runtime deps
 - [ ] Support more ebook and document formats
 - [ ] AI-powered document summarization
-- [ ] Reading statistics and insights
 
 ## Documentation
 Visit the [Documentation](https://github.com/kruseio/hygg/blob/main/docs/README.md)
@@ -102,3 +102,27 @@ Visit the [Documentation](https://github.com/kruseio/hygg/blob/main/docs/README.
 </a>
 
 Made with [contrib.rocks](https://contrib.rocks).
+
+## Licensing
+
+hygg is a multi-license workspace. Each crate declares its own license in its
+`Cargo.toml`; there is no single project-wide license.
+
+| Crate(s) | License | Why |
+|---|---|---|
+| `cli-justify`, `redirect-stderr`, `cli-image-to-ascii`, `hygg-shared`, `cli-epub-to-text`, `cli-pdf-to-text` | **MIT** | Reusable libraries — permissive so anyone can build on them. |
+| `cli-text-reader`, `hygg` | **AGPL-3.0-only** | The reader/TUI itself — network-copyleft to keep the product and its hosted forks open. |
+| `hygg-server` | **Elastic License 2.0** | The sync server — source-available; you can self-host and modify it, but not offer it to third parties as a managed service. ELv2 is *not* OSI "open source". |
+| `hygg-cff-parser`, `hygg-pdf-extract` | **MIT / MIT OR Apache-2.0** | Thin forks of upstream crates; they retain their original licenses. |
+
+The split is dependency-safe: every MIT crate depends only on permissive
+crates, the AGPL TUI sits at the top of the tree (it may absorb its MIT deps),
+and the Elastic server shares no code with either — the client and server are
+statically typed against the **MIT** `hygg-shared::sync::proto` wire contract,
+so no license crosses the client/server boundary.
+
+License texts: [`LICENSE`](LICENSE) (AGPL-3.0), [`LICENSE-MIT`](LICENSE-MIT)
+(MIT), and [`hygg-server/LICENSE`](hygg-server/LICENSE) (Elastic 2.0).
+
+Contributions are accepted under the project's [Contributor License
+Agreement](CLA.md) (implicit on submission); see [CONTRIBUTING](CONTRIBUTING.md).
