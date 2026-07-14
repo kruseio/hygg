@@ -99,6 +99,7 @@ impl Editor {
       show_cursor: None,             // Keep existing value
       show_progress: None,           // Keep existing value
       pdf_ocr: None,                 // Keep existing value
+      tts_enabled: None,             // Keep existing value
       tutorial_shown: None,          // Keep existing value
     };
 
@@ -150,6 +151,7 @@ impl Editor {
       show_cursor: None,             // Keep existing value
       show_progress: None,           // Keep existing value
       pdf_ocr: None,                 // Keep existing value
+      tts_enabled: None,             // Keep existing value
       tutorial_shown: None,          // Keep existing value
     };
 

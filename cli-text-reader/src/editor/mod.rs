@@ -69,7 +69,7 @@ mod yank;
 
 // Re-export main structures and functions
 pub use commands::handle_command;
-pub use core::{Editor, EditorMode, EditorState};
+pub use core::{Editor, EditorMode, EditorState, RunOutcome};
 
 // Tests
 #[cfg(test)]

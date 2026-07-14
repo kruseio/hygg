@@ -11,6 +11,43 @@ members = [
   "hygg-shared",
   "hygg",
 
+  # Self-hostable sync server. Elastic License 2.0, source-available, published
+  # to crates.io and usable as a library (hygg-saas embeds it). It is NOT in the
+  # `hygg` CLI's dependency tree, so `cargo install hygg` never pulls its
+  # axum/tokio/sea-orm stack — isolation is by dependency direction, not a
+  # publish flag.
+  "hygg-server",
+
+  # NOTE: hygg-saas (the proprietary, closed-source SaaS layer that extends
+  # hygg-server in-process with landing/pricing/payments/tiers/limits) has
+  # graduated to its own private repo. The dependency still points saas ->
+  # server, so publishing hygg-server never pulls it.
+
+  # Rust/WASM offline-first touch PWA (Leptos + Trunk). publish = false. The real
+  # app builds for wasm32-unknown-unknown (via Trunk); the Leptos/web-sys stack
+  # is cfg(target_arch = "wasm32")-gated, so the *host* build of `main.rs` is
+  # just a thin launcher that shells out to `trunk` (`cargo run -p hygg-pwa`).
+  # It is kept out of `default-members` and host `--workspace` CI (linting the
+  # launcher adds nothing; a dedicated wasm step covers the real app). Nothing in
+  # the published `hygg` crate's tree references it.
+  "hygg-pwa",
+
+  # Native iced desktop GUI reader (Windows, Linux, macOS). publish = false.
+  # Kept out of `default-members` because it pulls the heavy iced/wgpu stack, so
+  # a bare `cargo build` skips it; build it explicitly with `-p hygg-gui`. It is
+  # still covered by host `--workspace` CI. Nothing in the published `hygg`
+  # crate's tree references it, so `cargo install hygg` never pulls iced.
+  "hygg-gui",
+
+  # Native Tauri v2 shell (Windows, macOS, Linux, iOS, Android) that wraps the
+  # hygg-pwa Leptos UI and runs the extraction pipeline over native IPC. Kept
+  # out of `default-members` (it pulls the heavy Tauri stack, so a bare
+  # `cargo build` skips it; build it with `-p hygg-tauri` or `cargo tauri
+  # build`). Nothing in the published `hygg` crate's tree references it, so
+  # `cargo install hygg` never pulls Tauri — same isolation as hygg-gui /
+  # hygg-pwa.
+  "hygg-tauri",
+
   # Thin forks of upstream crates, published under hygg-* names so the
   # cff-parser Expert-font panic fix reaches `cargo install hygg` — a
   # [patch.crates-io] is workspace-local and stripped on publish, so it
@@ -22,12 +59,33 @@ members = [
   # "examples",
 ]
 
+# Plain `cargo build`/`test`/`check` (no --workspace) operate on these. hygg-pwa
+# is intentionally omitted: on the host target it only builds a trunk launcher
+# (`cargo run -p hygg-pwa`), while its real artifact is the wasm bundle. Build
+# that explicitly with `cargo build -p hygg-pwa --target wasm32-unknown-unknown`
+# (or just `cargo run -p hygg-pwa -- build --release`).
+default-members = [
+  "cli-image-to-ascii",
+  "cli-pdf-to-text",
+  "cli-epub-to-text",
+  "cli-justify",
+  "cli-text-reader",
+  "redirect-stderr",
+  "hygg-shared",
+  "hygg",
+  "hygg-server",
+  "hygg-cff-parser",
+  "hygg-pdf-extract",
+]
+
 [workspace.package]
 version = "0.1.21"
 rust-version = "1.88"
 edition = "2024"
 authors = ["kruseio"]
-license = "AGPL-3.0"
+# `license` is intentionally NOT inherited: this is a multi-license workspace
+# (MIT libs, AGPL-3.0-only TUI, Elastic-2.0 server), so each crate states its
+# own license explicitly. See the Licensing section of the README.
 readme = "README.md"
 repository = "https://github.com/kruseio/hygg"
 keywords = ["pdf", "cli", "parser", "terminal", "utility"]

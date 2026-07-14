@@ -1,0 +1,122 @@
+# Build + test the non-native crates: the `hygg` CLI, the `hygg-server` sync
+# backend, and the `hygg-pwa` wasm frontend. The native app bundles (Tauri
+# desktop/mobile) are built separately in native-apps.yml, which is slower and
+# needs per-OS system webviews.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The CLI is the crate users `cargo install`, so it is built and tested on all
+  # three desktop OSes — its terminal/PTY and file-path handling is exactly the
+  # code that diverges per platform.
+  cli:
+    name: hygg cli (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The ODT/DOCX tests shell out to pandoc and silently skip themselves when
+      # it is absent, so without this they would pass while testing nothing.
+      - name: Install pandoc (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc
+
+      - name: Install pandoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install pandoc
+
+      - name: Install pandoc (Windows)
+        if: runner.os == 'Windows'
+        run: choco install pandoc -y --no-progress
+
+      - name: Verify pandoc is on PATH
+        run: pandoc --version
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: cli-${{ matrix.os }}
+
+      # cli-epub-to-text is built explicitly: the EPUB test shells out to
+      # target/debug/cli-epub-to-text by path, and `-p hygg` does not build a
+      # sibling crate's binary. Locally it is usually present from an earlier
+      # workspace build, which is why this only ever failed in CI.
+      - name: Build
+        run: cargo build -p hygg -p cli-epub-to-text --locked
+
+      - name: Test
+        run: cargo test -p hygg --locked
+
+  # Self-hostable sync server. Tests are SQLite-backed, so no service container
+  # is needed.
+  server:
+    name: hygg-server
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: server
+
+      - name: Build
+        run: cargo build -p hygg-server --locked
+
+      - name: Test
+        run: cargo test -p hygg-server --locked
+
+  # The PWA's real artifact is the wasm bundle, so it is built the way it ships:
+  # through Trunk for wasm32-unknown-unknown. A host `cargo build -p hygg-pwa`
+  # would only compile the thin trunk launcher and prove nothing about the app.
+  pwa:
+    name: hygg-pwa (wasm)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: pwa
+
+      - name: Install Trunk
+        uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+
+      - name: Build wasm bundle
+        working-directory: hygg-pwa
+        run: trunk build --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hygg-pwa-dist
+          path: hygg-pwa/dist

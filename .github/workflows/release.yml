@@ -1,0 +1,454 @@
+# Attach every downloadable build to the GitHub Release for a tag.
+#
+#   hygg-cli-<tag>-x86_64-linux.tar.gz      the TUI/CLI, one archive per platform
+#   hygg-cli-<tag>-macos-universal.tar.gz   Intel + Apple silicon in one binary
+#   hygg-cli-<tag>-x86_64-windows.zip
+#   hygg-desktop-<tag>-*.{dmg,deb,AppImage,rpm,msi,exe}   Tauri native app
+#   hygg-android-<tag>-debug.apk            (release-signed when secrets exist)
+#   hygg-ios-<tag>-simulator.app.zip        simulator only — see the note below
+#   SHA256SUMS
+#
+# Every job uploads to a workflow artifact and a single publish job creates the
+# release at the end. That is deliberate: `gh release create` runs once, with
+# everything, so a failed platform means no release at all rather than a
+# half-populated one users can already download from.
+#
+# The PWA is not here — it deploys to Pages on the same tag (pages.yml).
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  # Dry run: builds and uploads workflow artifacts, but publishes no release.
+  workflow_dispatch:
+
+permissions:
+  contents: write # creates the release
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # Tag on a tag push; on a manual run there is no tag, so name things after the
+  # ref and let the publish job skip.
+  TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('untagged-{0}', github.sha) }}
+
+jobs:
+  cli:
+    name: cli (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: x86_64-linux
+            targets: x86_64-unknown-linux-gnu
+          # Both arches, merged with lipo below into one universal binary, so
+          # Intel and Apple silicon users share a single download.
+          - os: macos-latest
+            name: macos-universal
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - os: windows-latest
+            name: x86_64-windows
+            targets: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash # git-bash on Windows: one script for all three runners
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: release-cli-${{ matrix.name }}
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          for t in $(echo "${{ matrix.targets }}" | tr ',' ' '); do
+            cargo build -p hygg --release --locked --target "$t"
+          done
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          bin=hygg
+          [ "${{ runner.os }}" = "Windows" ] && bin=hygg.exe
+          targets=$(echo "${{ matrix.targets }}" | tr ',' ' ')
+          mkdir -p staging dist
+
+          if [ "$(echo "$targets" | wc -w)" -gt 1 ]; then
+            # shellcheck disable=SC2086
+            lipo -create -output "staging/$bin" \
+              $(for t in $targets; do echo "target/$t/release/$bin"; done)
+            lipo -info "staging/$bin"
+          else
+            cp "target/$targets/release/$bin" "staging/$bin"
+          fi
+
+          cp README.md LICENSE LICENSE-MIT staging/
+          name="hygg-cli-${TAG}-${{ matrix.name }}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            (cd staging && 7z a "../dist/$name.zip" ./*) >/dev/null
+          else
+            tar -czf "dist/$name.tar.gz" -C staging .
+          fi
+          ls -lh dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-cli-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  desktop:
+    name: desktop (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macos-universal
+            target: universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - os: ubuntu-22.04
+            name: x86_64-linux
+            target: x86_64-unknown-linux-gnu
+            rust_targets: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            name: x86_64-windows
+            target: x86_64-pc-windows-msvc
+            rust_targets: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev patchelf
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown, ${{ matrix.rust_targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: release-desktop-${{ matrix.name }}
+
+      - uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+
+      # Unsigned: notarization/signing needs the maintainer's certs as secrets.
+      # macOS users will see Gatekeeper's "unidentified developer" prompt.
+      - name: Build app
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: hygg-tauri
+          args: --target ${{ matrix.target }}
+
+      - name: Collect bundles
+        run: |
+          set -euo pipefail
+          shopt -s nullglob globstar
+          mkdir -p dist
+          for f in target/${{ matrix.target }}/release/bundle/**/*; do
+            [ -f "$f" ] || continue
+            case "$f" in
+              *.dmg|*.deb|*.AppImage|*.rpm|*.msi|*-setup.exe)
+                cp "$f" "dist/hygg-desktop-${TAG}-${{ matrix.name }}.${f##*.}" ;;
+            esac
+          done
+          ls -lh dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-desktop-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  android:
+    name: android (apk)
+    runs-on: ubuntu-22.04
+    env:
+      ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # See native-apps.yml: a one-off ENOSPC here never reproduced, and the
+      # runner has ~104G free. Breadcrumb only.
+      - name: Report free disk
+        run: df -h /
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Install NDK
+        run: sdkmanager "ndk;26.3.11579264"
+
+      - name: Rust toolchain (Android + wasm targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown, aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: release-android
+
+      - uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+
+      - name: Install Tauri CLI
+        run: cargo install --locked tauri-cli --version "^2"
+
+      - name: Generate Android project
+        working-directory: hygg-tauri
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
+        run: cargo tauri android init
+
+      # `gen/android` is regenerated on every run, so the signing config has to be
+      # patched in here rather than committed. Skipped entirely when the secret is
+      # absent, which leaves the debug-signed APK below as the release artifact.
+      - name: Configure release signing
+        if: env.ANDROID_KEY_BASE64 != ''
+        working-directory: hygg-tauri/gen/android
+        env:
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          echo "$ANDROID_KEY_BASE64" | base64 -d > keystore.jks
+          cat > keystore.properties <<EOF
+          storeFile=$(pwd)/keystore.jks
+          storePassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          password=$ANDROID_KEY_PASSWORD
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/build.gradle.kts")
+          src = p.read_text()
+          if "keystore.properties" in src:
+              raise SystemExit("template already has signing config — patch is stale")
+          signing = '''
+              signingConfigs {
+                  create("release") {
+                      val props = java.util.Properties()
+                      val f = rootProject.file("keystore.properties")
+                      if (f.exists()) {
+                          props.load(java.io.FileInputStream(f))
+                          keyAlias = props["keyAlias"] as String
+                          keyPassword = props["password"] as String
+                          storeFile = file(props["storeFile"] as String)
+                          storePassword = props["storePassword"] as String
+                      }
+                  }
+              }
+          '''
+          # Anchor on the android {} block opening, which the Tauri template always has.
+          marker = "android {\n"
+          if marker not in src:
+              raise SystemExit("could not find `android {` in build.gradle.kts")
+          src = src.replace(marker, marker + signing, 1)
+
+          # Defining the config is not enough — the release build type has to
+          # reference it, or Gradle happily produces an *unsigned* APK named
+          # "release". Both anchors raise rather than fall through, so a template
+          # change fails this job instead of shipping something uninstallable.
+          rel = 'getByName("release") {'
+          if rel not in src:
+              raise SystemExit('could not find buildTypes getByName("release")')
+          src = src.replace(
+              rel, rel + '\n            signingConfig = signingConfigs.getByName("release")', 1
+          )
+          p.write_text(src)
+          print("patched app/build.gradle.kts with a release signingConfig")
+          PY
+
+      - name: Build APK
+        working-directory: hygg-tauri
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
+          # The debug APK is a smoke-test artifact, not a debugging one; full
+          # DWARF is what overran the disk before.
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: |
+          set -euo pipefail
+          if [ -n "$ANDROID_KEY_BASE64" ]; then
+            cargo tauri android build --apk --target aarch64
+          else
+            cargo tauri android build --debug --apk --target aarch64
+          fi
+
+      - name: Collect APK
+        run: |
+          set -euo pipefail
+          shopt -s nullglob globstar
+          mkdir -p dist
+          kind=debug
+          [ -n "$ANDROID_KEY_BASE64" ] && kind=release
+          for f in hygg-tauri/gen/android/app/build/outputs/apk/**/*.apk; do
+            cp "$f" "dist/hygg-android-${TAG}-${kind}.apk"
+          done
+          ls -lh dist
+
+          # The signing config is patched into a file Tauri generates, so prove
+          # the APK really is signed rather than trusting the patch took. An
+          # unsigned APK will not install, and that is worth failing the release
+          # over, not discovering from a bug report.
+          apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)
+          "$apksigner" verify --print-certs "dist/hygg-android-${TAG}-${kind}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: dist/*
+          if-no-files-found: error
+
+  # Simulator only. A device-installable .ipa needs an Apple Developer cert and
+  # provisioning profile as repo secrets; this artifact runs in Xcode's simulator
+  # and cannot be installed on an iPhone. Swap for a signed .ipa when the certs
+  # exist.
+  ios:
+    name: ios (simulator)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain (iOS simulator + wasm targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown, aarch64-apple-ios-sim
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: release-ios-sim
+
+      - uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+
+      - name: Install iOS project tooling
+        run: brew install xcodegen
+
+      - name: Install Tauri CLI
+        run: cargo install --locked tauri-cli --version "^2"
+
+      - name: Build simulator app
+        working-directory: hygg-tauri
+        run: |
+          cargo tauri ios init --ci
+          cargo tauri ios build --debug --target aarch64-sim
+
+      - name: Collect .app
+        run: |
+          set -euo pipefail
+          shopt -s nullglob globstar
+          mkdir -p dist
+          app=$(find hygg-tauri/gen/apple/build -name '*.app' -print -quit)
+          [ -n "$app" ] || { echo "no .app produced"; exit 1; }
+          # ditto, not zip: it preserves the bundle's symlinks and resource forks,
+          # which a plain zip mangles into an .app that will not launch.
+          ditto -c -k --sequesterRsrc --keepParent "$app" \
+            "dist/hygg-ios-${TAG}-simulator.app.zip"
+          ls -lh dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-ios
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: publish release
+    needs: [cli, desktop, android, ios]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          sha256sum ./* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Release notes
+        run: |
+          owner="${{ github.repository_owner }}"
+          repo="${{ github.event.repository.name }}"
+          cat > notes.md <<EOF
+          ## Install
+
+          **CLI / TUI** — download the archive for your platform below and put \`hygg\` on your PATH, or:
+          \`\`\`
+          cargo install hygg
+          \`\`\`
+          The macOS archive is a universal binary (Apple silicon + Intel). ODT/DOCX
+          support shells out to [pandoc](https://pandoc.org), which is not bundled.
+
+          **Desktop app** — \`.dmg\` (macOS), \`.deb\` / \`.AppImage\` / \`.rpm\` (Linux),
+          \`.msi\` / \`.exe\` (Windows). These are **unsigned**: macOS Gatekeeper and
+          Windows SmartScreen will warn on first launch.
+
+          **Web / PWA** — no download needed:
+          - latest: https://$owner.github.io/$repo/
+          - this version, pinned: https://$owner.github.io/$repo/${TAG}/
+          - all versions: https://$owner.github.io/$repo/versions.html
+
+          **Server** — self-host the sync server from the image published for this
+          tag (linux/amd64 + linux/arm64):
+          \`\`\`
+          docker run -d -p 3032:3032 -v "\$PWD/data:/app/data" ghcr.io/$owner/hygg-server:${TAG#v}
+          \`\`\`
+
+          **Android** — \`hygg-android-${TAG}-debug.apk\` is debug-signed. It sideloads
+          fine, but the signing key differs per build, so uninstall any previous
+          version first rather than upgrading in place.
+
+          **iOS** — simulator build only; it cannot be installed on an iPhone. A
+          signed \`.ipa\` needs an Apple Developer certificate.
+
+          Verify a download against \`SHA256SUMS\`.
+          EOF
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file notes.md \
+            --generate-notes \
+            dist/*

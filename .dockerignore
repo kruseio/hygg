@@ -1,0 +1,19 @@
+# Keep the Docker build context small and fast. The hygg-server image only
+# needs source + manifests; build artifacts and VCS metadata are excluded.
+# NOTE: `docs` must stay IN the context — hygg-server embeds docs/pages/*.md
+# at compile time (src/web/docs.rs include_str!), so excluding it breaks the
+# build. This file also governs what a downstream repo's image build
+# receives when it mounts this repo as a named build context.
+target
+**/target
+.git
+.github
+test-data
+assets
+data
+hygg-server/data
+hygg-server/.env
+hygg-pwa/dist
+hygg-tauri/gen
+*.gif
+*.png

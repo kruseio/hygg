@@ -30,7 +30,12 @@ fn ocr_text_rows_overlay_existing_ansi_art() {
       .collect(),
   }];
 
-  let page = compose_visual_page(text_rows, image_rows, 80);
+  // Overlay the OCR rows onto the existing ANSI art (no standalone text
+  // emission), which is the scenario this test exercises: `compose_visual_page`
+  // instead emits the rows as separate `Text` lines (its purpose in the
+  // `tests_compose` cases), which is not an overlay.
+  let page =
+    compose_visual_page_with_overlay(Vec::new(), text_rows, image_rows, 80);
   let rendered = page.lines.join("\n");
   let normalized = normalized_visual_text(&rendered);
 

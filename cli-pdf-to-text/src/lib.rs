@@ -1,23 +1,52 @@
+// The non-streaming, layout-fidelity `pdf_to_text` path (lopdf + pdf-extract +
+// rayon + redirect-stderr) is native-only — those deps don't build for wasm32.
+// The browser PWA reuses the pure pdf_oxide streaming path via the byte-input
+// `pdf_bytes_to_ansi_text` / `PdfStream::open_bytes`, which is portable.
+
+#[cfg(not(target_arch = "wasm32"))]
 use hygg_shared::normalize_file_path;
+#[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
 use std::io::{BufWriter, Cursor};
 
+// Common to both targets: the wasm `sanitize` path uses `is_code_like_line`;
+// the rest of the module is gated native-only inside `heuristics.rs`.
 mod heuristics;
+#[cfg(not(target_arch = "wasm32"))]
 mod layout_text_output;
+#[cfg(not(target_arch = "wasm32"))]
 mod ocr;
+mod paged;
+#[cfg(not(target_arch = "wasm32"))]
 mod pdf_patch;
 mod sanitize;
 mod stream;
+#[cfg(not(target_arch = "wasm32"))]
 mod stream_recovery;
+#[cfg(feature = "visual-assets")]
+mod visual_place;
+#[cfg(feature = "visual-assets")]
+mod visuals;
 
 pub use stream::{PdfLineKind, PdfRenderedPage, PdfStream, SharedPdfStream};
+#[cfg(feature = "visual-assets")]
+pub use visual_place::{VisualPlacement, place_visuals};
+#[cfg(feature = "visual-assets")]
+pub use visuals::{
+  PdfVisual, PdfVisualExtractor, PdfVisualKind, pdf_bytes_to_visuals,
+};
 
+#[cfg(not(target_arch = "wasm32"))]
 use heuristics::{
   layout_needs_plaintext_fallback, should_prefer_plaintext_output,
 };
+#[cfg(not(target_arch = "wasm32"))]
 use sanitize::sanitize_layout_text;
+#[cfg(not(target_arch = "wasm32"))]
 use stream_recovery::recover_sparse_code_blocks;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn load_patched_doc_internal(
   canonical_path: &std::path::Path,
 ) -> Result<pdf_extract::Document, Box<dyn std::error::Error>> {
@@ -30,6 +59,7 @@ pub(crate) fn load_patched_doc_internal(
   }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn render_page_layout_internal(
   doc: &pdf_extract::Document,
   page_num: u32,
@@ -51,6 +81,7 @@ pub(crate) fn render_page_layout_internal(
 /// `Send + Sync`, so we share one parsed instance across rayon
 /// workers via reference. Per-page output is collected and
 /// concatenated in page order.
+#[cfg(not(target_arch = "wasm32"))]
 fn extract_with_layout_text(
   canonical_path: &std::path::Path,
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -74,6 +105,7 @@ fn extract_with_layout_text(
   Ok(combined)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn pdf_to_text(
   pdf_path: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -116,12 +148,14 @@ pub fn pdf_to_text(
   Ok(layout_sanitized)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn pdf_to_text_with_bundled_ocr(
   pdf_path: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
   ocr::pdf_to_text_with_bundled_ocr(pdf_path)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn pdf_to_ansi_text(
   pdf_path: &str,
   col: usize,
@@ -130,12 +164,70 @@ pub fn pdf_to_ansi_text(
   pdf_stream_to_ansi_text(&stream, col)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn pdf_to_ansi_text_with_bundled_ocr(
   pdf_path: &str,
   col: usize,
 ) -> Result<String, Box<dyn std::error::Error>> {
   let stream = PdfStream::open_with_bundled_ocr(pdf_path)?;
   pdf_stream_to_ansi_text(&stream, col)
+}
+
+/// Extract a whole in-memory PDF to ANSI/justified text (`col`-wide), reusing
+/// the streaming pdf_oxide backend. Filesystem-free, so it works in the browser
+/// PWA: pass the raw bytes of an imported `.pdf` `File`.
+pub fn pdf_bytes_to_ansi_text(
+  pdf_bytes: Vec<u8>,
+  col: usize,
+) -> Result<String, Box<dyn std::error::Error>> {
+  let stream = PdfStream::open_bytes(pdf_bytes)?;
+  pdf_stream_to_ansi_text(&stream, col)
+}
+
+/// Like [`pdf_bytes_to_ansi_text`] but runs the bundled OCR engine over image
+/// regions — for the server `/convert` endpoint extracting scanned PDFs from
+/// in-memory bytes. Native-only, gated on `pdf-ocr-bundled`.
+#[cfg(all(not(target_arch = "wasm32"), feature = "pdf-ocr-bundled"))]
+pub fn pdf_bytes_to_ansi_text_with_bundled_ocr(
+  pdf_bytes: Vec<u8>,
+  col: usize,
+) -> Result<String, Box<dyn std::error::Error>> {
+  let stream = PdfStream::open_bytes_with_bundled_ocr(pdf_bytes)?;
+  pdf_stream_to_ansi_text(&stream, col)
+}
+
+/// Extract a whole in-memory PDF to per-line `(text, kind)` pairs (`col`-wide).
+///
+/// Like [`pdf_bytes_to_ansi_text`] but preserves each line's [`PdfLineKind`] so
+/// a DOM/canvas frontend can render ASCII-art rows differently from prose
+/// (the flattened string form loses that distinction). Pages are separated by a
+/// single blank `Text` line, matching the reader's inter-page spacing.
+pub fn pdf_bytes_to_lines(
+  pdf_bytes: Vec<u8>,
+  col: usize,
+) -> Result<Vec<(String, PdfLineKind)>, Box<dyn std::error::Error>> {
+  Ok(pdf_bytes_to_lines_paged(pdf_bytes, col)?.0)
+}
+
+/// Like [`pdf_bytes_to_lines`] but also returns, for each 1-based PDF page, the
+/// index of the first output line belonging to it (`page_starts[0]` is always
+/// 0). A frontend that stores the flattened lines can use this to recover a
+/// stable, pagination-independent `(page, line_in_page)` position — the anchor
+/// cross-device sync restores by, so two readers that wrap the document at
+/// different widths still resume on the same page.
+///
+/// The assembly applies the same cross-page seam stitching and 0-or-1
+/// inter-page spacing as the terminal reader's streaming `flat_lines`, so the
+/// flat buffer (and thus every page-local resume anchor) is byte-identical
+/// across clients.
+#[allow(clippy::type_complexity)]
+pub fn pdf_bytes_to_lines_paged(
+  pdf_bytes: Vec<u8>,
+  col: usize,
+) -> Result<(Vec<(String, PdfLineKind)>, Vec<usize>), Box<dyn std::error::Error>>
+{
+  let stream = PdfStream::open_bytes(pdf_bytes)?;
+  Ok(paged::assemble_paged(&stream, col))
 }
 
 fn pdf_stream_to_ansi_text(
@@ -155,55 +247,5 @@ fn pdf_stream_to_ansi_text(
   Ok(output.join("\n"))
 }
 
-#[cfg(test)]
-mod tests {
-  use std::path::Path;
-
-  use super::{pdf_to_text, should_prefer_plaintext_output};
-
-  #[test]
-  fn keeps_layout_when_plaintext_has_no_structural_gain() {
-    let layout = concat!(
-      "A Heading\n",
-      "Some explanatory text.\n",
-      "Another paragraph.\n",
-    );
-    let plaintext = concat!(
-      "A Heading\n",
-      "Some explanatory text.\n",
-      "Another paragraph.\n",
-      "Noise line\n",
-    );
-    assert!(!should_prefer_plaintext_output(layout, plaintext));
-  }
-
-  #[test]
-  fn keeps_progit_codeblock_lines_in_output() {
-    let pdf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-      .join("../test-data/pdf/progit-1-50.pdf");
-    if !pdf_path.exists() {
-      return;
-    }
-
-    let text = pdf_to_text(
-      pdf_path.to_str().expect("test PDF path should be valid UTF-8"),
-    )
-    .expect("expected pdf_to_text to succeed for progit sample");
-
-    for expected in
-      ["*.a", "!lib.a", "/TODO", "build/", "doc/*.txt", "doc/**/*.pdf"]
-    {
-      assert!(
-        text.contains(expected),
-        "expected recovered codeblock to contain {expected:?}, got excerpt around heading: {:?}",
-        text
-          .lines()
-          .skip_while(|line| {
-            !line.contains("Here is another example .gitignore file:")
-          })
-          .take(40)
-          .collect::<Vec<_>>()
-      );
-    }
-  }
-}
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests;

@@ -1,12 +1,17 @@
 pub use crate::core_state::Editor;
 pub use crate::core_types::{
-  BufferState, EditorMode, EditorState, SplitPosition, ViewMode,
+  BufferState, EditorMode, EditorState, RunOutcome, SplitPosition, ViewMode,
 };
 
 mod accessors;
 mod constructor;
+mod progress_snapshot;
+pub(crate) use progress_snapshot::SnapshotReason;
 mod pdf_poll;
 mod pdf_stream;
+mod sync_apply;
+mod sync_enqueue;
+mod sync_poll;
 #[cfg(test)]
 mod tests;
 

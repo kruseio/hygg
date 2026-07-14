@@ -1,6 +1,12 @@
 use std::env;
 use std::path::PathBuf;
 
+/// Resolve `binary` to an absolute path by searching `PATH`.
+///
+/// The current directory is deliberately not searched. Windows' own
+/// `CreateProcess` looks there before `PATH`, so spawning a bare name would run
+/// a `pandoc.exe` sitting next to the document being opened; callers spawn the
+/// absolute path returned here instead, which keeps that from happening.
 pub(crate) fn which(binary: &str) -> Option<PathBuf> {
   if binary.is_empty() || binary.contains('\0') {
     return None;
@@ -22,19 +28,6 @@ pub(crate) fn which(binary: &str) -> Option<PathBuf> {
       let full_path = path.join(format!("{binary}{ext}"));
       if full_path.is_file()
         && let Ok(canonical) = full_path.canonicalize()
-      {
-        return Some(canonical);
-      }
-    }
-  }
-
-  if cfg!(windows)
-    && let Ok(current_dir) = env::current_dir()
-  {
-    for &ext in &extensions {
-      let current_dir_path = current_dir.join(format!("{binary}{ext}"));
-      if current_dir_path.is_file()
-        && let Ok(canonical) = current_dir_path.canonicalize()
       {
         return Some(canonical);
       }

@@ -115,6 +115,19 @@ fn buffered_status_draws_ocr_slot_when_progress_is_disabled() {
 }
 
 #[test]
+fn server_progress_prompt_points_to_command_not_y_hotkey() {
+  let mut editor = Editor::new(vec!["line".to_string()], 80);
+  editor.server_progress_prompt = true;
+
+  let mut buffer = Vec::new();
+  editor.draw_status_line_buffered(&mut buffer).unwrap();
+  let output = String::from_utf8(buffer).expect("status line is utf-8");
+
+  assert!(output.contains(":server-progress to jump"));
+  assert!(!output.contains("press y"));
+}
+
+#[test]
 fn command_completion_text_uses_remaining_status_line_width() {
   let mut editor = Editor::new(vec!["line".to_string()], 80);
   editor.width = 14;

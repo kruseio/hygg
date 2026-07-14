@@ -117,6 +117,33 @@ mod tests {
   }
 
   #[test]
+  fn non_whitespace_stream_is_width_independent() {
+    // The cross-device resume anchor counts non-whitespace characters, so
+    // justifying the same text at any width must preserve the exact
+    // non-whitespace character stream — including an over-long token the
+    // wrapper hard-splits into a different number of pieces at each width. No
+    // hyphen is ever inserted on a split, so no character is added or lost;
+    // this is what makes the anchor width-independent. If a future change ever
+    // reflows text in a way that adds/drops/reorders a non-whitespace
+    // character (a break hyphen, a truncation, a width-proportional fill),
+    // this fails.
+    let text = "The resume anchor stays put. A monstrous token like \
+      https://example.com/a/very/long/path/that/no/narrow/column/can/possibly/hold/without/a/hard/split \
+      must not shift it, and neither may the justification padding spread across \
+      the following words which get stretched to fill each column exactly.";
+    let stream = |w: usize| -> String {
+      justify(text, w)
+        .iter()
+        .flat_map(|line| line.chars().filter(|c| !c.is_whitespace()))
+        .collect()
+    };
+    let base = stream(24);
+    for w in [24usize, 37, 50, 64, 80, 110, 200] {
+      assert_eq!(stream(w), base, "non-whitespace stream changed at width {w}");
+    }
+  }
+
+  #[test]
   fn keeps_unicode_justification_width_stable() {
     let input = "Chapter “Text” introduces Unicode-aware width handling.";
     let result = justify(input, 24);

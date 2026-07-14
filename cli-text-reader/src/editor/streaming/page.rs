@@ -22,17 +22,21 @@ impl LoadedPage {
   ) -> usize {
     let mut count = self.standalone_lines.len();
 
+    // A head partial inherited from the previous page's tail is stitched into
+    // that page's seam, so `flat_lines` never re-emits it here. Drop it up
+    // front — before the image early-return below — so the count stays in
+    // lock-step with `flat_lines` even when the next page carries images.
+    if let Some(head) = &self.head_partial
+      && prev.is_some_and(|p| p.tail_partial.is_some())
+    {
+      count = count.saturating_sub(head.line_count);
+    }
+
     if self.contains_images || next.is_some_and(|p| p.contains_images) {
       if next.is_some() || next_loading {
         count += 1;
       }
       return count.max(1);
-    }
-
-    if let Some(head) = &self.head_partial
-      && prev.is_some_and(|p| p.tail_partial.is_some())
-    {
-      count = count.saturating_sub(head.line_count);
     }
 
     let emitted_seam = self.tail_partial.is_some()

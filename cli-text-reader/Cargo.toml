@@ -6,7 +6,7 @@ version.workspace = true
 rust-version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license.workspace = true
+license = "AGPL-3.0-only"
 readme.workspace = true
 repository.workspace = true
 keywords.workspace = true
@@ -23,7 +23,7 @@ default = []
 # (and `cargo install hygg`) pulls none of these. `ort` downloads an ONNX
 # Runtime binary at build time; `espeak-rs` vendors espeak-ng and builds it
 # with CMake (needs a C toolchain). The model itself is downloaded on first
-# use, not bundled (it is far too large for crates.io). See plans/.
+# use, not bundled (it is far too large for crates.io).
 tts = ["dep:ort", "dep:espeak-rs", "dep:ndarray", "dep:ndarray-npy", "dep:rodio"]
 
 [dependencies]
@@ -38,6 +38,7 @@ serde_json = "1"
 dirs = "6"
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
+uuid = { version = "1", features = ["v4"] }
 ureq = { version = "3", features = ["json"] }
 
 arboard = { version = "3", default-features = true, features = ["wayland-data-control"] }

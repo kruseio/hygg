@@ -105,6 +105,12 @@ pub struct PendingPdfStream {
   /// Saved screen row for the cursor. Used during PDF restore so the
   /// first rendered frame lands on the same row as the previous session.
   pub restore_cursor_y: Option<usize>,
+  /// Page-local non-whitespace character offset of the saved position. When
+  /// present it resolves the exact line within the target page (once the page
+  /// is loaded), overriding `restore_line_in_page` — a width-independent
+  /// anchor so a position synced from a differently-wrapped reader lands on
+  /// the same line.
+  pub restore_word_offset: Option<usize>,
 }
 
 pub struct PdfStreamingState {

@@ -1,0 +1,117 @@
+[package]
+name = "hygg-server"
+description = "Self-hostable, multi-tenant sync server for the hygg reader (Elastic License 2.0, source-available). Consumable as a library to extend."
+# Source-available under the Elastic License 2.0 and published to crates.io so it
+# can be self-hosted and used as a library (a downstream crate embeds it and
+# extends it in-process). It stays out of
+# `cargo install hygg` by dependency direction — the `hygg` CLI never depends on
+# it — not by a publish flag.
+publish = true
+
+version.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license-file = "LICENSE"
+readme = "README.md"
+repository.workspace = true
+categories = ["web-programming::http-server"]
+keywords = ["sync", "self-hosted", "reader", "server"]
+
+[lints]
+workspace = true
+
+[features]
+default = []
+
+[dependencies]
+tokio = { version = "1", features = [
+  "rt-multi-thread",
+  "macros",
+  "net",
+  "signal",
+  "sync",
+] }
+# The wire contract (request/response DTOs + op envelope) shared verbatim with
+# the client, so the JSON API is statically typed against one definition.
+hygg-shared = { version = "0.1", path = "../hygg-shared" }
+# Server-side document conversion for the `/convert` endpoint: scanned-PDF OCR
+# (bundled pure-Rust tract engine) and the justification the PWA can't run in
+# the browser. EPUB/justify are light; DOCX/etc. go through the `pandoc` binary.
+cli-pdf-to-text = { version = "0.1", path = "../cli-pdf-to-text", features = [
+  "pdf-ocr-bundled",
+] }
+cli-epub-to-text = { version = "0.1", path = "../cli-epub-to-text" }
+cli-justify = { version = "0.1", path = "../cli-justify" }
+tokio-stream = { version = "0.1", features = ["sync"] }
+# Renders the repository's `docs/pages/*.md` (embedded verbatim via `include_str!`,
+# single source of truth) into the server-rendered `/docs` help center. Scoped to
+# the `html` feature (its default) so it never pulls the CLI's `getopts`.
+pulldown-cmark = { version = "0.13", default-features = false, features = [
+  "html",
+] }
+# The `Entitlements` extension trait is stored as `Arc<dyn Entitlements>`, so it
+# must stay dyn-compatible; async-trait boxes its async methods to make that
+# work (native async-fn-in-trait is not yet dyn-compatible).
+async-trait = "0.1"
+axum = "0.8"
+tower-http = { version = "0.6", features = [
+  "trace",
+  "limit",
+  "set-header",
+  "cors",
+] }
+# The ORM. Entities and a query builder stand in for hand-written SQL, and the
+# schema is described once in Rust rather than as a per-backend DDL script.
+sea-orm = { version = "1.1", default-features = false, features = [
+  "runtime-tokio-rustls",
+  "sqlx-sqlite",
+  "macros",
+] }
+sea-orm-migration = { version = "1.1", default-features = false, features = [
+  "runtime-tokio-rustls",
+  "sqlx-sqlite",
+] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dotenvy = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
+thiserror = "2"
+
+# Auth + crypto
+argon2 = "0.5"
+sha2 = "0.10"
+rand = "0.8"
+subtle = "2"
+base64 = "0.22"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+url = "2"
+webauthn-rs = "0.5.5"
+# Host/process resource metrics (CPU, memory, disk, network) for the admin
+# dashboard. Pinned below 0.39 to keep the workspace MSRV (1.88).
+sysinfo = { version = "0.38", default-features = false, features = [
+  "system",
+  "disk",
+  "network",
+] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+# Integration tests are their own crates, so they need these directly rather
+# than through hygg-server.
+sea-orm = { version = "1.1", default-features = false, features = [
+  "runtime-tokio-rustls",
+  "sqlx-sqlite",
+  "macros",
+] }
+sea-orm-migration = { version = "1.1", default-features = false, features = [
+  "runtime-tokio-rustls",
+  "sqlx-sqlite",
+] }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+tempfile = "3"

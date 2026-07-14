@@ -10,6 +10,10 @@ use std::path::PathBuf;
 #[derive(Serialize, Deserialize)]
 pub struct Progress {
   pub document_hash: u64,
+  /// Local save timestamp in Unix milliseconds. Used to decide whether a
+  /// server progress row is actually newer than the local restored position.
+  #[serde(default)]
+  pub updated_at: i64,
   pub offset: usize, /* This stores the actual line number (not viewport
                       * offset) */
   pub total_lines: usize,
@@ -28,6 +32,15 @@ pub struct Progress {
   /// loaded when we re-open.
   #[serde(default)]
   pub line_in_page: Option<usize>,
+  /// Non-whitespace character offset of the viewport-center line (page-local
+  /// for PDFs, global otherwise) — the exact cross-width resume anchor. None
+  /// for older saves. See `crate::word_anchor` / `hygg_shared::anchor`.
+  #[serde(default)]
+  pub word_offset: Option<usize>,
+  /// Cumulative active reading time for this document on this device, in
+  /// seconds. Seeded on open so accrual continues across sessions.
+  #[serde(default)]
+  pub reading_time_seconds: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -46,6 +59,10 @@ enum Event {
     page: Option<u32>,
     #[serde(default)]
     line_in_page: Option<usize>,
+    #[serde(default)]
+    word_offset: Option<usize>,
+    #[serde(default)]
+    reading_time_seconds: u64,
   },
 }
 
@@ -68,6 +85,7 @@ pub fn save_progress(
   save_progress_with_viewport(document_hash, offset, total_lines, None, None)
 }
 
+#[allow(dead_code)]
 pub fn save_progress_with_viewport(
   document_hash: u64,
   offset: usize, // This is the actual line number
@@ -75,29 +93,55 @@ pub fn save_progress_with_viewport(
   viewport_offset: Option<usize>,
   cursor_y: Option<usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+  // This convenience wrapper has no loaded document to measure characters
+  // against, so it stores the coarse line-fraction. Used only by tests/tools —
+  // the reader itself saves via `save_progress_snapshot` with the exact
+  // character percent.
+  let percentage = if total_lines > 0 {
+    (offset as f64 / total_lines as f64) * 100.0
+  } else {
+    0.0
+  };
   save_progress_full(
     document_hash,
+    Utc::now().timestamp_millis(),
     offset,
     total_lines,
+    percentage,
     viewport_offset,
     cursor_y,
     None,
     None,
+    None,
+    0,
   )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn save_progress_full(
   document_hash: u64,
+  // Save timestamp in the server's clock domain (skew-corrected), so the
+  // baseline this seeds on the next open compares correctly against a server
+  // row. The reader passes its corrected `now`; the library reconcile passes
+  // the adopted remote row's own timestamp.
+  updated_at: i64,
   offset: usize,
   total_lines: usize,
+  // Width-independent reading percent (non-whitespace-character fraction),
+  // computed by the caller from the document so it matches the value synced to
+  // the server and shown by peers. A caller without the loaded document (e.g.
+  // the library reconcile) passes the value it already holds.
+  percentage: f64,
   viewport_offset: Option<usize>,
   cursor_y: Option<usize>,
   page: Option<u32>,
   line_in_page: Option<usize>,
+  word_offset: Option<usize>,
+  reading_time_seconds: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-  let percentage = (offset as f64 / total_lines as f64) * 100.0;
   let event = Event::UpdateProgress {
-    timestamp: Utc::now(),
+    timestamp: DateTime::from_timestamp_millis(updated_at)
+      .unwrap_or_else(Utc::now),
     document_hash,
     offset,
     total_lines,
@@ -106,6 +150,8 @@ pub fn save_progress_full(
     cursor_y,
     page,
     line_in_page,
+    word_offset,
+    reading_time_seconds,
   };
   let serialized = serde_json::to_string(&event)?;
   let progress_file_path = get_progress_file_path()?;
@@ -131,6 +177,7 @@ pub fn load_progress(
     };
 
     let Event::UpdateProgress {
+      timestamp,
       document_hash: hash,
       offset,
       total_lines,
@@ -139,12 +186,15 @@ pub fn load_progress(
       cursor_y,
       page,
       line_in_page,
+      word_offset,
+      reading_time_seconds,
       ..
     } = event;
 
     if hash == document_hash {
       latest_progress = Some(Progress {
         document_hash: hash,
+        updated_at: timestamp.timestamp_millis(),
         offset,
         total_lines,
         percentage,
@@ -152,6 +202,8 @@ pub fn load_progress(
         cursor_y,
         page,
         line_in_page,
+        word_offset,
+        reading_time_seconds,
       });
     }
   }
@@ -189,6 +241,8 @@ mod tests {
       cursor_y: None,
       page: None,
       line_in_page: None,
+      word_offset: None,
+      reading_time_seconds: 0,
     };
 
     let serialized = serde_json::to_string(&event).unwrap();
@@ -204,6 +258,7 @@ mod tests {
       let event: Event = serde_json::from_str(&line).unwrap();
 
       let Event::UpdateProgress {
+        timestamp,
         document_hash: hash,
         offset,
         total_lines,
@@ -212,12 +267,15 @@ mod tests {
         cursor_y,
         page,
         line_in_page,
+        word_offset,
+        reading_time_seconds,
         ..
       } = event;
 
       if hash == test_hash {
         loaded_progress = Some(Progress {
           document_hash: hash,
+          updated_at: timestamp.timestamp_millis(),
           offset,
           total_lines,
           percentage,
@@ -225,6 +283,8 @@ mod tests {
           cursor_y,
           page,
           line_in_page,
+          word_offset,
+          reading_time_seconds,
         });
       }
     }
@@ -235,5 +295,6 @@ mod tests {
     assert_eq!(progress.offset, test_offset);
     assert_eq!(progress.total_lines, test_total_lines);
     assert_eq!(progress.percentage, 50.0);
+    assert!(progress.updated_at > 0);
   }
 }

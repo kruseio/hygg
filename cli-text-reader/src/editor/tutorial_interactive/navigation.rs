@@ -125,6 +125,7 @@ impl Editor {
       show_cursor: None,
       show_progress: None,
       pdf_ocr: None,
+      tts_enabled: None,
       tutorial_shown: Some(true),
     };
 

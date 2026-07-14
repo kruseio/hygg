@@ -1,0 +1,173 @@
+# Build the hygg-tauri native app on every desktop OS (and a debug Android APK)
+# on their own runners — the correct way to produce Linux + Windows + macOS
+# artifacts, since Tauri links each platform's system webview (WebKitGTK /
+# WebView2 / WKWebView) and can't be meaningfully cross-compiled from macOS.
+#
+# Each job builds the hygg-pwa frontend via the crate's `beforeBuildCommand`
+# (a `trunk build --release`, resolved through `git rev-parse --show-toplevel`),
+# then bundles the app. Release signing/notarization is intentionally left out
+# (needs the maintainer's Apple/Google/Windows certs as repo secrets).
+#
+# This is a breakage gate, so its artifacts are throwaway. Tags are deliberately
+# not a trigger: release.yml builds the same apps on a tag and is the one that
+# publishes them, so running both would build every platform twice for nothing.
+
+name: native-apps
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    name: desktop (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest # Apple silicon
+            target: aarch64-apple-darwin
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Linux: the WebKitGTK stack Tauri links against, plus AppImage tooling.
+      - name: Install Linux system deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev patchelf
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown, ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: ${{ matrix.target }}
+
+      - name: Install Trunk (builds the wasm frontend)
+        uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+
+      # tauri-action installs the Tauri CLI, runs the beforeBuildCommand
+      # (trunk build), and bundles the installers for the host OS.
+      - name: Build app
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: hygg-tauri
+          args: --target ${{ matrix.target }}
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: hygg-${{ matrix.target }}
+          if-no-files-found: warn
+          path: |
+            target/${{ matrix.target }}/release/bundle/**/*.dmg
+            target/${{ matrix.target }}/release/bundle/**/*.app
+            target/${{ matrix.target }}/release/bundle/**/*.deb
+            target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            target/${{ matrix.target }}/release/bundle/**/*.rpm
+            target/${{ matrix.target }}/release/bundle/**/*.msi
+            target/${{ matrix.target }}/release/bundle/**/*-setup.exe
+
+  android:
+    name: android (debug apk)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # One run (2026-07-14T20:25Z) died with ENOSPC writing the debug
+      # staticlib, and it has not reproduced: the runs on either side of it
+      # passed unchanged, and this runner reports 146G with ~104G free before
+      # the build starts. Nothing here comes close to that, so it reads as a
+      # transient fault on one runner rather than a shortage. Kept as a one-line
+      # breadcrumb: if it ever returns, this is the number to look at first.
+      - name: Report free disk
+        run: df -h /
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Install NDK
+        run: sdkmanager "ndk;26.3.11579264"
+      # wasm32 is required alongside the Android targets: the beforeBuildCommand
+      # builds the wasm frontend before the APK is assembled.
+      - name: Rust toolchain (Android + wasm targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown, aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+      - name: Install Tauri CLI
+        run: cargo install --locked tauri-cli --version "^2"
+      - name: Build debug APK
+        working-directory: hygg-tauri
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
+          # `--debug` builds the dev profile, whose full DWARF dominates the
+          # multi-GB libhygg_tauri_lib.a. This APK is a compile smoke test that
+          # is never stepped through in a debugger, so the debug info is dead
+          # weight — this is for build time and artifact size, not disk.
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: |
+          cargo tauri android init
+          cargo tauri android build --debug --apk --target aarch64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hygg-android-debug
+          path: hygg-tauri/gen/android/app/build/outputs/apk/**/*.apk
+
+  # iOS builds for the *simulator*, which needs no Apple Developer team or
+  # certificates — unlike a device/App Store build, which requires signing
+  # secrets the repo does not have. This still compiles the full Rust + Swift
+  # app, so it catches iOS breakage; producing a signed .ipa is a separate step
+  # that needs APPLE_* secrets (see tauri-action's iOS docs).
+  ios:
+    name: ios (simulator)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (iOS simulator + wasm targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown, aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: ios-sim
+      - uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+      # `tauri ios init` generates the Xcode project with xcodegen and resolves
+      # pods; cocoapods ships on the runner image, xcodegen does not.
+      - name: Install iOS project tooling
+        run: brew install xcodegen
+      - name: Install Tauri CLI
+        run: cargo install --locked tauri-cli --version "^2"
+      - name: Build simulator app
+        working-directory: hygg-tauri
+        run: |
+          cargo tauri ios init --ci
+          cargo tauri ios build --debug --target aarch64-sim
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hygg-ios-simulator
+          if-no-files-found: warn
+          path: hygg-tauri/gen/apple/build/**/*.app

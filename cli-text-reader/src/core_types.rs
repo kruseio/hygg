@@ -16,6 +16,16 @@ pub enum ViewMode {
   HorizontalSplit, // Horizontal split view with command output
 }
 
+// How a reader session ended. Returned by `Editor::run` so the launcher can
+// either exit hygg (`Quit`) or bring the user back to the full-screen home
+// library picker (`Home`, triggered by the `:home` / `:Rex` commands) — the
+// same view shown when hygg is launched with no input file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunOutcome {
+  Quit,
+  Home,
+}
+
 // Editor modes
 #[derive(PartialEq, Debug, Clone)]
 #[allow(dead_code)]

@@ -99,28 +99,49 @@ pub fn epub_to_text(file_path: &str) -> Result<String, EpubError> {
   let mut epub = EpubDoc::new(&canonical_path)
     .map_err(|e| EpubError::InvalidEpub(format!("Failed to open EPUB: {e}")))?;
 
+  extract_spine_text(&mut epub)
+}
+
+/// Convert in-memory EPUB bytes to plain text.
+///
+/// Filesystem-free counterpart of [`epub_to_text`] for environments without
+/// path access (e.g. a browser/WASM build importing a `File`). Reads the EPUB
+/// from a byte buffer via `EpubDoc::from_reader`; behavior is otherwise
+/// identical (spine order, HTML→text conversion, chapter separation).
+pub fn epub_bytes_to_text(bytes: &[u8]) -> Result<String, EpubError> {
+  let cursor = std::io::Cursor::new(bytes.to_vec());
+
+  let mut epub = EpubDoc::from_reader(cursor)
+    .map_err(|e| EpubError::InvalidEpub(format!("Failed to open EPUB: {e}")))?;
+
+  extract_spine_text(&mut epub)
+}
+
+/// Walk the EPUB spine in reading order, converting each XHTML resource to
+/// plain text and joining chapters with blank lines. Generic over the reader so
+/// both the path-based and byte-based entry points share one implementation.
+fn extract_spine_text<R: std::io::Read + std::io::Seek>(
+  epub: &mut EpubDoc<R>,
+) -> Result<String, EpubError> {
   let mut text_parts = Vec::new();
 
   for spine_item in epub.spine.clone() {
-    match epub.get_resource(&spine_item.idref) {
-      Some((xhtml_bytes, _media_type)) => {
-        let text =
-          html2text::from_read(xhtml_bytes.as_slice(), 110).map_err(|e| {
-            EpubError::HtmlConversion(format!(
-              "Failed to convert HTML to text for resource '{}': {}",
-              spine_item.idref, e
-            ))
-          })?;
+    // Resource not found is skipped silently — some EPUBs reference
+    // non-essential resources that don't affect the main content.
+    if let Some((xhtml_bytes, _media_type)) =
+      epub.get_resource(&spine_item.idref)
+    {
+      let text =
+        html2text::from_read(xhtml_bytes.as_slice(), 110).map_err(|e| {
+          EpubError::HtmlConversion(format!(
+            "Failed to convert HTML to text for resource '{}': {}",
+            spine_item.idref, e
+          ))
+        })?;
 
-        let trimmed_text = text.trim();
-        if !trimmed_text.is_empty() {
-          text_parts.push(trimmed_text.to_string());
-        }
-      }
-      None => {
-        // Resource not found, skip silently as some EPUBs may reference
-        // non-essential resources that don't affect the main content
-        continue;
+      let trimmed_text = text.trim();
+      if !trimmed_text.is_empty() {
+        text_parts.push(trimmed_text.to_string());
       }
     }
   }

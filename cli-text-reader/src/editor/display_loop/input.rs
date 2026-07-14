@@ -99,6 +99,13 @@ impl Editor {
             return Ok(LoopControl::Continue);
           }
 
+          // Mark the user active so reading time keeps accruing.
+          self.last_activity = std::time::Instant::now();
+
+          // The user is taking control: cancel any pending streaming-PDF resume
+          // so a late page-load doesn't yank the cursor back to the saved row.
+          self.pdf_restore_target = None;
+
           // Any key press stops narration (press again to act normally).
           if self.is_narrating() {
             self.stop_narration();

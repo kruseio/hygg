@@ -1,0 +1,95 @@
+[package]
+name = "hygg-pwa"
+description = "hygg reader — Rust/WASM touch PWA (offline-first)"
+publish = false
+
+version.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "AGPL-3.0-only"
+readme.workspace = true
+repository.workspace = true
+
+# Browser-only crate: builds for wasm32-unknown-unknown via Trunk. Kept out of
+# the workspace `default-members` and excluded from host `--workspace` CI
+# commands (it can't link web-sys/wasm-bindgen on the host target). Nothing in
+# the published `hygg` crate's dependency tree references it, so
+# `cargo install hygg` never pulls Leptos/wasm — same isolation as hygg-server.
+
+[lints]
+workspace = true
+
+# The whole Leptos/web-sys stack is gated to the wasm target. `cargo run -p
+# hygg-pwa` builds for the *host* target, where `main.rs` is just a launcher
+# that shells out to `trunk` — so none of these are pulled for that build, and
+# the host launcher needs only `std`. Trunk builds for wasm32, which activates
+# everything below.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Reused hygg pipeline (wasm-clean) — the actual "hygg look" + offline formats.
+cli-justify = { version = "0.1", path = "../cli-justify" }
+cli-epub-to-text = { version = "0.1", path = "../cli-epub-to-text" }
+# `visual-assets` unlocks full-resolution figures + rasterized tables for the
+# reader's "Images" mode. Pure render layer — the flattened text/anchor model is
+# untouched, so progress still interops with every other client.
+cli-pdf-to-text = { version = "0.1", path = "../cli-pdf-to-text", features = [
+  "visual-assets",
+] }
+hygg-shared = { version = "0.1", path = "../hygg-shared" }
+
+leptos = { version = "0.8", features = ["csr"] }
+leptos_router = "0.8"
+
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+# Await the Tauri IPC promise (native desktop/mobile) and deserialize its JSON
+# response into the reader model — see src/tauri_ipc.rs.
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = "0.1"
+
+# File import (File/Blob → bytes) and IndexedDB (offline document storage).
+gloo-file = { version = "0.3", features = ["futures"] }
+# Yield to the browser between extraction pages (keeps the reader responsive).
+gloo-timers = { version = "0.3", features = ["futures"] }
+rexie = "0.6"
+
+# Optional server sync (progressive enhancement): fetch + op ids.
+gloo-net = { version = "0.6", features = ["http"] }
+uuid = { version = "1", features = ["v4", "js"] }
+# Hold non-`Send` web-sys resources (the SSE `EventSource` + its listener
+# closure) across Leptos's `Send + Sync` cleanup bound. Sound here: the CSR app
+# is single-threaded, and `SendWrapper` panics if ever touched off-thread.
+send_wrapper = "0.6"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Base64-encode file bytes for the native IPC call (see src/tauri_ipc.rs).
+base64 = "0.22"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
+version = "0.3"
+features = [
+  "Window",
+  "Navigator",
+  "Document",
+  "Element",
+  "HtmlElement",
+  "HtmlInputElement",
+  "Node",
+  "DomRect",
+  # Live server push: subscribe to the SSE `changed` stream so a peer's progress
+  # or library change lands instantly (see src/sse.rs).
+  "EventSource",
+  "MessageEvent",
+  "CssStyleDeclaration",
+  "Event",
+  "EventTarget",
+  "ScrollToOptions",
+  "ScrollBehavior",
+  "Storage",
+  "MediaQueryList",
+  "SpeechSynthesis",
+  "SpeechSynthesisUtterance",
+  "console",
+]

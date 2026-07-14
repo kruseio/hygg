@@ -55,6 +55,7 @@ fn idle_cursor_show_skips_show_while_pdf_is_pending() {
     canonical_path_display: "pending.pdf".to_string(),
     restore_line_in_page: None,
     restore_cursor_y: None,
+    restore_word_offset: None,
   });
 
   let mut buffer = Vec::new();

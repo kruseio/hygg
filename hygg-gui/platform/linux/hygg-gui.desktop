@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=hygg
+GenericName=Document Reader
+Comment=A calm, offline-first document reader (PDF, EPUB, text)
+# %f is replaced by the opened file's path — hygg-gui reads it from argv and
+# opens straight into the reader.
+Exec=hygg-gui %f
+Icon=hygg-gui
+Terminal=false
+Categories=Office;Viewer;Literature;
+Keywords=pdf;epub;ebook;reader;document;text;markdown;offline;
+MimeType=application/pdf;application/epub+zip;text/plain;text/markdown;
+StartupNotify=true
+StartupWMClass=hygg-gui
+# The in-app About / Credits screens (Settings → About) surface the version,
+# commit, author, and GitHub link on Linux — there is no separate system
+# "About" panel for a non-menu app the way macOS provides one.

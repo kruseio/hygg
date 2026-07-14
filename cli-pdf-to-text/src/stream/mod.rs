@@ -28,6 +28,9 @@ pub(crate) use compose::{
 pub(crate) use geometry::{
   pdf_image_height_rows, pdf_width_to_cells, pdf_x_to_cells,
 };
+// Full-resolution image sources for the rich clients' high-fidelity render.
+#[cfg(feature = "visual-assets")]
+pub(crate) use images::render_pdf_images_sourced;
 pub(crate) use text_lines::{
   extract_page_text_lines, is_digits_only, push_pdf_word_gap,
 };

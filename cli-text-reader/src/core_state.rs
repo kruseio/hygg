@@ -11,6 +11,22 @@ use crate::editor::speech::SpeechState;
 use crate::editor::streaming::{PdfStreamingState, PendingPdfStream};
 use crate::highlights::HighlightData;
 use crate::interactive_tutorial_buffer::TutorialSuccessCondition;
+use crate::notes::NoteData;
+
+/// Saved resume position for a streaming PDF, kept *unresolved* until the
+/// target page has real content. `word_offset` (the page-local non-whitespace
+/// character anchor) is the exact, width-independent row and wins when
+/// present; `line_in_page` is the unclamped saved row used as the fallback for
+/// anchors that can't resolve (image rows, older saves without an anchor).
+/// Resolving either against a placeholder's own lines would corrupt the
+/// position, which is why resolution waits for the page to load.
+#[derive(Clone, Copy, Debug)]
+pub struct PdfRestoreTarget {
+  pub page: u32,
+  pub line_in_page: usize,
+  pub cursor_y: Option<usize>,
+  pub word_offset: Option<usize>,
+}
 
 pub struct Editor {
   pub lines: Vec<String>,
@@ -85,6 +101,13 @@ pub struct Editor {
   pub buffer_just_switched: bool,
   // Streaming-PDF page table; None for non-streaming sessions.
   pub pdf_streaming: Option<PdfStreamingState>,
+  // Pending resume target for a streaming PDF. Held until the target page has
+  // *real* rendered content so the saved row isn't clamped against — and the
+  // word anchor isn't resolved against — a 1-line placeholder (either would
+  // lose the position when the page hasn't preloaded, e.g. bundled-OCR opens
+  // with preload radius 0). Applied by `apply_pdf_restore_target_if_ready` and
+  // cleared on the first user keypress or a server-progress jump.
+  pub pdf_restore_target: Option<PdfRestoreTarget>,
   pub pdf_source_path: Option<String>,
   pub ocr_enabled: bool,
   // Background-opening PDF state; held while we wait for the doc to parse.
@@ -98,4 +121,85 @@ pub struct Editor {
   // changed at runtime by the `:voice` / `:speed` commands.
   pub tts_voice: String,
   pub tts_speed: f32,
+  // Master TTS on/off switch, seeded from ENABLE_TTS (config / `--tts`). When
+  // false, `:speak` and the narration hotkey are inert.
+  pub tts_enabled: bool,
+  // Per-document notes (`:note`), loaded at startup and persisted locally.
+  pub notes: NoteData,
+  // True while the `:note` overlay is capturing keystrokes as note text.
+  pub notes_active: bool,
+  // The note currently being typed in the notes overlay.
+  pub notes_input: String,
+  // Document line the notes overlay was opened on, attached to new notes.
+  pub notes_anchor: Option<usize>,
+  // Background sync engine handle; None when no server is configured
+  // (offline).
+  pub sync: Option<crate::sync::SyncHandle>,
+  // Stable cross-device id for the current document (sha256 of file bytes).
+  pub book_id: Option<String>,
+  // Effective sync mode for the current document: the more restrictive of the
+  // account-wide server ceiling and this device's local preference. Gates what
+  // the reader queues for sync. `Full` (the default) preserves the historical
+  // all-in behavior until a document is opted down.
+  pub sync_mode: hygg_shared::sync::SyncMode,
+  // Account/device-wide automatic-sync scope (from `AUTO_SYNC`): which
+  // documents sync without being touched. Combined with `auto_sync_optin` and
+  // the book heuristic to decide whether this document auto-syncs.
+  pub sync_policy: hygg_shared::sync::AutoSyncPolicy,
+  // This device's explicit "auto-sync this document" opt-in, mirrored from the
+  // library entry. Lets a non-book document sync under the `books`/`manual`
+  // scope; set by `:sync` and `:autosync add`.
+  pub auto_sync_optin: bool,
+  // Path the current document was opened from (used to derive `book_id`).
+  pub source_path: Option<String>,
+  // Set by `:home` / `:Rex` to end the reader loop and return to the
+  // full-screen home library picker instead of quitting hygg entirely.
+  pub exit_to_home: bool,
+  // Latest server-side progress for this book awaiting a jump.
+  pub pending_server_progress: Option<crate::sync::ServerProgress>,
+  // Set when a `pending_server_progress` was deferred because the PDF was
+  // still opening (no page table to anchor against yet). Remembers whether
+  // it should auto-apply (startup reconcile) or prompt, since the startup
+  // window may close before the slow open finishes. Resolved once the stream
+  // installs.
+  pub pending_server_progress_autoapply: bool,
+  // Whether to show the "progress changed on server" status-line prompt.
+  pub server_progress_prompt: bool,
+  // When the reader first moved while that prompt was up. Starts a short grace
+  // after which the prompt clears and the local position overrides the
+  // server's (scrolling away = "keep my place"), mirroring the PWA toast.
+  pub server_progress_scroll_at: Option<std::time::Instant>,
+  // Set when `:server-progress` was invoked without a cached position: it
+  // triggers a fresh re-fetch and jumps to whatever the server returns for
+  // this book (regardless of newer/older), rather than needing a second
+  // invocation. Cleared on the jump or after a short timeout (see
+  // `tick_server_progress_grace`).
+  pub server_progress_jump_requested_at: Option<std::time::Instant>,
+  // Last line we pushed to the server, to suppress prompting on our own echo.
+  pub last_synced_offset: Option<usize>,
+  // Latest local progress timestamp, including restored progress from disk.
+  pub last_local_progress_updated_at: Option<i64>,
+  // True until the first successful startup pull completes. During this window
+  // newer server progress is applied automatically instead of prompting.
+  pub startup_progress_reconcile: bool,
+  // Cumulative active reading time for the current document on this device, in
+  // seconds. Seeded from saved progress on open so it accrues across sessions.
+  pub reading_time_seconds: u64,
+  // Sub-second carry between ticks so short polls aren't lost when rounding to
+  // whole seconds.
+  pub reading_accrued: f64,
+  // Value of `reading_time_seconds` at the last persist, so we can derive the
+  // delta to add to the per-day bucket and push to the server.
+  pub reading_persisted_seconds: u64,
+  // Set when whole seconds accrued since the last persist; lets the snapshot
+  // write reading time even when the cursor hasn't moved.
+  pub reading_dirty: bool,
+  // Wall-clock of the last real keypress; reading time only accrues while the
+  // user has been active within `READING_IDLE_SECONDS`.
+  pub last_activity: Instant,
+  // Instant of the previous accrual tick.
+  pub reading_last_tick: Instant,
+  // Instant of the last reading-time flush to disk (drives periodic persists
+  // while purely reading without moving the cursor).
+  pub reading_last_flush: Instant,
 }

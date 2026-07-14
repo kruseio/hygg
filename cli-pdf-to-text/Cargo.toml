@@ -6,7 +6,7 @@ version.workspace = true
 rust-version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license.workspace = true
+license = "MIT"
 readme.workspace = true
 repository.workspace = true
 keywords.workspace = true
@@ -21,20 +21,20 @@ workspace = true
 default = []
 pdf-rendering = ["pdf_oxide/rendering"]
 pdf-ocr-bundled = ["pdf-rendering", "pdf_oxide/ocr-tract", "dep:flate2"]
+# High-fidelity visual extraction for a rich GUI (full-resolution embedded
+# images + rasterized table regions), exposed via `pdf_bytes_to_visuals`. It
+# enables pdf_oxide's rasterizer for table regions but DELIBERATELY does not
+# turn on this crate's `pdf-rendering` feature, so page composition — and thus
+# every client's line/kind/anchor model — stays byte-identical. Native only.
+visual-assets = ["pdf_oxide/rendering"]
 
 [dependencies]
 cli-image-to-ascii = { version = "0.1", path = "../cli-image-to-ascii" }
 cli-justify = { version = "0.1", path = "../cli-justify" }
-redirect-stderr = { version = "0.1", path = "../redirect-stderr" }
 hygg-shared = { version = "0.1", path = "../hygg-shared" }
 
 getopts = "0.2"
 
-# Our thin fork of pdf-extract 0.10, wired to the patched hygg-cff-parser
-# (Adobe Expert-encoded-CFF panic fix). Still imported as `pdf_extract`.
-pdf-extract = { package = "hygg-pdf-extract", version = "0.1", path = "../hygg-pdf-extract" }
-lopdf = "0.41"
-rayon = "1"
 # pdf_oxide is the streaming-path backend. It parses PDFs lazily — opening
 # the 31 MB / 1310-page pdfreference1.7old.pdf takes ~100 ms instead of the
 # ~40 s lopdf + pdf-extract need to parse and decompress every content
@@ -43,6 +43,31 @@ rayon = "1"
 # `Arc<PdfStream>` + background loader thread architecture unchanged.
 # lopdf + pdf-extract are still used by the non-streaming `pdf_to_text`
 # path, which trades latency for better layout fidelity on TOC / tables.
-pdf_oxide = { version = "0.3", default-features = false }
+# pdf_oxide ships explicit wasm32 support (its own getrandom/web-sys target
+# deps), so the streaming path is the one that compiles for the browser PWA.
+#
+# Pinned to =0.3.64: every release from 0.3.71 through 0.3.74 hangs
+# indefinitely extracting pdfreference1.7old.pdf — pathological deep
+# recursion in pdf_oxide's structure-tree parser
+# (parse_struct_elem/parse_k_children re-parsing objects without memoization).
+# 0.3.64 is the last release before the regression and passes the full
+# stream test suite. The `=` pin is deliberate so `cargo update` / CI's
+# `cargo upgrade` can't silently re-introduce the hang; widen it once
+# upstream fixes the blowup. Repro: cli-pdf-to-text stream test
+# `toc_section_labels_stay_separate`.
+pdf_oxide = { version = "=0.3.64", default-features = false }
 flate2 = { version = "1", optional = true }
 image = { version = "0.25.10", default-features = false, features = ["png"] }
+
+# Native-only backend for the non-streaming `pdf_to_text` layout path. These
+# don't build for wasm32 (rayon needs threads; redirect-stderr uses libc
+# dup/dup2; lopdf/pdf-extract are the up-front parser). The browser PWA uses
+# only the pdf_oxide streaming path (`PdfStream::open_bytes`), so we target-gate
+# them off wasm to keep that build lean and buildable.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+redirect-stderr = { version = "0.1", path = "../redirect-stderr" }
+# Our thin fork of pdf-extract 0.10, wired to the patched hygg-cff-parser
+# (Adobe Expert-encoded-CFF panic fix). Still imported as `pdf_extract`.
+pdf-extract = { package = "hygg-pdf-extract", version = "0.1", path = "../hygg-pdf-extract" }
+lopdf = "0.43"
+rayon = "1"

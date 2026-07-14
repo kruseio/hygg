@@ -1,5 +1,4 @@
 use super::{Editor, EditorMode};
-use crate::progress::save_progress_full;
 
 impl Editor {
   // Get the actual cursor position in the document (line_index, column)
@@ -112,43 +111,6 @@ impl Editor {
     if let Err(e) = save_highlights(&self.highlights) {
       self.debug_log_error(&format!("Failed to save highlights: {e}"));
     }
-  }
-
-  pub(crate) fn save_progress_snapshot(
-    &mut self,
-    force: bool,
-  ) -> Result<(), Box<dyn std::error::Error>> {
-    if self.total_lines == 0 {
-      return Ok(());
-    }
-    if self.pdf_pending.is_some() && self.pdf_streaming.is_none() {
-      return Ok(());
-    }
-
-    let current_line = self.offset + self.cursor_y;
-    if !force
-      && current_line == self.last_offset
-      && self.offset == self.last_saved_viewport_offset
-    {
-      return Ok(());
-    }
-
-    let (page, line_in_page) = match self.current_pdf_position() {
-      Some((p, l)) => (Some(p), Some(l)),
-      None => (None, None),
-    };
-    save_progress_full(
-      self.document_hash,
-      current_line,
-      self.total_lines,
-      Some(self.offset),
-      Some(self.cursor_y),
-      page,
-      line_in_page,
-    )?;
-    self.last_offset = current_line;
-    self.last_saved_viewport_offset = self.offset;
-    Ok(())
   }
 
   // Mark editor as needing redraw

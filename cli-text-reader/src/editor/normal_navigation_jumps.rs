@@ -174,6 +174,7 @@ impl Editor {
           let (line, col) = self.get_cursor_position();
           self.marks.insert(mark_char, (line, col));
           self.save_bookmarks();
+          self.enqueue_bookmark_sync(mark_char, line, col, false);
         }
         Ok(Some(false))
       }

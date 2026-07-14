@@ -24,6 +24,7 @@ impl Editor {
       show_cursor: None,
       show_progress: None,
       pdf_ocr: Some(enable),
+      tts_enabled: None,
       tutorial_shown: None,
     };
     if let Err(e) = save_ocr_config_for_command(&config) {
