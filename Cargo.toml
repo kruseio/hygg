@@ -79,7 +79,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.1.21"
+version = "0.1.22"
 rust-version = "1.88"
 edition = "2024"
 authors = ["kruseio"]
