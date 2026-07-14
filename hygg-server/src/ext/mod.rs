@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use crate::error::{AppError, Denial};
 
 mod web;
-pub use web::{NavLink, NoopWebExt, WebExt};
+pub use web::{NavAudience, NavGroup, NavLink, NoopWebExt, WebExt, nav_order};
 
 /// Identity of the authenticated user a hook is being asked about. Borrowed for
 /// the duration of the call; the implementation looks up whatever state it

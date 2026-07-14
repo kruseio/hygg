@@ -23,12 +23,6 @@ pub struct WebUser {
   ///
   /// [`NavLink`]: crate::ext::NavLink
   pub nav_admin_extra: String,
-  /// The pre-rendered marketing "Product" sidenav group, from the web
-  /// extension's [`product_nav_links`]. Empty on self-host (the open core has
-  /// no marketing site), so no Product group renders there.
-  ///
-  /// [`product_nav_links`]: crate::ext::WebExt::product_nav_links
-  pub nav_lead: String,
 }
 
 impl WebUser {
@@ -83,8 +77,6 @@ pub async fn current_user(
   } else {
     String::new()
   };
-  // The extension's injected nav group; empty unless an override adds one.
-  let nav_lead = product_nav_html(state.web_ext.as_ref());
   Some(WebUser {
     session_id: row.session_id,
     tenant_id: row.tenant_id,
@@ -98,7 +90,6 @@ pub async fn current_user(
     csrf_secret: row.csrf_secret,
     notifications,
     nav_admin_extra,
-    nav_lead,
   })
 }
 

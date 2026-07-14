@@ -90,9 +90,11 @@ impl AppState {
   /// An override calls this to surface its own pages inside the core chrome.
   #[must_use]
   pub fn with_web_ext(mut self, web_ext: Arc<dyn WebExt>) -> Self {
-    // Styles are installed process-wide: `page` renders signed-out pages with
-    // no state in scope, and they need the extension's styling too.
+    // Both are installed process-wide: `page` renders signed-out pages with no
+    // state in scope, and they need the extension's styling and nav as much as
+    // the signed-in ones do.
     crate::web::set_extra_css(web_ext.extra_css());
+    crate::web::set_nav_groups(web_ext.as_ref());
     self.web_ext = web_ext;
     self
   }

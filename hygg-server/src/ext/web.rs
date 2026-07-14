@@ -28,6 +28,61 @@ pub struct NavLink {
   pub icon: &'static str,
 }
 
+/// Who sees an injected [`NavGroup`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NavAudience {
+  /// Everyone, signed in or not. Marketing nav wants this: a visitor who
+  /// lands on a public page keeps the group as they move through the app.
+  Everyone,
+  /// Signed-in users only.
+  SignedIn,
+  /// Signed-in admins only.
+  Admins,
+}
+
+/// Sort positions of the core's own sidenav groups, for [`NavGroup::order`].
+///
+/// Pick a number on whichever side of a core group you want to sit: one below
+/// [`WORKSPACE`] leads the sidenav, one above [`ADMIN`] trails it, and one above
+/// [`RESOURCES`] lands between the docs and account groups. The gaps are wide so
+/// there is always room between two.
+///
+/// [`WORKSPACE`]: nav_order::WORKSPACE
+/// [`ADMIN`]: nav_order::ADMIN
+/// [`RESOURCES`]: nav_order::RESOURCES
+pub mod nav_order {
+  /// The workspace group (home, shares, devices, organizations).
+  pub const WORKSPACE: i32 = 0;
+  /// The "Resources" docs group, shown to everyone.
+  pub const RESOURCES: i32 = 100;
+  /// The log-in / sign-up group, shown to anonymous visitors.
+  pub const ACCOUNT: i32 = 200;
+  /// The admin group, shown to admins.
+  pub const ADMIN: i32 = 300;
+}
+
+/// A sidenav group an override contributes.
+///
+/// The core renders the group where [`order`] puts it and otherwise knows
+/// nothing about it: the title, icon, links, audience and placement are all the
+/// override's to choose. A group whose `links` are empty is omitted rather than
+/// rendered bare.
+///
+/// [`order`]: NavGroup::order
+#[derive(Clone, Debug)]
+pub struct NavGroup {
+  pub title: &'static str,
+  /// Names one of the chrome's built-in icons, as [`NavLink::icon`] does.
+  pub icon: &'static str,
+  pub links: Vec<NavLink>,
+  /// Placement among the core's groups; see [`nav_order`]. Groups sharing an
+  /// order keep the order they were declared in, after the core's own.
+  pub order: i32,
+  /// Whether the group starts expanded.
+  pub open: bool,
+  pub audience: NavAudience,
+}
+
 /// The web-UI injection seam consulted by the core's page handlers. See the
 /// module docs. All HTML returned by these hooks is embedded verbatim — the
 /// implementation escapes its own dynamic values (the core's `esc` helper is
@@ -40,10 +95,14 @@ pub trait WebExt: Send + Sync {
     Vec::new()
   }
 
-  /// A nav group prepended to the sidenav, for pages an override serves
-  /// outside the workspace. Empty by default, and the group is omitted
-  /// entirely when it stays empty.
-  fn product_nav_links(&self) -> Vec<NavLink> {
+  /// Sidenav groups this override contributes, for pages it serves itself.
+  /// Each group says where it sits and who sees it; see [`NavGroup`]. None by
+  /// default — the core ships no nav for pages it does not serve.
+  ///
+  /// Read once, when the extension is installed: a deployment's nav is a
+  /// property of the deployment, not of the visitor, so it renders identically
+  /// on every page including the signed-out ones.
+  fn nav_groups(&self) -> Vec<NavGroup> {
     Vec::new()
   }
 

@@ -1,4 +1,5 @@
 use super::*;
+use crate::ext::nav_order;
 
 /// One of the chrome's built-in icons by name, as inline SVG. Public so an
 /// extension's injected markup can use the same icon set as the pages around
@@ -95,75 +96,50 @@ pub fn icon(name: &str) -> &'static str {
   }
 }
 
-/// Render the marketing "Product" sidenav group from the web extension's
-/// [`product_nav_links`], or an empty string when it injects none (the
-/// default). Shared by the signed-in chrome (via [`WebUser::nav_lead`]) and any
-/// extension page that shows it while logged out.
+/// Render a full page. Every page goes through here, so the chrome around the
+/// body — including whatever groups the web extension contributed via
+/// [`nav_groups`] — is the same on every route, signed in or out. On self-host
+/// no extension contributes any and the sidenav is the core's own.
 ///
-/// [`product_nav_links`]: crate::ext::WebExt::product_nav_links
-pub fn product_nav_html(web_ext: &dyn crate::ext::WebExt) -> String {
-  let links = web_ext.product_nav_links();
-  if links.is_empty() {
-    return String::new();
-  }
-  let items: String =
-    links.iter().map(|l| nav_item(l.href, l.label, l.icon)).collect();
-  nav_group("Product", "compass", &[], &items, true)
-}
-
-/// Render a full page. The leading marketing nav comes from the signed-in
-/// user's pre-rendered [`nav_lead`] (empty on self-host); anonymous pages get
-/// none. Marketing handlers that must show it while logged out call
-/// [`page_with_lead`] with an explicit group.
-///
-/// [`nav_lead`]: WebUser::nav_lead
+/// [`nav_groups`]: crate::ext::WebExt::nav_groups
 pub fn page(title: &str, user: Option<&WebUser>, body: String) -> Response {
-  let lead = user.map(|u| u.nav_lead.clone()).unwrap_or_default();
-  page_with_lead(title, user, &lead, body)
-}
-
-/// Like [`page`] but with an explicit pre-rendered leading nav group, so an
-/// extension's pages can show that group even for anonymous visitors (where
-/// there is no signed-in user to carry it).
-pub fn page_with_lead(
-  title: &str,
-  user: Option<&WebUser>,
-  lead_nav: &str,
-  body: String,
-) -> Response {
   let (sidenav, topbar) = match user {
     Some(user) => {
-      let admin = if user.is_admin() {
-        nav_group(
-          "Admin",
-          "shield",
-          &[
-            ("/app/admin/dashboard", "Dashboard", "layout-dashboard"),
-            ("/app/admin/organizations", "Admin organizations", "building"),
-            ("/app/admin/users", "Admin users", "users"),
-            ("/app/admin/devices", "Admin devices", "server"),
-          ],
-          &user.nav_admin_extra,
-          true,
-        )
-      } else {
-        String::new()
-      };
-      let name = if user.display_name.trim().is_empty() {
-        &user.email
-      } else {
-        &user.display_name
-      };
-      let workspace = if user.has_workspace_access() {
+      let mut groups = vec![(nav_order::RESOURCES, docs_nav_group())];
+      if user.has_workspace_access() {
         let items = [
           ("/app/home", "Home", "home"),
           ("/app/shares", "Shared", "mail"),
           ("/app/devices", "Devices", "smartphone"),
           ("/app/organizations", "Organizations", "building"),
         ];
-        nav_group("Workspace", "home", &items, "", true)
+        groups.push((
+          nav_order::WORKSPACE,
+          nav_group("Workspace", "home", &items, "", true),
+        ));
+      }
+      if user.is_admin() {
+        groups.push((
+          nav_order::ADMIN,
+          nav_group(
+            "Admin",
+            "shield",
+            &[
+              ("/app/admin/dashboard", "Dashboard", "layout-dashboard"),
+              ("/app/admin/organizations", "Admin organizations", "building"),
+              ("/app/admin/users", "Admin users", "users"),
+              ("/app/admin/devices", "Admin devices", "server"),
+            ],
+            &user.nav_admin_extra,
+            true,
+          ),
+        ));
+      }
+      groups.extend(ext_nav_groups(Some(user)));
+      let name = if user.display_name.trim().is_empty() {
+        &user.email
       } else {
-        String::new()
+        &user.display_name
       };
       (
         format!(
@@ -171,17 +147,9 @@ pub fn page_with_lead(
           <a class="brand" href="/">hygg</a>
           <nav class="sidenav-links" aria-label="Primary">
             {}
-            {}
-            {}
-            {}
           </nav>
         </aside>"#,
-          // The leading nav group is injected by the web extension; nothing
-          // renders here unless an override adds one.
-          lead_nav,
-          workspace,
-          docs_nav_group(),
-          admin
+          sidenav_links(groups)
         ),
         format!(
           r#"<header class="topbar">
@@ -211,36 +179,43 @@ pub fn page_with_lead(
         ),
       )
     }
-    None => (
-      format!(
-        r#"<aside class="sidenav">
+    None => {
+      let mut groups = vec![
+        (nav_order::RESOURCES, docs_nav_group()),
+        (
+          nav_order::ACCOUNT,
+          nav_group(
+            "Account",
+            "users",
+            &[
+              ("/login", "Log in", "log-in"),
+              ("/signup", "Sign up", "user-plus"),
+            ],
+            "",
+            true,
+          ),
+        ),
+      ];
+      // The same injected groups the signed-in chrome gets, minus the ones
+      // that asked for a narrower audience: a visitor who lands on a public
+      // page keeps that nav as they move through /docs, /login and /signup.
+      groups.extend(ext_nav_groups(None));
+      (
+        format!(
+          r#"<aside class="sidenav">
         <a class="brand" href="/">hygg</a>
         <nav class="sidenav-links" aria-label="Primary">
           {}
-          {}
-          {}
         </nav>
       </aside>"#,
-        // The leading nav group is only non-empty when the page passed
-        // one; the core's own auth pages render nothing here.
-        lead_nav,
-        docs_nav_group(),
-        nav_group(
-          "Account",
-          "users",
-          &[
-            ("/login", "Log in", "log-in"),
-            ("/signup", "Sign up", "user-plus")
-          ],
-          "",
-          true,
-        )
-      ),
-      format!(
-        r#"<header class="topbar"><label class="sidenav-toggle-button" for="sidenav-toggle" aria-label="Toggle navigation" title="Toggle navigation">{}</label><div class="topbar-spacer"></div></header>"#,
-        icon("menu")
-      ),
-    ),
+          sidenav_links(groups)
+        ),
+        format!(
+          r#"<header class="topbar"><label class="sidenav-toggle-button" for="sidenav-toggle" aria-label="Toggle navigation" title="Toggle navigation">{}</label><div class="topbar-spacer"></div></header>"#,
+          icon("menu")
+        ),
+      )
+    }
   };
   let html = Html(format!(
     r#"<!doctype html>
