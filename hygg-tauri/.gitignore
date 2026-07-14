@@ -9,5 +9,6 @@
 /gen/apple
 /gen/android
 
-# Generated icon set (produced by `cargo tauri icon <src.png>`).
-/icons
+# NOTE: /icons is deliberately NOT ignored. Although `cargo tauri icon` produces
+# it, `tauri::generate_context!` reads the icons at compile time, so a checkout
+# without them (CI) fails to build. They are committed as source assets.

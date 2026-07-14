@@ -92,10 +92,12 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install NDK
         run: sdkmanager "ndk;26.3.11579264"
-      - name: Rust toolchain (Android targets)
+      # wasm32 is required alongside the Android targets: the beforeBuildCommand
+      # builds the wasm frontend before the APK is assembled.
+      - name: Rust toolchain (Android + wasm targets)
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
+          targets: wasm32-unknown-unknown, aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
       - uses: Swatinem/rust-cache@v2
       - uses: jetli/trunk-action@v0.5.0
         with:
@@ -114,7 +116,40 @@ jobs:
           name: hygg-android-debug
           path: hygg-tauri/gen/android/app/build/outputs/apk/**/*.apk
 
-  # iOS is not built here: App Store / device builds need an Apple Developer
-  # signing team + certificates as repo secrets. To add it, run on macos-latest:
-  #   cargo tauri ios init && cargo tauri ios build
-  # with APPLE_* / signing secrets configured (see tauri-action's iOS docs).
+  # iOS builds for the *simulator*, which needs no Apple Developer team or
+  # certificates — unlike a device/App Store build, which requires signing
+  # secrets the repo does not have. This still compiles the full Rust + Swift
+  # app, so it catches iOS breakage; producing a signed .ipa is a separate step
+  # that needs APPLE_* secrets (see tauri-action's iOS docs).
+  ios:
+    name: ios (simulator)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (iOS simulator + wasm targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown, aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: ios-sim
+      - uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+      # `tauri ios init` generates the Xcode project with xcodegen and resolves
+      # pods; cocoapods ships on the runner image, xcodegen does not.
+      - name: Install iOS project tooling
+        run: brew install xcodegen
+      - name: Install Tauri CLI
+        run: cargo install --locked tauri-cli --version "^2"
+      - name: Build simulator app
+        working-directory: hygg-tauri
+        run: |
+          cargo tauri ios init --ci
+          cargo tauri ios build --debug --target aarch64-sim
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hygg-ios-simulator
+          if-no-files-found: warn
+          path: hygg-tauri/gen/apple/build/**/*.app

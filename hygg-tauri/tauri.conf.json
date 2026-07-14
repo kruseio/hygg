@@ -4,8 +4,8 @@
   "identifier": "com.kruseio.hygg",
   "build": {
     "frontendDist": "../hygg-pwa/dist",
-    "beforeBuildCommand": "cd \"$(git rev-parse --show-toplevel)/hygg-pwa\" && trunk build --release",
-    "beforeDevCommand": "cd \"$(git rev-parse --show-toplevel)/hygg-pwa\" && trunk serve",
+    "beforeBuildCommand": "cd hygg-pwa && trunk build --release",
+    "beforeDevCommand": "cd hygg-pwa && trunk serve",
     "devUrl": "http://127.0.0.1:8080"
   },
   "app": {

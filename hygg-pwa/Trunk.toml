@@ -3,6 +3,14 @@ target = "index.html"
 # Emit hashed filenames so the service worker can cache-bust on deploy.
 filehash = true
 
+[tools]
+# Pin wasm-opt: binaryen 116 (the default for some Trunk builds) cannot parse the
+# wasm current rustc emits and dies with "invalid code after misc prefix". Left
+# unpinned, the version varies per environment, so CI broke while local builds
+# passed. wasm-bindgen is deliberately NOT pinned here — Trunk derives it from
+# the locked crate version, and hardcoding it would drift on the next bump.
+wasm_opt = "version_123"
+
 [serve]
 addresses = ["127.0.0.1"]
 port = 8080
