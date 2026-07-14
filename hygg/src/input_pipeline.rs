@@ -187,14 +187,14 @@ fn read_via_best_effort(
 fn pandoc_to_text(
   file_path: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-  if which("pandoc").is_none() {
+  let Some(pandoc) = which("pandoc") else {
     return Err(
       "pandoc not found. Install with:\nsudo apt install pandoc\n# scoop install pandoc\n# brew install pandoc".into(),
     );
-  }
+  };
 
   let canonical_path = normalize_file_path(file_path)?;
-  let output = Command::new("pandoc")
+  let output = Command::new(pandoc)
     .arg("--to=plain")
     .arg("--wrap=none")
     .arg("--")
