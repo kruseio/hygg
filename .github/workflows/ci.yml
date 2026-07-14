@@ -56,8 +56,12 @@ jobs:
           workspaces: ". -> target"
           key: cli-${{ matrix.os }}
 
+      # cli-epub-to-text is built explicitly: the EPUB test shells out to
+      # target/debug/cli-epub-to-text by path, and `-p hygg` does not build a
+      # sibling crate's binary. Locally it is usually present from an earlier
+      # workspace build, which is why this only ever failed in CI.
       - name: Build
-        run: cargo build -p hygg --locked
+        run: cargo build -p hygg -p cli-epub-to-text --locked
 
       - name: Test
         run: cargo test -p hygg --locked
