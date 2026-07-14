@@ -43,9 +43,9 @@ pub enum NavAudience {
 /// Sort positions of the core's own sidenav groups, for [`NavGroup::order`].
 ///
 /// Pick a number on whichever side of a core group you want to sit: one below
-/// [`WORKSPACE`] leads the sidenav, one above [`ADMIN`] trails it, and one above
-/// [`RESOURCES`] lands between the docs and account groups. The gaps are wide so
-/// there is always room between two.
+/// [`WORKSPACE`] leads the sidenav, one above [`ADMIN`] trails it, and one
+/// above [`RESOURCES`] lands between the docs and account groups. The gaps are
+/// wide so there is always room between two.
 ///
 /// [`WORKSPACE`]: nav_order::WORKSPACE
 /// [`ADMIN`]: nav_order::ADMIN
