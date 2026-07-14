@@ -15,9 +15,14 @@
 name: docker
 
 on:
+  # Publishing is unchanged: a v* tag still builds both arches and pushes the
+  # multi-arch image to GHCR.
   push:
     tags: ["v*"]
+  # Scoped to pull requests into main, matching ci.yml. main was never a trigger
+  # here, so the tag path is untouched by that change.
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 env:

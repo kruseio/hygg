@@ -15,9 +15,18 @@
 name: native-apps
 
 on:
-  push:
-    branches: [main]
+  # Pull requests into main only — the same reasoning as ci.yml: the PR already
+  # built the merge result, so the merge itself has nothing left to prove, and a
+  # push straight to main intentionally builds nothing. Unlike ci.yml there is no
+  # tag trigger, for the reason given above.
   pull_request:
+    branches: [main]
+  # The same weekly cache warm as ci.yml, and for a sharper version of the same
+  # reason: these Tauri builds are the slowest gate a pull request waits on, so a
+  # cold cache costs the most here. Staggered an hour after ci.yml rather than
+  # racing it for runners.
+  schedule:
+    - cron: "23 5 * * 1" # Mondays, 05:23 UTC
   workflow_dispatch:
 
 jobs:

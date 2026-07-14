@@ -6,10 +6,33 @@
 name: ci
 
 on:
+  # A v* tag still runs: release.yml publishes from it, and now that main is not
+  # a trigger, a tag can carry commits no pull request ever saw. It is the last
+  # gate before anything ships.
   push:
-    branches: [main]
     tags: ["v*"]
+  # The gate. A pull_request build checks out the *merge result* of head into
+  # base, so a green PR has already tested what main is about to become —
+  # re-running the identical tree on push to main spends a three-OS matrix to
+  # learn nothing. It also means a commit pushed straight to main runs no
+  # pipeline at all, which is deliberate: that is the escape hatch for a README
+  # typo, and the reason to keep it for changes that cannot break a build.
   pull_request:
+    branches: [main]
+  # Weekly cache warm, on main. An Actions cache is only restorable from the
+  # branch that saved it or from the default branch, so once main stopped
+  # building on every merge, nothing refreshed the scope every PR restores from —
+  # and each PR would have rebuilt this dependency tree from close to scratch.
+  #
+  # It is a schedule on *this* workflow rather than a cache-warm workflow of its
+  # own because rust-cache derives its key from the job id: a separate workflow
+  # would faithfully populate keys that no PR ever reads. A scheduled run lands on
+  # the default branch, so these jobs save under exactly the keys PRs restore.
+  # Weekly is deliberate — an entry is evicted after 7 days unattended, and if one
+  # does lapse this run simply rebuilds and re-saves it, on nobody's critical path.
+  # It doubles as a canary that main still builds when no PR has touched it.
+  schedule:
+    - cron: "23 4 * * 1" # Mondays, 04:23 UTC
   workflow_dispatch:
 
 env:
@@ -65,6 +88,47 @@ jobs:
 
       - name: Test
         run: cargo test -p hygg --locked
+
+  # The full suite, on one platform. The `cli` matrix above runs only `-p hygg`'s
+  # tests and `server` below only `-p hygg-server`'s, which left most of the
+  # workspace with no CI coverage at all — cli-text-reader above all, the reader
+  # engine and the largest body of tests in the tree. Cross-platform divergence is
+  # the matrix's job; this one is about breadth, so it runs once, on Linux.
+  #
+  # The member selection mirrors tools/ci.sh's HOST_ONLY, and drifts from it at
+  # your peril: the two verbatim upstream forks are not ours to test, hygg-pwa's
+  # real artifact is the wasm bundle the `pwa` job builds (its host build is a
+  # trunk launcher), and hygg-tauri needs that bundle on disk before it will
+  # compile at all — native-apps.yml is what covers it.
+  tests:
+    name: full test suite (ubuntu)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same reason as the cli job: the ODT/DOCX tests skip themselves silently
+      # when pandoc is absent, and would pass while testing nothing.
+      - name: Install pandoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc
+
+      - name: Verify pandoc is on PATH
+        run: pandoc --version
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: tests
+
+      - name: Test
+        run: |
+          cargo test --workspace --locked \
+            --exclude hygg-cff-parser --exclude hygg-pdf-extract \
+            --exclude hygg-pwa --exclude hygg-tauri
 
   # Self-hostable sync server. Tests are SQLite-backed, so no service container
   # is needed.
