@@ -106,19 +106,7 @@ Made with [contrib.rocks](https://contrib.rocks).
 ## Licensing
 
 hygg is a multi-license workspace — each crate declares its own license, and
-there is no single project-wide license:
-
-- **AGPL-3.0-only** — the reader itself (CLI, GUI, PWA, Tauri clients)
-- **MIT** — the reusable libraries (converters, justifier, shared types)
-- **Elastic License 2.0** — the self-hostable sync server (source-available)
-
-Reading with hygg is free and unencumbered; the obligations only apply if you
-distribute or host a modified client. For the full picture — every crate, the
-third-party assets, the optional features that pull in extra terms, and what it
-all means for you — see **[LICENSING.md](LICENSING.md)**.
-
-License texts: [`LICENSE`](LICENSE) (AGPL-3.0), [`LICENSE-MIT`](LICENSE-MIT),
-[`LICENSE-APACHE`](LICENSE-APACHE), [`LICENSE-ELASTIC`](LICENSE-ELASTIC).
+there is no single project-wide license see [LICENSING.md](LICENSING.md).
 
 Contributions are accepted under the project's [Contributor License
 Agreement](CLA.md) (implicit on submission); see [CONTRIBUTING](CONTRIBUTING.md).
