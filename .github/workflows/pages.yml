@@ -1,0 +1,147 @@
+# Publish the hygg-pwa to GitHub Pages, one immutable deploy per tag.
+#
+# The site accumulates rather than being replaced:
+#
+#   /hygg/            the latest release — the URL to share and install from
+#   /hygg/v0.1.21/    that tag, frozen; stays put so a link to it keeps working
+#   /hygg/v0.1.20/
+#   /hygg/versions.html
+#
+# So the tag is built twice, at two public URLs. It is deliberately not one build
+# plus a redirect at the root: a PWA's identity is its scope, so installing from
+# a root that redirects would pin the installed app to whatever version it first
+# saw. Building the root separately keeps one stable app identity there, with the
+# pinned copies as siblings for anyone who needs a specific version.
+#
+# This uses a gh-pages branch instead of actions/deploy-pages because the latter
+# replaces the whole site on every run, which would take the old versions with
+# it. Enable it once under Settings → Pages → Source: "Deploy from a branch" →
+# gh-pages / (root).
+
+name: pages
+
+on:
+  push:
+    tags: ["v*"]
+  # Rebuild the site (e.g. after changing the version index) without tagging.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to (re)deploy, e.g. v0.1.21"
+        required: true
+
+permissions:
+  contents: write # pushes the built site to gh-pages
+
+# Never let two tags interleave their read-modify-write of gh-pages.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy pwa
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Resolve tag and base path
+        id: vars
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          base="/${{ github.event.repository.name }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "Deploying $tag to $base/ and $base/$tag/"
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: pages
+
+      - uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+
+      # Two builds, two public URLs. Trunk bakes the public URL into the hashed
+      # asset refs, so a build is not relocatable after the fact.
+      - name: Build latest (served at ${{ steps.vars.outputs.base }}/)
+        working-directory: hygg-pwa
+        run: |
+          trunk build --release --public-url "${{ steps.vars.outputs.base }}/"
+          python3 tools/prepare_pages_dist.py dist "${{ steps.vars.outputs.base }}/"
+          mv dist ../dist-latest
+
+      - name: Build pinned (served at ${{ steps.vars.outputs.base }}/${{ steps.vars.outputs.tag }}/)
+        working-directory: hygg-pwa
+        run: |
+          url="${{ steps.vars.outputs.base }}/${{ steps.vars.outputs.tag }}/"
+          trunk build --release --public-url "$url"
+          python3 tools/prepare_pages_dist.py dist "$url"
+          mv dist ../dist-pinned
+
+      # A fresh repo has no gh-pages yet; start it as an orphan so the branch
+      # carries only the site, never the source history.
+      - name: Check out gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch origin gh-pages --depth=1
+            git worktree add site --track -b gh-pages origin/gh-pages
+          else
+            echo "no gh-pages branch yet — creating it"
+            git worktree add --orphan -b gh-pages site
+          fi
+
+      - name: Assemble site
+        run: |
+          set -euo pipefail
+          tag="${{ steps.vars.outputs.tag }}"
+
+          # Replace the root deploy, keeping every pinned version dir. Matching
+          # on v<digit> (not v*) so a root file like "versions.html" is not
+          # mistaken for a version directory and preserved as stale.
+          find site -mindepth 1 -maxdepth 1 \
+            -not -name '.git' \
+            -not -regex 'site/v[0-9].*' \
+            -exec rm -rf {} +
+          cp -R dist-latest/. site/
+
+          # The pinned copy is immutable: re-tagging the same version replaces it,
+          # anything else is left alone.
+          rm -rf "site/$tag"
+          mkdir -p "site/$tag"
+          cp -R dist-pinned/. "site/$tag/"
+
+          # Pages runs Jekyll otherwise, which drops files starting with "_".
+          touch site/.nojekyll
+          python3 hygg-pwa/tools/write_versions_index.py site "${{ steps.vars.outputs.base }}/"
+
+      - name: Commit and push
+        working-directory: site
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "site unchanged — nothing to push"
+            exit 0
+          fi
+          git commit -m "pages: deploy ${{ steps.vars.outputs.tag }}"
+          git push origin gh-pages
+
+      - name: Summary
+        run: |
+          {
+            echo "### PWA deployed"
+            echo
+            echo "- latest: https://${{ github.repository_owner }}.github.io${{ steps.vars.outputs.base }}/"
+            echo "- pinned: https://${{ github.repository_owner }}.github.io${{ steps.vars.outputs.base }}/${{ steps.vars.outputs.tag }}/"
+            echo "- all versions: https://${{ github.repository_owner }}.github.io${{ steps.vars.outputs.base }}/versions.html"
+          } >> "$GITHUB_STEP_SUMMARY"

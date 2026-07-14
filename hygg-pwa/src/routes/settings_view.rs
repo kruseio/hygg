@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
 
-use crate::app::SettingsCtx;
+use crate::app::{SettingsCtx, link};
 use crate::build_info as bi;
 use crate::components::AccountSection;
 use crate::settings::{ImageMode, Theme};
@@ -19,7 +19,7 @@ pub fn SettingsView() -> impl IntoView {
     <div class="settings">
       <header class="topbar">
         <div class="topbar__left">
-          <A href="/" attr:class="iconbtn" attr:aria-label="Back">
+          <A href=link("/") attr:class="iconbtn" attr:aria-label="Back">
             <svg viewBox="0 0 24 24" width="26" height="26" fill="none"
               stroke="currentColor" stroke-width="2" stroke-linecap="round"
               stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -146,8 +146,8 @@ pub fn SettingsView() -> impl IntoView {
         <section class="setting">
           <label>"About"</label>
           <div class="setting__row about__links">
-            <A href="/about" attr:class="btn">"About hygg"</A>
-            <A href="/credits" attr:class="btn">"Credits"</A>
+            <A href=link("/about") attr:class="btn">"About hygg"</A>
+            <A href=link("/credits") attr:class="btn">"Credits"</A>
           </div>
           <p class="setting__hint">
             {format!("Version {} \u{00b7} {}", bi::VERSION, bi::GIT_SHA)}

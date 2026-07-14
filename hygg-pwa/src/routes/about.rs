@@ -6,6 +6,7 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
 
+use crate::app::link;
 use crate::build_info as bi;
 use crate::components::TopBar;
 
@@ -15,7 +16,7 @@ pub fn About() -> impl IntoView {
     <TopBar
       title=Signal::derive(|| "About".to_string())
       visible=Signal::derive(|| true)
-      back_href="/settings".to_string()
+      back_href=link("/settings")
     />
     <main class="about">
       <section class="about__head">
@@ -40,7 +41,7 @@ pub fn About() -> impl IntoView {
         <a class="btn" href=bi::commit_url() target="_blank" rel="noopener">
           "View this commit"
         </a>
-        <A href="/credits" attr:class="btn">"Credits"</A>
+        <A href=link("/credits") attr:class="btn">"Credits"</A>
       </div>
     </main>
   }

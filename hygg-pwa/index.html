@@ -16,9 +16,14 @@
     <meta name="apple-mobile-web-app-title" content="hygg" />
     <title>hygg</title>
 
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+    <!-- Relative, not root-absolute: the versioned Pages deploys serve this
+         bundle from /hygg/v<tag>/, where a leading "/" would escape the deploy.
+         These resolve against <base href> (injected per deploy by
+         tools/prepare_pages_dist.py), or against the document at "/" when there
+         is no base — the Tauri shell and a plain `trunk serve`. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="icons/icon-192.png" />
 
     <!-- Trunk: copy static PWA assets to dist unhashed (referenced by name). -->
     <link data-trunk rel="copy-file" href="manifest.webmanifest" />
@@ -52,7 +57,11 @@
       // protocol) so a SW is pointless and its registration can error.
       if ("serviceWorker" in navigator && !window.__TAURI__) {
         window.addEventListener("load", () => {
-          navigator.serviceWorker.register("/sw.js").catch(() => {});
+          // Relative: resolves against <base href>, which both points at this
+          // deploy's own sw.js and scopes it to this deploy — so /hygg/ and
+          // /hygg/v0.1.21/ get independent workers instead of one stomping the
+          // other's cache.
+          navigator.serviceWorker.register("sw.js").catch(() => {});
         });
       }
     </script>

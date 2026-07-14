@@ -21,7 +21,7 @@ use super::home_support::{
   sync_metadata,
 };
 use super::import_flow::{ImportResult, do_import, upload_book_if_synced};
-use crate::app::SettingsCtx;
+use crate::app::{SettingsCtx, link};
 use crate::components::TopBar;
 use crate::model::{BookSummary, Progress};
 
@@ -277,7 +277,7 @@ fn book_card(
   };
   view! {
     <li class="card">
-      <A href=format!("/read/{}", id) attr:class="card__open">
+      <A href=link(&format!("/read/{}", id)) attr:class="card__open">
         <span class="card__title">{b.title.clone()}</span>
         <div class="card__bar"><span style=format!("width:{pct}%")></span></div>
         <span class="card__meta">

@@ -12,7 +12,7 @@ use super::reader_support::{
   save_progress_throttled,
 };
 use super::reader_view::reader_body;
-use crate::app::SettingsCtx;
+use crate::app::{SettingsCtx, link};
 use crate::assets::ImageAsset;
 use crate::components::TopBar;
 use crate::model::Book;
@@ -255,7 +255,7 @@ pub fn Reader() -> impl IntoView {
           book.with(|b| b.as_ref().map(|x| x.title.clone()).unwrap_or_default())
         })
         visible=nav_visible
-        back_href="/".to_string()
+        back_href=link("/")
       >
         <button class="iconbtn iconbtn--ring"
           class:iconbtn--on=move || tts_playing.get()

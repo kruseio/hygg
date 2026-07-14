@@ -5,6 +5,8 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
 
+use crate::app::link;
+
 #[component]
 pub fn TopBar(
   /// Center title text.
@@ -34,7 +36,7 @@ pub fn TopBar(
       <div class="topbar__title">{move || title.get()}</div>
       <div class="topbar__right">
         {children.map(|c| c())}
-        <A href="/settings" attr:class="iconbtn" attr:aria-label="Settings">
+        <A href=link("/settings") attr:class="iconbtn" attr:aria-label="Settings">
           {gear()}
         </A>
       </div>

@@ -97,6 +97,33 @@ The PWA defaults its server URL to the SaaS server (`https://hygg.kruseio.com`)
 and talks to its bearer-token `/api/v1` JSON API; that requires a CORS allow-list
 for the PWA origin on the server side (added with the sync work).
 
+### Versioned GitHub Pages deploys
+
+`.github/workflows/pages.yml` publishes every tag to GitHub Pages twice — the
+latest release at `/hygg/`, and a frozen copy at `/hygg/v<tag>/` that stays put so
+a link to it keeps working. Running the bundle from a sub-path takes three things,
+none of which Trunk does on its own:
+
+- **`--public-url /hygg/v0.1.21/`** so Trunk's hashed asset URLs point into the
+  deploy. This is baked in at build time, which is why each path needs its own
+  build rather than one relocatable bundle.
+- **`tools/prepare_pages_dist.py`** injects `<base href>` (Trunk does not) and
+  copies `index.html` to `404.html`, which is how a static host serves deep links
+  like `/hygg/v0.1.21/settings`. Every relative ref — manifest, icons, `sw.js` —
+  and the router's own idea of its root resolve against that base.
+- **`app::link()`** for every in-app href. `<Router base>` is *not* enough on its
+  own: leptos_router passes any href starting with `/` straight through, and
+  relative hrefs resolve against the current route rather than the deploy root, so
+  `<A href="/settings">` would escape the deploy. Route *matching* still needs
+  `base`, so both are load-bearing.
+
+`sw.js` keys its cache to `registration.scope` for the same reason: several
+deploys share one origin, and CacheStorage is per-origin, so an unqualified cache
+name would have `/hygg/` and `/hygg/v0.1.21/` evicting each other's entries.
+
+A build with no `--public-url` (the Tauri shell, `trunk serve`) gets no `<base>`,
+`link()` prefixes nothing, and everything behaves exactly as it did before.
+
 ## Architecture
 
 ```
@@ -112,6 +139,7 @@ src/
   settings.rs    preferences persisted to localStorage
 index.html       Trunk entry: manifest, icons, SW registration, install shim
 manifest.webmanifest, sw.js, styles/main.css, assets/icons/
+tools/           prepare_pages_dist.py (<base> + 404.html) · write_versions_index.py
 ```
 
 Document identity is `book_id = sha256(source_bytes)` (via `hygg-shared`) — the

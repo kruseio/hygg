@@ -11,6 +11,7 @@ use leptos_router::components::A;
 use serde::Deserialize;
 
 use super::about::github_icon;
+use crate::app::link;
 use crate::build_info as bi;
 use crate::components::TopBar;
 
@@ -61,7 +62,7 @@ pub fn Credits() -> impl IntoView {
     <TopBar
       title=Signal::derive(|| "Credits".to_string())
       visible=Signal::derive(|| true)
-      back_href="/settings".to_string()
+      back_href=link("/settings")
     />
     <main class="credits">
       <section class="panel credits__author">
@@ -111,8 +112,8 @@ pub fn Credits() -> impl IntoView {
       </section>
 
       <div class="credits__footer">
-        <A href="/settings" attr:class="btn">"Open settings"</A>
-        <A href="/about" attr:class="btn">"About hygg"</A>
+        <A href=link("/settings") attr:class="btn">"Open settings"</A>
+        <A href=link("/about") attr:class="btn">"About hygg"</A>
       </div>
     </main>
   }
