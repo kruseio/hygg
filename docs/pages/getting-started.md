@@ -1,6 +1,9 @@
 ### [<-](../README.md)
 
 ## Getting Started
+hygg reads in the terminal, in a browser, on the desktop, and on your phone.
+Every client reads the same documents — pick one and go.
+
 ### Install the Rust toolchain
 For UNIX type operating systems run the following command:
 ```sh
@@ -30,25 +33,48 @@ Install a specific version
 cargo install --locked --version 0.1.18 hygg
 ```
 
-Insall a specific git branch
+Install a specific git branch
 ```sh
 cargo install --locked --git https://github.com/kruseio/hygg --branch cross-platform-which hygg
 ```
 
-Clone the repo, build from source and run
-```sh
-git clone https://github.com/kruseio/hygg.git
-cd hygg
-cargo run -- test-data/pdf/pdfreference1.7old-1-50.pdf
+### Download a prebuilt binary
+No toolchain needed. Grab the archive for your platform from the
+[latest release](https://github.com/kruseio/hygg/releases/latest), unpack it and
+put `hygg` on your path. The macOS build is a universal binary.
+
+### Read in the browser
+Nothing to install:
+```
+https://kruseio.github.io/hygg/
 ```
 
-Clone the repo, build from source, install and run
+Add it to your home screen and it reads offline like a native app.
+
+### Install the desktop app
+Download your platform's installer from the
+[latest release](https://github.com/kruseio/hygg/releases/latest):
+`.dmg` (macOS), `.deb` / `.AppImage` / `.rpm` (Linux), `.msi` / `.exe` (Windows).
+
+The installers are unsigned, so macOS Gatekeeper and Windows SmartScreen warn on
+first launch.
+
+### Install on mobile
+Android — sideload the `.apk` from the
+[latest release](https://github.com/kruseio/hygg/releases/latest). It is
+debug-signed, so uninstall any previous version rather than upgrading in place.
+
+iOS — no installable build yet; the released iOS app runs in the Xcode simulator
+only.
+
+### Run the sync server
+Optional. hygg reads fine with no server, and never depends on one. To sync
+documents and reading progress across devices, run your own:
 ```sh
-git clone https://github.com/kruseio/hygg.git
-cd hygg
-cargo install --locked --path hygg
-hygg test-data/pdf/pdfreference1.7old-1-50.pdf
+docker run -d -p 3032:3032 -v "$PWD/data:/app/data" ghcr.io/kruseio/hygg-server:latest
 ```
+
+Then point a client at `http://localhost:3032`.
 
 ## Additional formats via pandoc
 ```sh
@@ -80,3 +106,8 @@ cat README.md | hygg
 curl example.com | hygg
 pandoc doc.docx --to=plain | hygg
 ```
+
+## Going further
+[Detailed installation](detailed-installation.md) covers the rest: building any
+client from source, text-to-speech, per-platform prerequisites, and self-hosting
+the server and the web app.
