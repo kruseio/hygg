@@ -12,6 +12,6 @@ You **do not need to sign anything** — submitting a PR or contribution implies
 
 ## Before you submit
 
-- hygg is a multi-license workspace; see the [Licensing](./README.md#licensing) section for which license covers which crate, and keep changes within the license of the crate(s) you touch.
+- hygg is a multi-license workspace; see [LICENSING.md](./LICENSING.md) for which license covers which crate, and keep changes within the license of the crate(s) you touch — don't move AGPL code into an MIT crate, and don't import AGPL code into `hygg-server`.
 - Authored Rust source files must stay **≤ 300 lines** (enforced by `tools/loc-gate.sh`) — split larger modules.
 - Run the test suite (and ideally `./tools/ci.sh`) before opening a pull request.

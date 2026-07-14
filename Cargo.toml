@@ -84,8 +84,8 @@ rust-version = "1.88"
 edition = "2024"
 authors = ["kruseio"]
 # `license` is intentionally NOT inherited: this is a multi-license workspace
-# (MIT libs, AGPL-3.0-only TUI, Elastic-2.0 server), so each crate states its
-# own license explicitly. See the Licensing section of the README.
+# (MIT libs, AGPL-3.0-only clients, Elastic-2.0 server), so each crate states
+# its own license explicitly. See LICENSING.md.
 readme = "README.md"
 repository = "https://github.com/kruseio/hygg"
 keywords = ["pdf", "cli", "parser", "terminal", "utility"]

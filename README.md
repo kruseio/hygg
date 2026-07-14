@@ -105,24 +105,20 @@ Made with [contrib.rocks](https://contrib.rocks).
 
 ## Licensing
 
-hygg is a multi-license workspace. Each crate declares its own license in its
-`Cargo.toml`; there is no single project-wide license.
+hygg is a multi-license workspace — each crate declares its own license, and
+there is no single project-wide license:
 
-| Crate(s) | License | Why |
-|---|---|---|
-| `cli-justify`, `redirect-stderr`, `cli-image-to-ascii`, `hygg-shared`, `cli-epub-to-text`, `cli-pdf-to-text` | **MIT** | Reusable libraries — permissive so anyone can build on them. |
-| `cli-text-reader`, `hygg` | **AGPL-3.0-only** | The reader/TUI itself — network-copyleft to keep the product and its hosted forks open. |
-| `hygg-server` | **Elastic License 2.0** | The sync server — source-available; you can self-host and modify it, but not offer it to third parties as a managed service. ELv2 is *not* OSI "open source". |
-| `hygg-cff-parser`, `hygg-pdf-extract` | **MIT / MIT OR Apache-2.0** | Thin forks of upstream crates; they retain their original licenses. |
+- **AGPL-3.0-only** — the reader itself (CLI, GUI, PWA, Tauri clients)
+- **MIT** — the reusable libraries (converters, justifier, shared types)
+- **Elastic License 2.0** — the self-hostable sync server (source-available)
 
-The split is dependency-safe: every MIT crate depends only on permissive
-crates, the AGPL TUI sits at the top of the tree (it may absorb its MIT deps),
-and the Elastic server shares no code with either — the client and server are
-statically typed against the **MIT** `hygg-shared::sync::proto` wire contract,
-so no license crosses the client/server boundary.
+Reading with hygg is free and unencumbered; the obligations only apply if you
+distribute or host a modified client. For the full picture — every crate, the
+third-party assets, the optional features that pull in extra terms, and what it
+all means for you — see **[LICENSING.md](LICENSING.md)**.
 
-License texts: [`LICENSE`](LICENSE) (AGPL-3.0), [`LICENSE-MIT`](LICENSE-MIT)
-(MIT), and [`hygg-server/LICENSE`](hygg-server/LICENSE) (Elastic 2.0).
+License texts: [`LICENSE`](LICENSE) (AGPL-3.0), [`LICENSE-MIT`](LICENSE-MIT),
+[`LICENSE-APACHE`](LICENSE-APACHE), [`LICENSE-ELASTIC`](LICENSE-ELASTIC).
 
 Contributions are accepted under the project's [Contributor License
 Agreement](CLA.md) (implicit on submission); see [CONTRIBUTING](CONTRIBUTING.md).
