@@ -1,0 +1,89 @@
+# Publish the workspace's library and CLI crates to crates.io on a release tag.
+#
+# The work is all in tools/.publish.sh — the same script a maintainer runs by
+# hand — because the publish *order* is load-bearing (each crate's verification
+# build resolves its siblings from the registry, so a dependency has to be up
+# there first) and that order should have exactly one definition. This file's job
+# is the trigger, the toolchain, and the token.
+#
+# Re-running is safe. The script skips any crate already on crates.io at the
+# workspace version, so a run that fails partway through is finishable by simply
+# running it again — which matters, because a published version is immutable and
+# cannot be replaced. That is not hypothetical here: 0.1.22 went out from a
+# laptop with hygg-server failing to package, leaving it at 0.1.15 behind ten
+# siblings at 0.1.22, and no re-run could get past the crates that had already
+# landed. Dispatching this workflow now publishes hygg-server and skips the rest.
+#
+# The GitHub Release and its downloadable artifacts are release.yml's job, the
+# container image is docker.yml's, and the PWA deploy is pages.yml's. All four
+# fire on the same tag.
+
+name: publish
+
+on:
+  # The same bare-semver pattern as every other tag-triggered workflow here —
+  # this repository tags 0.1.22, not v0.1.22. See release.yml for the full note
+  # on why `v*` was wrong.
+  push:
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
+  # Publish (or finish publishing) without cutting a new tag.
+  workflow_dispatch:
+
+# Two runs pushing the same crates would race each other into "already uploaded"
+# errors, and never cancel one mid-flight: an interrupted publish is exactly the
+# half-finished state described above.
+concurrency:
+  group: publish-crates-io
+  cancel-in-progress: false
+
+jobs:
+  crates-io:
+    name: crates.io
+    runs-on: ubuntu-22.04
+    # Scopes CARGO_REGISTRY_TOKEN to this job, and is the place to require a
+    # reviewer if you want a human between a tag and an irreversible publish:
+    # Settings → Environments → crates-io → Required reviewers. ci.yml runs on
+    # this same tag but cannot gate this workflow, so that approval is the only
+    # thing that can hold a publish until the checks are read. The environment
+    # needs no setup to work — an unconfigured one simply runs.
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v4
+
+      # Stable, deliberately: crates.io publishes are what users build with
+      # stable, and the verification build cargo runs per crate should be the
+      # build they will get, not a nightly one.
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: publish
+
+      # `cargo publish` verifies each crate by building it, so a missing token
+      # would not surface until the first crate had already compiled. Say so now,
+      # in words, instead.
+      #
+      # Create it at crates.io → Account Settings → API Tokens, scoped to
+      # publish-new + publish-update, then add it here as CARGO_REGISTRY_TOKEN
+      # (Settings → Secrets and variables → Actions, or on the environment
+      # above). crates.io also supports Trusted Publishing via OIDC, which drops
+      # the stored token entirely — worth a look when this needs rotating.
+      - name: Check the registry token is configured
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "${CARGO_REGISTRY_TOKEN}" ]; then
+            echo "CARGO_REGISTRY_TOKEN is not set." >&2
+            echo "Add a crates.io API token (scopes: publish-new, publish-update)" >&2
+            echo "as a repository or 'crates-io' environment secret of that name." >&2
+            exit 1
+          fi
+          echo "token present"
+
+      # cargo reads CARGO_REGISTRY_TOKEN itself, so the script needs no argument.
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: ./tools/.publish.sh
