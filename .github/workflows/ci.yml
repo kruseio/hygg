@@ -1,16 +1,38 @@
-# Build + test the non-native crates: the `hygg` CLI, the `hygg-server` sync
-# backend, and the `hygg-pwa` wasm frontend. The native app bundles (Tauri
-# desktop/mobile) are built separately in native-apps.yml, which is slower and
-# needs per-OS system webviews.
+# Every gate tools/ci.sh runs, on every pull request into main — one leg per job,
+# so a red build names the check that failed rather than a script that stopped
+# somewhere inside itself, and so the slow legs run beside each other instead of
+# queueing behind the fast ones.
+#
+# These jobs call tools/ci.sh rather than spelling out the cargo invocations
+# again. The member exclusions and flags are subtle enough (read that script's
+# header) that a second copy of them here would drift, and the drift would
+# surface as a pull request that is green on a runner and red on a laptop — this
+# file had already started down that road, carrying a comment that its exclusion
+# list "mirrors tools/ci.sh's HOST_ONLY, and drifts from it at your peril".
+#
+# What no runner runs is that script's bare-invocation prelude — cargo update /
+# cargo upgrade / cargo fix. Those rewrite the tree, and a gate that rewrites the
+# tree has stopped testing the one that was proposed. `fmt` is the same thought
+# from the other end: the leg checks, the local pass writes.
+#
+# The native app bundles (Tauri desktop/mobile installers) are built separately
+# in native-apps.yml, which is slower and needs per-OS system webviews.
 
 name: ci
 
 on:
-  # A v* tag still runs: release.yml publishes from it, and now that main is not
-  # a trigger, a tag can carry commits no pull request ever saw. It is the last
-  # gate before anything ships.
+  # A release tag still runs: release.yml publishes from it, and now that main is
+  # not a trigger, a tag can carry commits no pull request ever saw. It is the
+  # last gate before anything ships.
+  #
+  # The pattern matches this repository's tags, which are bare semver — 0.1.22,
+  # no `v` prefix. It read `v*` until 2026-07, which matched none of them, so
+  # every tag-triggered workflow here silently did nothing for its whole life.
+  # `[0-9]+` is a GitHub filter pattern, not a regex: `+` repeats the preceding
+  # bracket group. It matches 0.1.22 and declines to match tags like
+  # `backup-pre-squash-2026-07-14`, which must never start a release.
   push:
-    tags: ["v*"]
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
   # The gate. A pull_request build checks out the *merge result* of head into
   # base, so a green PR has already tested what main is about to become —
   # re-running the identical tree on push to main spends a three-OS matrix to
@@ -30,21 +52,183 @@ on:
   # the default branch, so these jobs save under exactly the keys PRs restore.
   # Weekly is deliberate — an entry is evicted after 7 days unattended, and if one
   # does lapse this run simply rebuilds and re-saves it, on nobody's critical path.
-  # It doubles as a canary that main still builds when no PR has touched it.
+  # It doubles as a canary that main still builds when no PR has touched it, and
+  # now also the one place cargo audit's advisory scan is read as news rather
+  # than noise (see the audit job).
   schedule:
     - cron: "23 4 * * 1" # Mondays, 04:23 UTC
   workflow_dispatch:
+
+# One live run per ref. A pull request now fans out to ten jobs, so a second push
+# arriving mid-flight would otherwise leave two full sets competing for runners
+# to answer a question only the newer one is still asking. Tags and the schedule
+# get a group but never cancel: the tag run is the last gate before a release
+# ships, and nothing should be able to cut it short.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # --- Gates that compile nothing ---------------------------------------------
+  # Seconds, not minutes, and no cache to restore. They fail a malformed pull
+  # request while the compiled legs below are still linking.
+
+  # Nightly is not a preference here: rustfmt.toml leans on `ignore` — the only
+  # thing keeping the vendored forks unformatted — and on `wrap_comments`, both
+  # nightly-only options that stable rustfmt drops with a warning while
+  # reformatting the forks it was asked to leave alone.
+  fmt:
+    name: fmt
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - run: ./tools/ci.sh fmt
+
+  # No toolchain at all: the gate is `git ls-files` and `wc -l`.
+  loc-gate:
+    name: loc gate
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tools/ci.sh loc
+
+  # Reports; does not gate. It is the one leg here that cannot, because its input
+  # is not the pull request — it is the advisory database, which moves on its own
+  # schedule. An advisory published overnight against a transitive dependency
+  # would turn every open pull request red while having found nothing wrong with
+  # any of them, and the contributor holding the red X would be the one person
+  # unable to fix it. It is also not quite the check ci.sh runs locally: there,
+  # audit follows cargo update/upgrade and so judges a freshly resolved tree,
+  # while here it judges the committed lockfile, advisories and all.
+  #
+  # So it runs on pull requests for its annotation, and the weekly scheduled run
+  # above is where it is read as news. When it is loud, fix it on a branch of its
+  # own rather than inside whatever pull request happened to be open.
+  audit:
+    name: audit (advisory report)
+    runs-on: ubuntu-22.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: ./tools/ci.sh audit
+
+  # --- Gates that compile ------------------------------------------------------
+  # Nightly throughout, because tools/ci.sh is nightly throughout: udeps runs
+  # nowhere else, and a stable clippy would hold contributors to a different lint
+  # set than the maintainer's own pass. The cost of a floating nightly is that a
+  # new lint can redden an untouched tree — if that ever blocks real work, pin the
+  # date here (`@nightly-YYYY-MM-DD`) and bump it deliberately.
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: clippy
+      - run: ./tools/ci.sh clippy
+
+  # The full suite, on one platform, and the only job here that tests breadth.
+  # Until it existed CI ran `-p hygg` and `-p hygg-server` and nothing else, so
+  # most of the workspace had no coverage at all — cli-text-reader above all, the
+  # reader engine and the largest body of tests in the tree. Cross-platform
+  # divergence is the `cli` matrix's job; this one runs once, on Linux, and
+  # subsumes what the old separate `hygg-server` job did (its tests are
+  # SQLite-backed, so no service container is needed here either).
+  tests:
+    name: full test suite (ubuntu)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # The ODT/DOCX tests shell out to pandoc and silently skip themselves when
+      # it is absent, so without this they would pass while testing nothing.
+      - name: Install pandoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc
+
+      - name: Verify pandoc is on PATH
+        run: pandoc --version
+
+      - name: Rust toolchain (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: tests
+
+      - run: ./tools/ci.sh test
+
+  # The TTS regression tests, which the suite above compiles out — the feature is
+  # opt-in, so the default run builds none of it and guards none of it. Its own
+  # job for the same reason it is its own leg: espeak-rs builds vendored espeak-ng
+  # through CMake and rodio links ALSA, so this is the only job here that needs
+  # system packages for a *cargo* dependency rather than a test fixture.
+  tts:
+    name: tts tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install CMake + ALSA headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake libasound2-dev
+
+      - name: Rust toolchain (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: tts
+
+      - run: ./tools/ci.sh tts
+
+  udeps:
+    name: udeps
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: udeps
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-udeps
+      - run: ./tools/ci.sh udeps
+
+  # --- Gates ci.sh has no way to run -------------------------------------------
+
   # The CLI is the crate users `cargo install`, so its terminal/PTY and file-path
   # handling — exactly the code that diverges per platform — is built and tested
-  # on the OSes where it diverges. Linux is not in the matrix because the `tests`
-  # job below already runs `-p hygg` there as part of the full suite, on the same
-  # runner image; this matrix exists for the divergence, not for a third copy of
-  # the same result.
+  # on the OSes where it diverges. This is the one job here that is not a ci.sh
+  # leg and could not be: the script runs on one machine, and this exists for the
+  # other two. Stable, not nightly, for the same reason — stable is what a user
+  # installing hygg will have. Linux is absent because the `tests` job above
+  # already runs `-p hygg` there as part of the full suite, on the same runner
+  # image; this matrix exists for the divergence, not a third copy of one result.
   cli:
     name: hygg cli (${{ matrix.os }})
     strategy:
@@ -86,78 +270,86 @@ jobs:
       - name: Test
         run: cargo test -p hygg --locked
 
-  # The full suite, on one platform, and the only job here that tests breadth.
-  # Until it existed CI ran `-p hygg` and `-p hygg-server` and nothing else, so
-  # most of the workspace had no coverage at all — cli-text-reader above all, the
-  # reader engine and the largest body of tests in the tree. Cross-platform
-  # divergence is the `cli` matrix's job; this one runs once, on Linux, and
-  # subsumes what the old separate `hygg-server` job did (its tests are
-  # SQLite-backed, so no service container is needed here either).
-  #
-  # The member selection mirrors tools/ci.sh's HOST_ONLY, and drifts from it at
-  # your peril: the two verbatim upstream forks are not ours to test, hygg-pwa's
-  # real artifact is the wasm bundle the `pwa` job builds (its host build is a
-  # trunk launcher), and hygg-tauri needs that bundle on disk before it will
-  # compile at all — native-apps.yml is what covers it.
-  tests:
-    name: full test suite (ubuntu)
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-
-      # Same reason as the cli job: the ODT/DOCX tests skip themselves silently
-      # when pandoc is absent, and would pass while testing nothing.
-      - name: Install pandoc
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pandoc
-
-      - name: Verify pandoc is on PATH
-        run: pandoc --version
-
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ". -> target"
-          key: tests
-
-      - name: Test
-        run: |
-          cargo test --workspace --locked \
-            --exclude hygg-cff-parser --exclude hygg-pdf-extract \
-            --exclude hygg-pwa --exclude hygg-tauri
+  # --- The two crates the host legs exclude ------------------------------------
 
   # The PWA's real artifact is the wasm bundle, so it is built the way it ships:
   # through Trunk for wasm32-unknown-unknown. A host `cargo build -p hygg-pwa`
-  # would only compile the thin trunk launcher and prove nothing about the app.
+  # would only compile the thin trunk launcher and prove nothing about the app —
+  # which is why the host legs exclude it and this leg exists. It also carries the
+  # isolation guard, so this job is where `cargo install hygg` is held to a
+  # dependency tree free of the Leptos/wasm and iced/GUI stacks.
   pwa:
     name: hygg-pwa (wasm)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Rust toolchain (nightly + wasm)
+        uses: dtolnay/rust-toolchain@nightly
         with:
           targets: wasm32-unknown-unknown
+          components: clippy
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
           key: pwa
 
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-udeps
+
       - name: Install Trunk
         uses: jetli/trunk-action@v0.5.0
         with:
           version: latest
 
-      - name: Build wasm bundle
-        working-directory: hygg-pwa
-        run: trunk build --release
+      - run: ./tools/ci.sh wasm
 
       - uses: actions/upload-artifact@v4
         with:
           name: hygg-pwa-dist
           path: hygg-pwa/dist
+
+  # hygg-tauri's lint and test pass, which nothing else does. native-apps.yml
+  # builds this app's installers on all three desktop OSes, but building is all it
+  # does — it never lints the crate, and it never runs the tests covering the
+  # native extraction commands (base64 decode, the txt/pdf/epub pipeline), which
+  # live here and nowhere else. Debug profile, Linux only, against a Trunk bundle:
+  # whether the app bundles on Windows and macOS is native-apps.yml's question,
+  # and this job deliberately does not re-ask it.
+  tauri:
+    name: hygg-tauri (lint + test)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # The WebKitGTK stack Tauri links against on Linux — the same set
+      # native-apps.yml installs, and needed here before hygg-tauri will compile
+      # at all.
+      - name: Install Linux system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev patchelf
+
+      # wasm32 is required alongside the host target: the leg builds the hygg-pwa
+      # frontend before hygg-tauri, whose generate_context! embeds the bundle.
+      - name: Rust toolchain (nightly + wasm)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: tauri
+
+      - name: Install Trunk
+        uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+
+      - run: ./tools/ci.sh tauri

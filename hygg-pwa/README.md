@@ -79,10 +79,10 @@ the wasm target in `Cargo.toml`, so this host build pulls none of it. Of course
 
 The crate is a workspace member but is excluded from `default-members` and from
 the host-target CI commands (its real artifact is wasm; the host build is only
-the `trunk` launcher). `./tools/ci.sh` covers it with
-a dedicated wasm leg: `clippy`/`build`/`udeps` for `wasm32-unknown-unknown`, a
-`trunk build`, and an isolation guard asserting `cargo install hygg` never pulls
-the Leptos/wasm stack.
+the `trunk` launcher). `./tools/ci.sh wasm` is the leg that covers it:
+`clippy`/`build`/`udeps` for `wasm32-unknown-unknown`, a `trunk build`, and an
+isolation guard asserting `cargo install hygg` never pulls the Leptos/wasm
+stack. CI runs that same leg, as its own job.
 
 ## Deploy / hosting
 
