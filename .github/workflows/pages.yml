@@ -3,8 +3,8 @@
 # The site accumulates rather than being replaced:
 #
 #   /hygg/            the latest release — the URL to share and install from
-#   /hygg/v0.1.21/    that tag, frozen; stays put so a link to it keeps working
-#   /hygg/v0.1.20/
+#   /hygg/0.1.22/     that tag, frozen; stays put so a link to it keeps working
+#   /hygg/0.1.21/
 #   /hygg/versions.html
 #
 # So the tag is built twice, at two public URLs. It is deliberately not one build
@@ -21,13 +21,18 @@
 name: pages
 
 on:
+  # Bare semver, no `v` prefix — this repository tags 0.1.22. This read `v*`
+  # until 2026-07, which matched no tag it has ever had, so no tag ever deployed
+  # the site; what is published there came from the manual dispatch below.
+  # `[0-9]+` is a GitHub filter pattern rather than a regex (`+` repeats the
+  # preceding bracket group).
   push:
-    tags: ["v*"]
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
   # Rebuild the site (e.g. after changing the version index) without tagging.
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to (re)deploy, e.g. v0.1.21"
+        description: "Tag to (re)deploy, e.g. 0.1.22"
         required: true
 
 permissions:

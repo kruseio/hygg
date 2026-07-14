@@ -18,8 +18,14 @@
 name: release
 
 on:
+  # Bare semver, no `v` prefix — this repository tags 0.1.22, not v0.1.22. This
+  # read `v*` until 2026-07 and so had never once fired: every release up to
+  # 0.1.22 was tagged, this workflow ignored it, and the release carried no
+  # artifacts at all. `[0-9]+` is a GitHub filter pattern rather than a regex
+  # (`+` repeats the preceding bracket group), and it declines to match tags like
+  # `backup-pre-squash-2026-07-14`.
   push:
-    tags: ["v*"]
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
   # Dry run: builds and uploads workflow artifacts, but publishes no release.
   workflow_dispatch:
 
@@ -430,7 +436,7 @@ jobs:
           **Server** — self-host the sync server from the image published for this
           tag (linux/amd64 + linux/arm64):
           \`\`\`
-          docker run -d -p 3032:3032 -v "\$PWD/data:/app/data" ghcr.io/$owner/hygg-server:${TAG#v}
+          docker run -d -p 3032:3032 -v "\$PWD/data:/app/data" ghcr.io/$owner/hygg-server:${TAG}
           \`\`\`
 
           **Android** — \`hygg-android-${TAG}-debug.apk\` is debug-signed. It sideloads

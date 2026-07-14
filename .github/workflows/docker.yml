@@ -2,7 +2,7 @@
 #
 # Every pull request builds the image (amd64 only, never pushed) so a change that
 # breaks the Dockerfile or the server's build fails here rather than at release
-# time. A v* tag builds linux/amd64 and linux/arm64 and pushes them as one
+# time. A release tag builds linux/amd64 and linux/arm64 and pushes them as one
 # multi-arch image — arm64 matters for a self-hosted server (Raspberry Pi, Oracle
 # free tier, Graviton).
 #
@@ -15,10 +15,14 @@
 name: docker
 
 on:
-  # Publishing is unchanged: a v* tag still builds both arches and pushes the
-  # multi-arch image to GHCR.
+  # A release tag builds both arches and pushes the multi-arch image to GHCR.
+  #
+  # Bare semver, no `v` prefix: this repository tags 0.1.22. This read `v*` until
+  # 2026-07 and therefore matched no tag this repository has ever had, so no
+  # image was ever pushed on a release. `[0-9]+` is a GitHub filter pattern, not
+  # a regex — `+` repeats the preceding bracket group.
   push:
-    tags: ["v*"]
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
   # Scoped to pull requests into main, matching ci.yml. main was never a trigger
   # here, so the tag path is untouched by that change.
   pull_request:
@@ -176,8 +180,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # v0.1.21 -> :0.1.21, :0.1, and :latest. `latest=auto` leaves a
-      # pre-release (v1.0.0-rc1) off :latest, which is the point of tagging one.
+      # 0.1.22 -> :0.1.22, :0.1, and :latest. metadata-action parses semver with
+      # or without a `v`, so the bare tags this repository uses need nothing
+      # special here. `latest=auto` leaves a pre-release (1.0.0-rc1) off :latest,
+      # which is the point of tagging one.
       - name: Image tags
         id: meta
         uses: docker/metadata-action@v5
