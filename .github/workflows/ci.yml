@@ -39,27 +39,24 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # The CLI is the crate users `cargo install`, so it is built and tested on all
-  # three desktop OSes — its terminal/PTY and file-path handling is exactly the
-  # code that diverges per platform.
+  # The CLI is the crate users `cargo install`, so its terminal/PTY and file-path
+  # handling — exactly the code that diverges per platform — is built and tested
+  # on the OSes where it diverges. Linux is not in the matrix because the `tests`
+  # job below already runs `-p hygg` there as part of the full suite, on the same
+  # runner image; this matrix exists for the divergence, not for a third copy of
+  # the same result.
   cli:
     name: hygg cli (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-latest, windows-latest]
+        os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       # The ODT/DOCX tests shell out to pandoc and silently skip themselves when
       # it is absent, so without this they would pass while testing nothing.
-      - name: Install pandoc (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pandoc
-
       - name: Install pandoc (macOS)
         if: runner.os == 'macOS'
         run: brew install pandoc
@@ -89,11 +86,13 @@ jobs:
       - name: Test
         run: cargo test -p hygg --locked
 
-  # The full suite, on one platform. The `cli` matrix above runs only `-p hygg`'s
-  # tests and `server` below only `-p hygg-server`'s, which left most of the
-  # workspace with no CI coverage at all — cli-text-reader above all, the reader
-  # engine and the largest body of tests in the tree. Cross-platform divergence is
-  # the matrix's job; this one is about breadth, so it runs once, on Linux.
+  # The full suite, on one platform, and the only job here that tests breadth.
+  # Until it existed CI ran `-p hygg` and `-p hygg-server` and nothing else, so
+  # most of the workspace had no coverage at all — cli-text-reader above all, the
+  # reader engine and the largest body of tests in the tree. Cross-platform
+  # divergence is the `cli` matrix's job; this one runs once, on Linux, and
+  # subsumes what the old separate `hygg-server` job did (its tests are
+  # SQLite-backed, so no service container is needed here either).
   #
   # The member selection mirrors tools/ci.sh's HOST_ONLY, and drifts from it at
   # your peril: the two verbatim upstream forks are not ours to test, hygg-pwa's
@@ -129,28 +128,6 @@ jobs:
           cargo test --workspace --locked \
             --exclude hygg-cff-parser --exclude hygg-pdf-extract \
             --exclude hygg-pwa --exclude hygg-tauri
-
-  # Self-hostable sync server. Tests are SQLite-backed, so no service container
-  # is needed.
-  server:
-    name: hygg-server
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ". -> target"
-          key: server
-
-      - name: Build
-        run: cargo build -p hygg-server --locked
-
-      - name: Test
-        run: cargo test -p hygg-server --locked
 
   # The PWA's real artifact is the wasm bundle, so it is built the way it ships:
   # through Trunk for wasm32-unknown-unknown. A host `cargo build -p hygg-pwa`

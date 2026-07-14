@@ -23,6 +23,15 @@ on:
   # here, so the tag path is untouched by that change.
   pull_request:
     branches: [main]
+  # Weekly cache warm, for the same reason as ci.yml: the buildx `type=gha` cache
+  # below is branch-scoped exactly like a rust-cache entry, so with no run ever
+  # landing on main, PR image builds would restore from a scope nothing refreshes.
+  # A scheduled run is a branch ref, not a tag, so every `ref_type == 'tag'` guard
+  # below turns it into precisely a cache warm: amd64 only, no GHCR login, no
+  # push, no manifest merge. Only the amd64 scope is warmed, which is the one PRs
+  # read; arm64 is built on tags alone.
+  schedule:
+    - cron: "23 6 * * 1" # Mondays, 06:23 UTC
   workflow_dispatch:
 
 env:
