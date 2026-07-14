@@ -1,0 +1,198 @@
+# Build the hygg-server container image, and publish it to GHCR on a tag.
+#
+# Every pull request builds the image (amd64 only, never pushed) so a change that
+# breaks the Dockerfile or the server's build fails here rather than at release
+# time. A v* tag builds linux/amd64 and linux/arm64 and pushes them as one
+# multi-arch image — arm64 matters for a self-hosted server (Raspberry Pi, Oracle
+# free tier, Graviton).
+#
+# Each architecture builds on a runner of its own architecture rather than under
+# QEMU: emulating this dependency tree (axum, sea-orm, the bundled tract OCR
+# engine) would take hours. That is why the tag path builds by digest and then
+# stitches the digests into one manifest — the standard buildx pattern for
+# distributing a multi-arch build across runners.
+
+name: docker
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/hygg-server
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build (${{ matrix.arch }})
+    # Both arches on a tag; amd64 alone on a pull request, which only needs to
+    # prove the image still builds — arm64 there would double the wait for no
+    # extra signal. The selection lives in the matrix because a job-level `if`
+    # cannot see the `matrix` context, while `strategy` can see `github`.
+    strategy:
+      fail-fast: false
+      matrix:
+        include: >-
+          ${{ github.ref_type == 'tag'
+          && fromJSON('[{"runner":"ubuntu-22.04","platform":"linux/amd64","arch":"amd64"},{"runner":"ubuntu-22.04-arm","platform":"linux/arm64","arch":"arm64"}]')
+          || fromJSON('[{"runner":"ubuntu-22.04","platform":"linux/amd64","arch":"amd64"}]') }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.ref_type == 'tag'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Labels only — the tags are applied to the manifest, not to these
+      # per-arch digests. org.opencontainers.image.source is what links the GHCR
+      # package back to this repository.
+      - name: Image labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+
+      # Cache scoped per arch: the two runners produce different layers, and a
+      # shared scope would have them evicting each other on every run.
+      - name: Build${{ github.ref_type == 'tag' && ' and push by digest' || '' }}
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: hygg-server/Dockerfile
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+          # On a tag: push the arch-specific layers unnamed, to be joined into a
+          # manifest below. On a PR: load it into the local daemon instead, so
+          # the smoke test below has something to run, and push nowhere.
+          load: ${{ github.ref_type != 'tag' }}
+          tags: ${{ github.ref_type != 'tag' && 'hygg-server:ci' || '' }}
+          outputs: ${{ github.ref_type == 'tag'
+            && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE)
+            || '' }}
+
+      # Compiling is not the same as running. The image previously shipped
+      # without pandoc, which `/convert` shells out to, and the binary links
+      # libssl at runtime — neither shows up in a build that merely succeeds. So
+      # start the thing and ask it. Each runner is native to the image it built,
+      # so it can execute it directly.
+      - name: Smoke test
+        env:
+          REF: ${{ github.ref_type == 'tag'
+            && format('{0}@{1}', env.IMAGE, steps.build.outputs.digest)
+            || 'hygg-server:ci' }}
+        run: |
+          set -euo pipefail
+          docker run -d --name smoke -p 3032:3032 "$REF"
+          ok=
+          for _ in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:3032/health 2>/dev/null | grep -q '"ok"'; then
+              ok=1; break
+            fi
+            sleep 1
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::server never answered /health"
+            docker logs smoke
+            exit 1
+          fi
+          echo "health: ok"
+          # The dependency /convert needs; absent, DOCX/ODT/RTF 500 at runtime.
+          docker exec smoke pandoc --version | head -1
+          docker stop smoke >/dev/null
+
+      - name: Export digest
+        if: github.ref_type == 'tag'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          # The digest names the file; its contents are irrelevant. Stripping the
+          # "sha256:" prefix has to happen in the shell — GitHub expressions have
+          # no such operator.
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        if: github.ref_type == 'tag'
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Join the per-arch digests into one tagged multi-arch image, so `docker pull`
+  # resolves to the right architecture on its own.
+  merge:
+    name: publish manifest
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: /tmp/digests
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # v0.1.21 -> :0.1.21, :0.1, and :latest. `latest=auto` leaves a
+      # pre-release (v1.0.0-rc1) off :latest, which is the point of tagging one.
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          flavor: latest=auto
+
+      - name: Create manifest
+        working-directory: /tmp/digests
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "${IMAGE}@sha256:%s " *)
+
+      - name: Inspect
+        run: docker buildx imagetools inspect "${IMAGE}:${{ steps.meta.outputs.version }}"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Image published"
+            echo
+            echo '```'
+            echo "docker pull ${IMAGE}:${{ steps.meta.outputs.version }}"
+            echo '```'
+            echo
+            echo "Tags: ${{ steps.meta.outputs.tags }}"
+          } >> "$GITHUB_STEP_SUMMARY"

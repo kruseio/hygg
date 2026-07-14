@@ -427,6 +427,12 @@ jobs:
           - this version, pinned: https://$owner.github.io/$repo/${TAG}/
           - all versions: https://$owner.github.io/$repo/versions.html
 
+          **Server** — self-host the sync server from the image published for this
+          tag (linux/amd64 + linux/arm64):
+          \`\`\`
+          docker run -d -p 3032:3032 -v "\$PWD/data:/app/data" ghcr.io/$owner/hygg-server:${TAG#v}
+          \`\`\`
+
           **Android** — \`hygg-android-${TAG}-debug.apk\` is debug-signed. It sideloads
           fine, but the signing key differs per build, so uninstall any previous
           version first rather than upgrading in place.

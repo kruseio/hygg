@@ -37,6 +37,21 @@ curl http://localhost:3032/health      # {"status":"ok"}
 > `localhost:3032` to HTTPS, which this server doesn't serve — that shows up as
 > `ERR_CONNECTION_REFUSED`.
 
+### Prebuilt image
+
+Every release publishes a multi-arch image (`linux/amd64` + `linux/arm64`) to
+GHCR, so a self-host needs no toolchain and no compile:
+
+```sh
+docker run -d -p 3032:3032 -v "$PWD/data:/app/data" \
+  ghcr.io/kruseio/hygg-server:latest
+```
+
+Tags are `:latest`, `:0.1.21` (pin this) and `:0.1`. To use it from the compose
+file above, replace the `build:` block with
+`image: ghcr.io/kruseio/hygg-server:latest` — the volume and environment stay as
+they are.
+
 ### Run from source (cargo)
 
 ```sh
