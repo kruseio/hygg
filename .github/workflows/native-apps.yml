@@ -7,13 +7,16 @@
 # (a `trunk build --release`, resolved through `git rev-parse --show-toplevel`),
 # then bundles the app. Release signing/notarization is intentionally left out
 # (needs the maintainer's Apple/Google/Windows certs as repo secrets).
+#
+# This is a breakage gate, so its artifacts are throwaway. Tags are deliberately
+# not a trigger: release.yml builds the same apps on a tag and is the one that
+# publishes them, so running both would build every platform twice for nothing.
 
 name: native-apps
 
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
