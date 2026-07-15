@@ -10,10 +10,12 @@
 # file had already started down that road, carrying a comment that its exclusion
 # list "mirrors tools/ci.sh's HOST_ONLY, and drifts from it at your peril".
 #
-# What no runner runs is that script's bare-invocation prelude — cargo update /
-# cargo upgrade / cargo fix. Those rewrite the tree, and a gate that rewrites the
-# tree has stopped testing the one that was proposed. `fmt` is the same thought
-# from the other end: the leg checks, the local pass writes.
+# What no runner runs is tools/ci-mutable.sh, the maintainer's local pass —
+# cargo update / cargo upgrade / cargo fix, and then these same legs over the
+# result. Those steps rewrite the tree, and a gate that rewrites the tree has
+# stopped testing the one that was proposed; that split is why ci.sh is two
+# files. `fmt` is the same thought from the other end: the leg checks, the local
+# pass writes.
 #
 # The native app bundles (Tauri desktop/mobile installers) are built separately
 # in native-apps.yml, which is slower and needs per-OS system webviews.
@@ -104,9 +106,9 @@ jobs:
   # schedule. An advisory published overnight against a transitive dependency
   # would turn every open pull request red while having found nothing wrong with
   # any of them, and the contributor holding the red X would be the one person
-  # unable to fix it. It is also not quite the check ci.sh runs locally: there,
-  # audit follows cargo update/upgrade and so judges a freshly resolved tree,
-  # while here it judges the committed lockfile, advisories and all.
+  # unable to fix it. It is also not quite the check ci-mutable.sh runs locally:
+  # there, audit follows cargo update/upgrade and so judges a freshly resolved
+  # tree, while here it judges the committed lockfile, advisories and all.
   #
   # So it runs on pull requests for its annotation, and the weekly scheduled run
   # above is where it is read as news. When it is loud, fix it on a branch of its
@@ -307,8 +309,10 @@ jobs:
       - uses: actions/checkout@v4
 
       # Both toolchains, wasm32 on each: this leg lints and builds on stable and
-      # then runs udeps, which is nightly-only. Stable is installed second so it
-      # is the default, which is the toolchain the Trunk build picks up.
+      # then runs udeps, which is nightly-only. Install order carries no meaning
+      # here — the Trunk build used to inherit whichever toolchain landed last as
+      # the default, and now takes the pin from tools/ci.sh through
+      # RUSTUP_TOOLCHAIN like every other command in the leg.
       - id: toolchain-nightly
         run: echo "v=$(./tools/ci.sh toolchain nightly)" >> "$GITHUB_OUTPUT"
       - name: Rust toolchain (pinned nightly + wasm, for udeps)

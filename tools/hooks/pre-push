@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+# Runs `tools/ci.sh fast` — fmt, loc, clippy, test — before anything leaves this
+# machine. Four legs of nine, chosen there rather than here; a green hook is not
+# a green CI and is not trying to be. It is the part of CI that fails for reasons
+# you can already see from this machine, at a price worth paying on every push.
+#
+# Installed by pointing git at this directory rather than by copying the file
+# into .git/hooks, which is untracked and therefore drifts silently:
+#
+#   git config core.hooksPath tools/hooks
+#
+# It runs tools/ci.sh — the read-only suite, never tools/ci-mutable.sh. A hook is
+# the worst possible moment to refresh dependencies and rewrite the tree: it
+# would edit the very commits being pushed out from under them, and pass on a
+# dependency tree that is not the one in the push.
+#
+# `git push --no-verify` skips this. That is the escape hatch for the cases that
+# deserve one — a work-in-progress branch pushed for a second machine, a push
+# whose failing leg you already know about — and not a way around a red leg on
+# something headed for main, which is the same leg CI is about to run anyway.
+#
+# AGENTS: this is the one place any of the suite runs without being asked for by
+# name. If you are pushing on someone's behalf, run the plain `git push` and let
+# this hook do its work — do not add --no-verify to get a push through, and do
+# not suggest it as a fix for a leg that failed. A push you had to disarm the
+# hook to make is a push worth mentioning instead.
+
+set -Eeuo pipefail
+
+# A push that only deletes refs (`git push --delete`, or a `:branch` refspec)
+# adds nothing to the remote for the suite to have an opinion about. Git sends
+# one line per ref on stdin, with an all-zero local sha for a delete.
+deletes_only=true
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  case "$local_sha" in
+    *[!0]*) deletes_only=false ;;
+  esac
+done
+
+if [ "$deletes_only" = true ]; then
+  exit 0
+fi
+
+root="$(git rev-parse --show-toplevel)"
+
+echo "pre-push: fmt + loc + clippy + test (tools/ci.sh fast) — --no-verify skips it" >&2
+exec "$root/tools/ci.sh" fast
