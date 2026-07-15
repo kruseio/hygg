@@ -77,20 +77,23 @@ jobs:
 
       # Two builds, two public URLs. Trunk bakes the public URL into the hashed
       # asset refs, so a build is not relocatable after the fact.
+      # The `mv` targets are ../../: the working directory is two deep
+      # (packages/hygg-pwa), and "Assemble site" below reads these from the
+      # repository root.
       - name: Build latest (served at ${{ steps.vars.outputs.base }}/)
-        working-directory: hygg-pwa
+        working-directory: packages/hygg-pwa
         run: |
           trunk build --release --public-url "${{ steps.vars.outputs.base }}/"
           python3 tools/prepare_pages_dist.py dist "${{ steps.vars.outputs.base }}/"
-          mv dist ../dist-latest
+          mv dist ../../dist-latest
 
       - name: Build pinned (served at ${{ steps.vars.outputs.base }}/${{ steps.vars.outputs.tag }}/)
-        working-directory: hygg-pwa
+        working-directory: packages/hygg-pwa
         run: |
           url="${{ steps.vars.outputs.base }}/${{ steps.vars.outputs.tag }}/"
           trunk build --release --public-url "$url"
           python3 tools/prepare_pages_dist.py dist "$url"
-          mv dist ../dist-pinned
+          mv dist ../../dist-pinned
 
       # A fresh repo has no gh-pages yet; start it as an orphan so the branch
       # carries only the site, never the source history.
@@ -128,7 +131,7 @@ jobs:
 
           # Pages runs Jekyll otherwise, which drops files starting with "_".
           touch site/.nojekyll
-          python3 hygg-pwa/tools/write_versions_index.py site "${{ steps.vars.outputs.base }}/"
+          python3 packages/hygg-pwa/tools/write_versions_index.py site "${{ steps.vars.outputs.base }}/"
 
       - name: Commit and push
         working-directory: site

@@ -27,8 +27,8 @@ LIMIT="${LOC_LIMIT:-300}"
 # Verbatim upstream forks, excluded from the gate. Keep in sync with the FORKS
 # list in tools/ci.sh and the `ignore` list in rustfmt.toml.
 EXCLUDED_PREFIXES=(
-  "hygg-cff-parser/"
-  "hygg-pdf-extract/"
+  "packages/hygg-cff-parser/"
+  "packages/hygg-pdf-extract/"
 )
 
 is_excluded () {

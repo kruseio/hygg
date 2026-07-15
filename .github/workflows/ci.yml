@@ -309,7 +309,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: hygg-pwa-dist
-          path: hygg-pwa/dist
+          path: packages/hygg-pwa/dist
 
   # hygg-tauri's lint and test pass, which nothing else does. native-apps.yml
   # builds this app's installers on all three desktop OSes, but building is all it

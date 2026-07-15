@@ -168,7 +168,7 @@ jobs:
       - name: Build app
         uses: tauri-apps/tauri-action@v0
         with:
-          projectPath: hygg-tauri
+          projectPath: packages/hygg-tauri
           args: --target ${{ matrix.target }}
 
       - name: Collect bundles
@@ -230,7 +230,7 @@ jobs:
         run: cargo install --locked tauri-cli --version "^2"
 
       - name: Generate Android project
-        working-directory: hygg-tauri
+        working-directory: packages/hygg-tauri
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
         run: cargo tauri android init
@@ -240,7 +240,7 @@ jobs:
       # absent, which leaves the debug-signed APK below as the release artifact.
       - name: Configure release signing
         if: env.ANDROID_KEY_BASE64 != ''
-        working-directory: hygg-tauri/gen/android
+        working-directory: packages/hygg-tauri/gen/android
         env:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -295,7 +295,7 @@ jobs:
           PY
 
       - name: Build APK
-        working-directory: hygg-tauri
+        working-directory: packages/hygg-tauri
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
           # The debug APK is a smoke-test artifact, not a debugging one; full
@@ -316,7 +316,7 @@ jobs:
           mkdir -p dist
           kind=debug
           [ -n "$ANDROID_KEY_BASE64" ] && kind=release
-          for f in hygg-tauri/gen/android/app/build/outputs/apk/**/*.apk; do
+          for f in packages/hygg-tauri/gen/android/app/build/outputs/apk/**/*.apk; do
             cp "$f" "dist/hygg-android-${TAG}-${kind}.apk"
           done
           ls -lh dist
@@ -365,7 +365,7 @@ jobs:
         run: cargo install --locked tauri-cli --version "^2"
 
       - name: Build simulator app
-        working-directory: hygg-tauri
+        working-directory: packages/hygg-tauri
         run: |
           cargo tauri ios init --ci
           cargo tauri ios build --debug --target aarch64-sim
@@ -375,7 +375,7 @@ jobs:
           set -euo pipefail
           shopt -s nullglob globstar
           mkdir -p dist
-          app=$(find hygg-tauri/gen/apple/build -name '*.app' -print -quit)
+          app=$(find packages/hygg-tauri/gen/apple/build -name '*.app' -print -quit)
           [ -n "$app" ] || { echo "no .app produced"; exit 1; }
           # ditto, not zip: it preserves the bundle's symlinks and resource forks,
           # which a plain zip mangles into an .app that will not launch.

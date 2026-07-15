@@ -1,0 +1,1 @@
+../../../../docs/pages/getting-started.md

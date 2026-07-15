@@ -113,23 +113,23 @@ cargo install --locked trunk
 
 ```sh
 cargo run -p hygg-pwa                     # dev server + hot reload on http://127.0.0.1:8080
-cargo run -p hygg-pwa -- build --release  # production bundle in hygg-pwa/dist
+cargo run -p hygg-pwa -- build --release  # production bundle in packages/hygg-pwa/dist
 ```
 
 `cargo run -p hygg-pwa` is a thin launcher that shells out to Trunk, so you do
 not need to `cd` first; everything after `--` is forwarded to Trunk verbatim.
-`cd hygg-pwa && trunk serve` works just as well.
+`cd packages/hygg-pwa && trunk serve` works just as well.
 
 ### Self-host the web app
-`trunk build --release` emits a fully static bundle in `hygg-pwa/dist` — serve it
+`trunk build --release` emits a fully static bundle in `packages/hygg-pwa/dist` — serve it
 from any static host. One requirement: an SPA fallback that serves `index.html`
 for unknown paths, otherwise deep links like `/read/:id` 404.
 
 Serving from a sub-path (rather than the root of an origin) needs the bundle
 built for that path — `trunk build --release --public-url /hygg/v0.1.21/` — plus
-`hygg-pwa/tools/prepare_pages_dist.py`, which injects the `<base href>` Trunk
+`packages/hygg-pwa/tools/prepare_pages_dist.py`, which injects the `<base href>` Trunk
 does not and copies `index.html` to `404.html`. This is what
-`.github/workflows/pages.yml` does for each tag; `hygg-pwa/README.md` explains
+`.github/workflows/pages.yml` does for each tag; `packages/hygg-pwa/README.md` explains
 why each path needs its own build.
 
 ## Desktop app (Tauri)
@@ -157,7 +157,7 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
   libayatana-appindicator3-dev patchelf
 ```
 
-Then, from `hygg-tauri/`:
+Then, from `packages/hygg-tauri/`:
 ```sh
 cargo tauri dev      # dev build in a webview
 cargo tauri build    # app + installer
@@ -174,7 +174,7 @@ hdiutil create -volname hygg -srcfolder <app> -format UDZO out.dmg
 
 ## Mobile app (Tauri)
 
-Same UI, same shell, built for a phone. Run these from `hygg-tauri/`.
+Same UI, same shell, built for a phone. Run these from `packages/hygg-tauri/`.
 
 ### Android
 Prerequisites: a JDK plus the Android SDK and NDK.
@@ -217,7 +217,7 @@ cargo run -p hygg-gui -- ~/Documents/book.pdf   # open a document directly
 It is kept out of the workspace `default-members` because it pulls the heavy
 iced/wgpu stack, so a bare `cargo build` skips it — build it explicitly with
 `-p hygg-gui`. To register it as the system's default PDF/EPUB/text reader, see
-`hygg-gui/platform/README.md`.
+`packages/hygg-gui/platform/README.md`.
 
 ## Sync server
 
@@ -238,7 +238,7 @@ Tags are `:latest`, `:0.1.21` (pin this one) and `:0.1`.
 
 ### From source
 ```sh
-cd hygg-server
+cd packages/hygg-server
 cp .env.example .env    # optional; the defaults work as-is
 docker compose up --build -d
 ```
@@ -246,7 +246,7 @@ docker compose up --build -d
 Set `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` in `.env` to create an
 admin account on first boot. Without Docker:
 ```sh
-cd hygg-server
+cd packages/hygg-server
 cargo run -p hygg-server   # loads .env from here; data lands in ./data
 ```
 
@@ -261,7 +261,7 @@ to HTTPS, which this server does not serve — it shows up as
 
 `hygg-server` is source-available under the Elastic License 2.0, not the AGPL
 that covers the readers — see [LICENSING.md](../../LICENSING.md). Its own
-`hygg-server/README.md` goes deeper on configuration, auth and the API.
+`packages/hygg-server/README.md` goes deeper on configuration, auth and the API.
 
 ## Additional formats via pandoc
 PDF, EPUB, TXT and Markdown are handled natively. DOCX, ODT, RTF and the rest go

@@ -2,12 +2,12 @@
 # needs source + manifests; build artifacts and VCS metadata are excluded.
 # NOTE: `docs` must stay IN the context — hygg-server embeds docs/pages/*.md
 # at compile time (src/web/docs.rs include_str!), so excluding it breaks the
-# build. The include_str! paths point at hygg-server/docs/pages/, which is a
-# symlink per page back out to this directory (that indirection is what makes
-# the crate publishable — see the comment in src/web/docs.rs), so the target has
-# to be in the context or every one of those symlinks dangles here. This file
-# also governs what a downstream repo's image build receives when it mounts this
-# repo as a named build context.
+# build. The include_str! paths point at packages/hygg-server/docs/pages/, which
+# is a symlink per page back out to this directory (that indirection is what
+# makes the crate publishable — see the comment in src/web/docs.rs), so the
+# target has to be in the context or every one of those symlinks dangles here.
+# This file also governs what a downstream repo's image build receives when it
+# mounts this repo as a named build context.
 target
 **/target
 .git
@@ -15,9 +15,9 @@ target
 test-data
 assets
 data
-hygg-server/data
-hygg-server/.env
-hygg-pwa/dist
-hygg-tauri/gen
+packages/hygg-server/data
+packages/hygg-server/.env
+packages/hygg-pwa/dist
+packages/hygg-tauri/gen
 *.gif
 *.png

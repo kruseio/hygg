@@ -7,6 +7,6 @@ tab_spaces = 2
 # them untouched. `cargo fmt` has no per-package --exclude, so this is how the
 # fork crates are skipped (see also the FORKS exclusions in tools/ci.sh).
 ignore = [
-  "hygg-cff-parser",
-  "hygg-pdf-extract",
+  "packages/hygg-cff-parser",
+  "packages/hygg-pdf-extract",
 ]

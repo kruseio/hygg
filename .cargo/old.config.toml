@@ -12,16 +12,16 @@ rustflags = [
 runner = ".cargo/sign-and-run.sh"
 
 [patch.crates-io.cli-image-to-ascii]
-path = "cli-image-to-ascii"
+path = "packages/cli-image-to-ascii"
 
 [patch.crates-io.cli-justify]
-path = "cli-justify"
+path = "packages/cli-justify"
 
 [patch.crates-io.hygg-shared]
-path = "hygg-shared"
+path = "packages/hygg-shared"
 
 [patch.crates-io.redirect-stderr]
-path = "redirect-stderr"
+path = "packages/redirect-stderr"
 
 [profile.dev]
 opt-level = 0

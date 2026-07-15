@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS app bundle metadata for hygg-gui. `CFBundleDocumentTypes` is what lets
+  the user pick hygg as the default application for PDFs / EPUBs / text (Finder →
+  Get Info → Open with → Change All), and `LSHandlerRank = Alternate` makes hygg
+  a first-class option in the "Open With" menu.
+
+  Assembled into hygg-gui.app by platform/macos/bundle.sh, which substitutes the
+  `__HYGG_VERSION__` placeholders with the live workspace version and writes a
+  Resources/Credits.html — so the standard "About hygg" panel shows the version,
+  commit hash + date, author, and a GitHub link. (The full, interactive About /
+  Credits experience lives in-app; see packages/hygg-gui/src/screens/about.rs.)
+-->
+<plist version="1.0">
+  <dict>
+    <key>CFBundleName</key>
+    <string>hygg</string>
+    <key>CFBundleDisplayName</key>
+    <string>hygg</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.kruseio.hygg-gui</string>
+    <key>CFBundleVersion</key>
+    <string>__HYGG_VERSION__</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__HYGG_VERSION__</string>
+    <key>CFBundleGetInfoString</key>
+    <string>hygg __HYGG_VERSION__, © kruseio — AGPL-3.0-only</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>hygg-gui</string>
+    <key>CFBundleIconFile</key>
+    <string>hygg.icns</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.15</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>© kruseio — AGPL-3.0-only</string>
+
+    <key>CFBundleDocumentTypes</key>
+    <array>
+      <dict>
+        <key>CFBundleTypeName</key>
+        <string>PDF document</string>
+        <key>CFBundleTypeRole</key>
+        <string>Viewer</string>
+        <key>LSHandlerRank</key>
+        <string>Alternate</string>
+        <key>LSItemContentTypes</key>
+        <array>
+          <string>com.adobe.pdf</string>
+        </array>
+      </dict>
+      <dict>
+        <key>CFBundleTypeName</key>
+        <string>EPUB document</string>
+        <key>CFBundleTypeRole</key>
+        <string>Viewer</string>
+        <key>LSHandlerRank</key>
+        <string>Alternate</string>
+        <key>LSItemContentTypes</key>
+        <array>
+          <string>org.idpf.epub-container</string>
+        </array>
+      </dict>
+      <dict>
+        <key>CFBundleTypeName</key>
+        <string>Text document</string>
+        <key>CFBundleTypeRole</key>
+        <string>Viewer</string>
+        <key>LSHandlerRank</key>
+        <string>Alternate</string>
+        <key>LSItemContentTypes</key>
+        <array>
+          <string>public.plain-text</string>
+          <string>public.text</string>
+          <string>net.daringfireball.markdown</string>
+        </array>
+      </dict>
+    </array>
+  </dict>
+</plist>

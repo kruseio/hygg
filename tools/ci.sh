@@ -64,7 +64,8 @@ LOCKED=""
 ci_deps () {
   cargo update --verbose
   cargo upgrade --verbose
-  git checkout -- hygg-cff-parser/Cargo.toml hygg-pdf-extract/Cargo.toml
+  git checkout -- packages/hygg-cff-parser/Cargo.toml \
+                  packages/hygg-pdf-extract/Cargo.toml
 }
 
 ci_audit () {
@@ -119,7 +120,7 @@ ci_udeps () {
 # bundles / mobile builds are produced by `cargo tauri build` / `android|ios
 # build` on the release runners. It reuses the wasm leg's Trunk output.
 ci_tauri () {
-  ( cd hygg-pwa && trunk build --release )
+  ( cd packages/hygg-pwa && trunk build --release )
   cargo +nightly clippy -p hygg-tauri $LOCKED --all-targets -- -D warnings
   cargo +nightly build -p hygg-tauri $LOCKED
   # Native extraction commands (base64 decode + the txt/pdf/epub pipeline).
@@ -136,7 +137,7 @@ ci_wasm () {
   cargo +nightly clippy -p hygg-pwa --target wasm32-unknown-unknown $LOCKED --all-features -- -D warnings
   cargo +nightly build -p hygg-pwa --target wasm32-unknown-unknown $LOCKED
   cargo +nightly udeps -p hygg-pwa --target wasm32-unknown-unknown $LOCKED
-  ( cd hygg-pwa && trunk build --release )
+  ( cd packages/hygg-pwa && trunk build --release )
 
   # (hygg-gui is a native desktop app — no wasm leg here; its build is covered by
   # the host --workspace legs above. The browser reader is hygg-pwa.)

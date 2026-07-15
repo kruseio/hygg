@@ -1,22 +1,27 @@
 [workspace]
 resolver = "3"
 
+# Every member lives under packages/, so the repository root holds the workspace
+# manifest, the licenses and the docs rather than fourteen crate directories.
+# Spelled out rather than globbed as "packages/*": the notes below are the reason
+# each crate is in (or out of) `default-members` and the host CI legs, and a glob
+# would drop them.
 members = [
-  "cli-image-to-ascii",
-  "cli-pdf-to-text",
-  "cli-epub-to-text",
-  "cli-justify",
-  "cli-text-reader",
-  "redirect-stderr",
-  "hygg-shared",
-  "hygg",
+  "packages/cli-image-to-ascii",
+  "packages/cli-pdf-to-text",
+  "packages/cli-epub-to-text",
+  "packages/cli-justify",
+  "packages/cli-text-reader",
+  "packages/redirect-stderr",
+  "packages/hygg-shared",
+  "packages/hygg",
 
   # Self-hostable sync server. Elastic License 2.0, source-available, published
   # to crates.io and usable as a library (hygg-saas embeds it). It is NOT in the
   # `hygg` CLI's dependency tree, so `cargo install hygg` never pulls its
   # axum/tokio/sea-orm stack — isolation is by dependency direction, not a
   # publish flag.
-  "hygg-server",
+  "packages/hygg-server",
 
   # NOTE: hygg-saas (the proprietary, closed-source SaaS layer that extends
   # hygg-server in-process with landing/pricing/payments/tiers/limits) has
@@ -30,14 +35,14 @@ members = [
   # It is kept out of `default-members` and host `--workspace` CI (linting the
   # launcher adds nothing; a dedicated wasm step covers the real app). Nothing in
   # the published `hygg` crate's tree references it.
-  "hygg-pwa",
+  "packages/hygg-pwa",
 
   # Native iced desktop GUI reader (Windows, Linux, macOS). publish = false.
   # Kept out of `default-members` because it pulls the heavy iced/wgpu stack, so
   # a bare `cargo build` skips it; build it explicitly with `-p hygg-gui`. It is
   # still covered by host `--workspace` CI. Nothing in the published `hygg`
   # crate's tree references it, so `cargo install hygg` never pulls iced.
-  "hygg-gui",
+  "packages/hygg-gui",
 
   # Native Tauri v2 shell (Windows, macOS, Linux, iOS, Android) that wraps the
   # hygg-pwa Leptos UI and runs the extraction pipeline over native IPC. Kept
@@ -46,14 +51,14 @@ members = [
   # build`). Nothing in the published `hygg` crate's tree references it, so
   # `cargo install hygg` never pulls Tauri — same isolation as hygg-gui /
   # hygg-pwa.
-  "hygg-tauri",
+  "packages/hygg-tauri",
 
   # Thin forks of upstream crates, published under hygg-* names so the
   # cff-parser Expert-font panic fix reaches `cargo install hygg` — a
   # [patch.crates-io] is workspace-local and stripped on publish, so it
-  # only ever fixed builds from source. See hygg-cff-parser/README.md.
-  "hygg-cff-parser",
-  "hygg-pdf-extract",
+  # only ever fixed builds from source. See packages/hygg-cff-parser/README.md.
+  "packages/hygg-cff-parser",
+  "packages/hygg-pdf-extract",
 
   # Internal
   # "examples",
@@ -65,17 +70,17 @@ members = [
 # that explicitly with `cargo build -p hygg-pwa --target wasm32-unknown-unknown`
 # (or just `cargo run -p hygg-pwa -- build --release`).
 default-members = [
-  "cli-image-to-ascii",
-  "cli-pdf-to-text",
-  "cli-epub-to-text",
-  "cli-justify",
-  "cli-text-reader",
-  "redirect-stderr",
-  "hygg-shared",
-  "hygg",
-  "hygg-server",
-  "hygg-cff-parser",
-  "hygg-pdf-extract",
+  "packages/cli-image-to-ascii",
+  "packages/cli-pdf-to-text",
+  "packages/cli-epub-to-text",
+  "packages/cli-justify",
+  "packages/cli-text-reader",
+  "packages/redirect-stderr",
+  "packages/hygg-shared",
+  "packages/hygg",
+  "packages/hygg-server",
+  "packages/hygg-cff-parser",
+  "packages/hygg-pdf-extract",
 ]
 
 [workspace.package]

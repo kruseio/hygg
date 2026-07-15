@@ -4,9 +4,11 @@
 # WebView2 / WKWebView) and can't be meaningfully cross-compiled from macOS.
 #
 # Each job builds the hygg-pwa frontend via the crate's `beforeBuildCommand`
-# (a `trunk build --release`, resolved through `git rev-parse --show-toplevel`),
-# then bundles the app. Release signing/notarization is intentionally left out
-# (needs the maintainer's Apple/Google/Windows certs as repo secrets).
+# (a `cd packages/hygg-pwa && trunk build --release`), then bundles the app.
+# Tauri runs that command from the workspace root, which is what lets it be a
+# plain relative path that both sh and cmd.exe understand — see 9dc6a70.
+# Release signing/notarization is intentionally left out (needs the
+# maintainer's Apple/Google/Windows certs as repo secrets).
 #
 # This is a breakage gate, so its artifacts are throwaway. Tags are deliberately
 # not a trigger: release.yml builds the same apps on a tag and is the one that
@@ -75,7 +77,7 @@ jobs:
       - name: Build app
         uses: tauri-apps/tauri-action@v0
         with:
-          projectPath: hygg-tauri
+          projectPath: packages/hygg-tauri
           args: --target ${{ matrix.target }}
 
       - name: Upload installers
@@ -127,7 +129,7 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install --locked tauri-cli --version "^2"
       - name: Build debug APK
-        working-directory: hygg-tauri
+        working-directory: packages/hygg-tauri
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
           # `--debug` builds the dev profile, whose full DWARF dominates the
@@ -141,7 +143,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: hygg-android-debug
-          path: hygg-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          path: packages/hygg-tauri/gen/android/app/build/outputs/apk/**/*.apk
 
   # iOS builds for the *simulator*, which needs no Apple Developer team or
   # certificates — unlike a device/App Store build, which requires signing
@@ -171,7 +173,7 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install --locked tauri-cli --version "^2"
       - name: Build simulator app
-        working-directory: hygg-tauri
+        working-directory: packages/hygg-tauri
         run: |
           cargo tauri ios init --ci
           cargo tauri ios build --debug --target aarch64-sim
@@ -179,4 +181,4 @@ jobs:
         with:
           name: hygg-ios-simulator
           if-no-files-found: warn
-          path: hygg-tauri/gen/apple/build/**/*.app
+          path: packages/hygg-tauri/gen/apple/build/**/*.app

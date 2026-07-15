@@ -1,0 +1,30 @@
+# One-command self-host:  docker compose up --build -d
+# Run from this directory (packages/hygg-server/). One service, no database to
+# run alongside it — data is a SQLite file persisted in ./data.
+
+services:
+  hygg-server:
+    build:
+      # The context is the workspace root, two levels up: the Dockerfile builds
+      # `-p hygg-server` out of the whole workspace, so it needs the root
+      # Cargo.toml/Cargo.lock and every path dependency — none of which are
+      # under this crate. `dockerfile` is resolved relative to that context,
+      # hence the packages/ prefix.
+      context: ../..
+      dockerfile: packages/hygg-server/Dockerfile
+    image: hygg-server:latest
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: sqlite:///app/data/hygg-server.db
+      LOG_DIR: /app/data/logs
+      RUST_LOG: hygg_server=info,tower_http=info
+    # PORT comes from .env (via env_file above and Compose's own interpolation),
+    # so changing it there moves both the published and in-container port.
+    ports:
+      - "${PORT:-3032}:${PORT:-3032}"
+    volumes:
+      - ./data:/app/data
+

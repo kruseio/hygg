@@ -30,10 +30,10 @@ inside the published package:
 
 | Crate file | Relationship to the root text |
 |---|---|
-| [`hygg-server/LICENSE`](hygg-server/LICENSE) | Identical to [`LICENSE-ELASTIC`](LICENSE-ELASTIC); referenced by that crate's `license-file` key. |
-| [`hygg-cff-parser/LICENSE-APACHE`](hygg-cff-parser/LICENSE-APACHE) | Identical to [`LICENSE-APACHE`](LICENSE-APACHE). |
-| [`hygg-cff-parser/LICENSE-MIT`](hygg-cff-parser/LICENSE-MIT) | **Deliberately different** — the upstream MIT text, © 2018 Yevhenii Reizner. |
-| [`hygg-pdf-extract/LICENSE`](hygg-pdf-extract/LICENSE) | **Deliberately different** — the upstream MIT text, © 2014 Jeff Muizelaar and the pdf-extract contributors, plus kruseio's copyright on the fork modifications. |
+| [`packages/hygg-server/LICENSE`](packages/hygg-server/LICENSE) | Identical to [`LICENSE-ELASTIC`](LICENSE-ELASTIC); referenced by that crate's `license-file` key. |
+| [`packages/hygg-cff-parser/LICENSE-APACHE`](packages/hygg-cff-parser/LICENSE-APACHE) | Identical to [`LICENSE-APACHE`](LICENSE-APACHE). |
+| [`packages/hygg-cff-parser/LICENSE-MIT`](packages/hygg-cff-parser/LICENSE-MIT) | **Deliberately different** — the upstream MIT text, © 2018 Yevhenii Reizner. |
+| [`packages/hygg-pdf-extract/LICENSE`](packages/hygg-pdf-extract/LICENSE) | **Deliberately different** — the upstream MIT text, © 2014 Jeff Muizelaar and the pdf-extract contributors, plus kruseio's copyright on the fork modifications. |
 
 The forks' copies name their upstream copyright holders rather than kruseio;
 that is the point of a fork retaining its original license, so keep those
@@ -45,20 +45,20 @@ Every crate in the workspace, and what covers it:
 
 | Crate | Kind | Published | License | Why |
 |---|---|---|---|---|
-| [`cli-justify`](cli-justify) | Library | crates.io | **MIT** | Reusable text justifier — permissive so anyone can build on it. |
-| [`cli-image-to-ascii`](cli-image-to-ascii) | Library | crates.io | **MIT** | Reusable truecolor ANSI image renderer. |
-| [`cli-epub-to-text`](cli-epub-to-text) | Library / CLI | crates.io | **MIT** | Reusable EPUB→text converter. |
-| [`cli-pdf-to-text`](cli-pdf-to-text) | Library / CLI | crates.io | **MIT** | Reusable PDF→text converter (incl. optional OCR). |
-| [`redirect-stderr`](redirect-stderr) | Library | crates.io | **MIT** | Small cross-platform stderr utility. |
-| [`hygg-shared`](hygg-shared) | Library | crates.io | **MIT** | Shared types, including the `sync::proto` client/server wire contract. Permissive so it can sit on both sides of that boundary. |
-| [`cli-text-reader`](cli-text-reader) | Library | crates.io | **AGPL-3.0-only** | The reader/TUI engine — network copyleft keeps the product and its hosted forks open. |
-| [`hygg`](hygg) | Binary | crates.io | **AGPL-3.0-only** | The shipped CLI, on top of `cli-text-reader`. |
-| [`hygg-gui`](hygg-gui) | Binary | no (`publish = false`) | **AGPL-3.0-only** | The same reader product in a native iced desktop shell. |
-| [`hygg-pwa`](hygg-pwa) | Binary / WASM | no (`publish = false`) | **AGPL-3.0-only** | The same reader product as a Rust/WASM Leptos PWA. Served over a network, so AGPL is the point. |
-| [`hygg-tauri`](hygg-tauri) | Binary | no (`publish = false`) | **AGPL-3.0-only** | Native Tauri v2 desktop/mobile shell over the `hygg-pwa` UI — same product, same license. |
-| [`hygg-server`](hygg-server) | Library / Binary | crates.io | **Elastic License 2.0** | The sync server — source-available. Self-host and modify freely; do not offer it to third parties as a managed service. ELv2 is **not** an OSI "open source" license. |
-| [`hygg-cff-parser`](hygg-cff-parser) | Library | crates.io | **MIT OR Apache-2.0** | Thin fork of `cff-parser` — retains the upstream dual license. |
-| [`hygg-pdf-extract`](hygg-pdf-extract) | Library | crates.io | **MIT** | Thin fork of `pdf-extract` — retains the upstream license. |
+| [`cli-justify`](packages/cli-justify) | Library | crates.io | **MIT** | Reusable text justifier — permissive so anyone can build on it. |
+| [`cli-image-to-ascii`](packages/cli-image-to-ascii) | Library | crates.io | **MIT** | Reusable truecolor ANSI image renderer. |
+| [`cli-epub-to-text`](packages/cli-epub-to-text) | Library / CLI | crates.io | **MIT** | Reusable EPUB→text converter. |
+| [`cli-pdf-to-text`](packages/cli-pdf-to-text) | Library / CLI | crates.io | **MIT** | Reusable PDF→text converter (incl. optional OCR). |
+| [`redirect-stderr`](packages/redirect-stderr) | Library | crates.io | **MIT** | Small cross-platform stderr utility. |
+| [`hygg-shared`](packages/hygg-shared) | Library | crates.io | **MIT** | Shared types, including the `sync::proto` client/server wire contract. Permissive so it can sit on both sides of that boundary. |
+| [`cli-text-reader`](packages/cli-text-reader) | Library | crates.io | **AGPL-3.0-only** | The reader/TUI engine — network copyleft keeps the product and its hosted forks open. |
+| [`hygg`](packages/hygg) | Binary | crates.io | **AGPL-3.0-only** | The shipped CLI, on top of `cli-text-reader`. |
+| [`hygg-gui`](packages/hygg-gui) | Binary | no (`publish = false`) | **AGPL-3.0-only** | The same reader product in a native iced desktop shell. |
+| [`hygg-pwa`](packages/hygg-pwa) | Binary / WASM | no (`publish = false`) | **AGPL-3.0-only** | The same reader product as a Rust/WASM Leptos PWA. Served over a network, so AGPL is the point. |
+| [`hygg-tauri`](packages/hygg-tauri) | Binary | no (`publish = false`) | **AGPL-3.0-only** | Native Tauri v2 desktop/mobile shell over the `hygg-pwa` UI — same product, same license. |
+| [`hygg-server`](packages/hygg-server) | Library / Binary | crates.io | **Elastic License 2.0** | The sync server — source-available. Self-host and modify freely; do not offer it to third parties as a managed service. ELv2 is **not** an OSI "open source" license. |
+| [`hygg-cff-parser`](packages/hygg-cff-parser) | Library | crates.io | **MIT OR Apache-2.0** | Thin fork of `cff-parser` — retains the upstream dual license. |
+| [`hygg-pdf-extract`](packages/hygg-pdf-extract) | Library | crates.io | **MIT** | Thin fork of `pdf-extract` — retains the upstream license. |
 
 The three `publish = false` clients (`hygg-gui`, `hygg-pwa`, `hygg-tauri`) are
 not on crates.io, but they ship to users as built binaries and hosted apps —
@@ -99,8 +99,8 @@ is structural, not a packaging flag.
 
 | What | Where | License | Notes |
 |---|---|---|---|
-| PaddleOCR ONNX models | [`cli-pdf-to-text/assets/ocr/monkt-paddleocr-onnx/`](cli-pdf-to-text/assets/ocr/monkt-paddleocr-onnx) | **Apache-2.0** | Redistributed under the upstream repository's license. Only compiled in with the optional `pdf-ocr-bundled` feature. Provenance, revision and checksums are in that directory's [`MANIFEST.md`](cli-pdf-to-text/assets/ocr/monkt-paddleocr-onnx/MANIFEST.md). |
-| Fira Mono (Medium) | [`hygg-gui/assets/fonts/`](hygg-gui/assets/fonts) | **SIL Open Font License 1.1** | Digitized data © 2012–2015 The Mozilla Foundation and Telefónica S.A. Full text: [`FiraMono-LICENSE`](hygg-gui/assets/fonts/FiraMono-LICENSE). The OFL covers the font file only and does not affect the license of the software that embeds it. |
+| PaddleOCR ONNX models | [`packages/cli-pdf-to-text/assets/ocr/monkt-paddleocr-onnx/`](packages/cli-pdf-to-text/assets/ocr/monkt-paddleocr-onnx) | **Apache-2.0** | Redistributed under the upstream repository's license. Only compiled in with the optional `pdf-ocr-bundled` feature. Provenance, revision and checksums are in that directory's [`MANIFEST.md`](packages/cli-pdf-to-text/assets/ocr/monkt-paddleocr-onnx/MANIFEST.md). |
+| Fira Mono (Medium) | [`packages/hygg-gui/assets/fonts/`](packages/hygg-gui/assets/fonts) | **SIL Open Font License 1.1** | Digitized data © 2012–2015 The Mozilla Foundation and Telefónica S.A. Full text: [`FiraMono-LICENSE`](packages/hygg-gui/assets/fonts/FiraMono-LICENSE). The OFL covers the font file only and does not affect the license of the software that embeds it. |
 
 ### Pulled in by the optional `tts` feature
 

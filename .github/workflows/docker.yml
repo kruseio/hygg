@@ -92,7 +92,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: hygg-server/Dockerfile
+          file: packages/hygg-server/Dockerfile
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.arch }}
