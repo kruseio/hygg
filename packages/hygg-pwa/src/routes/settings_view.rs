@@ -7,7 +7,7 @@ use leptos_router::components::A;
 
 use crate::app::{SettingsCtx, link};
 use crate::build_info as bi;
-use crate::components::AccountSection;
+use crate::components::{AccountSection, TopBar};
 use crate::settings::{ImageMode, Theme};
 
 #[component]
@@ -17,17 +17,13 @@ pub fn SettingsView() -> impl IntoView {
 
   view! {
     <div class="settings">
-      <header class="topbar">
-        <div class="topbar__left">
-          <A href=link("/") attr:class="iconbtn" attr:aria-label="Back">
-            <svg viewBox="0 0 24 24" width="26" height="26" fill="none"
-              stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          </A>
-        </div>
-        <div class="topbar__title">"Settings"</div>
-        <div class="topbar__right"></div>
-      </header>
+      // The shared bar keeps the gear visible here too; it renders as active
+      // (lit) since this *is* the Settings page.
+      <TopBar
+        title=Signal::derive(|| "Settings".to_string())
+        visible=Signal::derive(|| true)
+        back_href=link("/")
+      />
 
       <main class="settings__body">
         <section class="setting">
@@ -142,6 +138,25 @@ pub fn SettingsView() -> impl IntoView {
         </section>
 
         <AccountSection/>
+
+        <section class="setting">
+          <label>"GitHub stars"</label>
+          <label class="toggle">
+            <input type="checkbox"
+              prop:checked=move || settings.with(|s| s.show_github_stars)
+              on:change=move |ev| {
+                settings.update(|s| {
+                  s.show_github_stars = event_target_checked(&ev);
+                });
+                persist();
+              }/>
+            <span>"Show the star count in the top bar"</span>
+          </label>
+          <p class="setting__hint">
+            "A live GitHub star counter next to the settings gear — tap it to \
+             star the repo."
+          </p>
+        </section>
 
         <section class="setting">
           <label>"About"</label>

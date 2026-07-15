@@ -57,6 +57,17 @@ a {
   touch-action: manipulation;
 }
 
+/* Keep the page-scrollbar gutter permanently reserved so centered columns
+   (Home, Settings, About…) don't shift sideways as pages alternate between
+   fitting the viewport and overflowing it. The body min-height keeps every
+   route at least viewport-tall so short pages lay out like long ones. */
+html {
+  scrollbar-gutter: stable;
+}
+body {
+  min-height: 100vh;
+}
+
 html,
 body {
   margin: 0;
@@ -163,6 +174,34 @@ body {
 .iconbtn:active {
   background: color-mix(in srgb, var(--reader-fg) 16%, transparent);
 }
+/* Live GitHub star count in the top bar: a compact pill sitting left of the
+   settings gear, linking to the repo so starring is one tap away. */
+.starbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card-bg);
+  color: var(--accent);
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.starbtn:hover {
+  border-color: var(--accent);
+}
+.starbtn__count {
+  color: var(--reader-fg);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+/* The About page's "Star · N" button: same accent-tinted star glyph. */
+.btn--star svg {
+  color: var(--accent);
+}
+
 /* A thin circular ring around the icon (the reader's read-aloud toggle). */
 .iconbtn--ring {
   width: 38px;

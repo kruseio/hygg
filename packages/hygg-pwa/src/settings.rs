@@ -53,6 +53,15 @@ fn default_image_mode() -> ImageMode {
   ImageMode::Images
 }
 
+/// Out-of-the-box value for the top-bar GitHub star pill. Flip this constant
+/// to change what fresh installs get; users can still toggle it per-browser
+/// on the Settings page.
+pub const DEFAULT_SHOW_GITHUB_STARS: bool = true;
+
+fn default_show_github_stars() -> bool {
+  DEFAULT_SHOW_GITHUB_STARS
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
   /// Text zoom multiplier on top of the width-fitted base size (1.0 = fill the
@@ -98,6 +107,10 @@ pub struct Settings {
   /// Text-to-speech rate (0.5–2.0; 1.0 = normal).
   #[serde(default = "default_rate")]
   pub tts_rate: f32,
+  /// Show the live GitHub star count (with a one-tap "star the repo"
+  /// shortcut) in the top bar, left of the settings gear.
+  #[serde(default = "default_show_github_stars")]
+  pub show_github_stars: bool,
 }
 
 fn default_true() -> bool {
@@ -172,6 +185,7 @@ impl Default for Settings {
       auto_sync_scope: hygg_shared::sync::AutoSyncPolicy::Books,
       legacy_auto_sync: None,
       tts_rate: 1.0,
+      show_github_stars: DEFAULT_SHOW_GITHUB_STARS,
     }
   }
 }

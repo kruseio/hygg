@@ -28,6 +28,8 @@ mod components;
 #[cfg(target_arch = "wasm32")]
 mod format;
 #[cfg(target_arch = "wasm32")]
+mod github;
+#[cfg(target_arch = "wasm32")]
 mod layout;
 #[cfg(target_arch = "wasm32")]
 mod model;

@@ -1,11 +1,16 @@
 //! Mobile-app style top bar: a back affordance on the left, the title in the
-//! middle, a settings gear on the right. Slides out of view when `visible` is
-//! false (the reader hides it on scroll-down for distraction-free reading).
+//! middle, an optional live GitHub star pill and a settings gear on the
+//! right. Slides out of view when `visible` is false (the reader hides it on
+//! scroll-down for distraction-free reading). The gear is always present and
+//! lights up while the Settings page itself is open.
 
 use leptos::prelude::*;
 use leptos_router::components::A;
+use leptos_router::hooks::use_location;
 
-use crate::app::link;
+use crate::app::{SettingsCtx, link};
+use crate::build_info as bi;
+use crate::github::{GithubStars, format_count, star_icon};
 
 #[component]
 pub fn TopBar(
@@ -24,6 +29,26 @@ pub fn TopBar(
   #[prop(optional)]
   children: Option<Children>,
 ) -> impl IntoView {
+  let settings = expect_context::<SettingsCtx>();
+  let stars = expect_context::<GithubStars>();
+
+  // Fetch the star count only once a bar actually wants to show it, so the
+  // pill toggled off costs no network request.
+  Effect::new(move |_| {
+    if settings.with(|s| s.show_github_stars) {
+      stars.ensure();
+    }
+  });
+
+  // Mark the gear active while Settings is open (the bar keeps showing it
+  // there rather than hiding it, so the nav reads the same on every page).
+  let settings_href = link("/settings");
+  let on_settings = {
+    let href = settings_href.clone();
+    let location = use_location();
+    move || location.pathname.get() == href
+  };
+
   view! {
     <header class="topbar" class:topbar--hidden=move || !visible.get()>
       <div class="topbar__left">
@@ -36,7 +61,20 @@ pub fn TopBar(
       <div class="topbar__title">{move || title.get()}</div>
       <div class="topbar__right">
         {children.map(|c| c())}
-        <A href=link("/settings") attr:class="iconbtn" attr:aria-label="Settings">
+        {move || settings.with(|s| s.show_github_stars).then(|| view! {
+          <a class="starbtn" href=bi::REPOSITORY target="_blank" rel="noopener"
+            aria-label="Star hygg on GitHub" title="Star hygg on GitHub">
+            {star_icon()}
+            {move || stars.count().map(|n| view! {
+              <span class="starbtn__count">{format_count(n)}</span>
+            })}
+          </a>
+        })}
+        <A href=settings_href
+          attr:class=move || {
+            if on_settings() { "iconbtn iconbtn--on" } else { "iconbtn" }
+          }
+          attr:aria-label="Settings">
           {gear()}
         </A>
       </div>

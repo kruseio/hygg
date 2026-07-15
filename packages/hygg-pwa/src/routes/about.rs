@@ -9,9 +9,15 @@ use leptos_router::components::A;
 use crate::app::link;
 use crate::build_info as bi;
 use crate::components::TopBar;
+use crate::github::{GithubStars, format_count, star_icon};
 
 #[component]
 pub fn About() -> impl IntoView {
+  // Live star count for the "Star on GitHub" button (best-effort; the button
+  // works without it).
+  let stars = expect_context::<GithubStars>();
+  stars.ensure();
+
   view! {
     <TopBar
       title=Signal::derive(|| "About".to_string())
@@ -37,6 +43,14 @@ pub fn About() -> impl IntoView {
       <div class="about__links">
         <a class="btn" href=bi::REPOSITORY target="_blank" rel="noopener">
           {github_icon()} "View on GitHub"
+        </a>
+        <a class="btn btn--star" href=bi::REPOSITORY target="_blank"
+          rel="noopener" title="Star hygg on GitHub">
+          {star_icon()}
+          {move || match stars.count() {
+            Some(n) => format!("Star \u{00b7} {}", format_count(n)),
+            None => "Star on GitHub".to_string(),
+          }}
         </a>
         <a class="btn" href=bi::commit_url() target="_blank" rel="noopener">
           "View this commit"

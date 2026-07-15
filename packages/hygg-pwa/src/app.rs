@@ -8,6 +8,7 @@ use leptos_router::components::{Route, Router, Routes};
 use leptos_router::path;
 
 use crate::components::InstallPrompt;
+use crate::github::GithubStars;
 use crate::routes::{About, Credits, Home, Reader, SettingsView};
 use crate::settings::Settings;
 
@@ -63,6 +64,9 @@ pub fn link(path: &str) -> String {
 pub fn App() -> impl IntoView {
   let settings: SettingsCtx = RwSignal::new(Settings::load());
   provide_context(settings);
+  // Shared star count for the top-bar pill and the About page. Lazy — no
+  // network request until a component that shows stars asks for it.
+  provide_context(GithubStars::new());
 
   // Reflect the chosen theme onto <html> so the stylesheet can theme globally.
   Effect::new(move |_| {
