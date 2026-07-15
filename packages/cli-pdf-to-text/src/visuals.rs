@@ -242,7 +242,7 @@ fn is_blank(rgba: &[u8]) -> bool {
     return true;
   }
   let mut coloured = 0usize;
-  for px in rgba.chunks_exact(4) {
+  for px in rgba.as_chunks::<4>().0 {
     if px[0] < 245 || px[1] < 245 || px[2] < 245 {
       coloured += 1;
       // > ~0.5% coloured → not blank.
