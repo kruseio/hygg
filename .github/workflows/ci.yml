@@ -178,7 +178,9 @@ jobs:
   # system packages for a *cargo* dependency rather than a test fixture.
   tts:
     name: tts tests
-    runs-on: ubuntu-22.04
+    # 24.04, unlike the rest: ort downloads a prebuilt onnxruntime that is linked
+    # against glibc 2.38+, which 22.04 (2.35) cannot satisfy.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
