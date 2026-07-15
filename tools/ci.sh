@@ -55,6 +55,26 @@ HOST_ONLY=("${FORKS[@]}" --exclude hygg-pwa --exclude hygg-tauri)
 # would reject. Always expanded unquoted, so empty contributes no argument.
 LOCKED=""
 
+# Toolchains are pinned, never floating — and this is the file that pins them,
+# for CI and the local pass alike, so the two cannot disagree about what "the
+# compiler" is.
+#
+# A floating `+nightly` is what put three jobs red on 0.1.23: clippy grew
+# `chunks_exact_to_as_chunks` overnight, and a tree that passed yesterday failed
+# today having changed nothing. Bumping either line below is then a commit
+# someone chose to make and can review, rather than a Tuesday.
+#
+# STABLE runs every leg that can run on stable, which is every leg but two.
+# NIGHTLY is not a preference for those two; they provably cannot run otherwise:
+#   - fmt: rustfmt.toml's `ignore` and `wrap_comments` are nightly-only options.
+#     Stable rustfmt drops both with a warning and then reformats the vendored
+#     forks, which is the single thing `ignore` exists to prevent.
+#   - udeps: cargo-udeps passes -Z flags, which stable rustc rejects outright.
+# Pinning them buys the same thing pinning STABLE does: rustfmt and clippy both
+# rewrite their own rules over time, and neither should do it under a release.
+STABLE="+1.94.0"
+NIGHTLY="+nightly-2026-03-05"
+
 # --- Legs ---------------------------------------------------------------------
 
 # Dependency refresh, and the reason the bare run cannot itself be the CI gate:
@@ -73,16 +93,14 @@ ci_audit () {
 }
 
 ci_clippy () {
-  cargo +nightly clippy --workspace "${HOST_ONLY[@]}" $LOCKED \
+  cargo $STABLE clippy --workspace "${HOST_ONLY[@]}" $LOCKED \
     --all-targets --all-features -- -D warnings
 }
 
-# The leg checks; the local pass writes (see `ci` below). Nightly is not a
-# preference here: rustfmt.toml leans on `ignore` — the only thing keeping the
-# vendored forks unformatted — and on `wrap_comments`, and both are nightly-only
-# options that stable rustfmt drops with a warning while reformatting the forks.
+# The leg checks; the local pass writes (see `ci` below). See NIGHTLY above for
+# why this one leg cannot move to stable.
 ci_fmt () {
-  cargo +nightly fmt --all --check
+  cargo $NIGHTLY fmt --all --check
 }
 
 # Source hygiene: no authored .rs file may exceed the LOC budget.
@@ -91,7 +109,7 @@ ci_loc () {
 }
 
 ci_test () {
-  cargo +nightly test --workspace "${HOST_ONLY[@]}" $LOCKED
+  cargo $STABLE test --workspace "${HOST_ONLY[@]}" $LOCKED
 }
 
 # TTS narration is feature-gated, so the default test run compiles its
@@ -104,11 +122,12 @@ ci_test () {
 # and rodio links ALSA, so on a runner this leg needs system packages that no
 # other leg here does.
 ci_tts () {
-  cargo +nightly test -p cli-text-reader --features tts --lib $LOCKED
+  cargo $STABLE test -p cli-text-reader --features tts --lib $LOCKED
 }
 
+# Nightly, of necessity — see NIGHTLY above.
 ci_udeps () {
-  cargo +nightly udeps --workspace "${HOST_ONLY[@]}" $LOCKED --all-targets
+  cargo $NIGHTLY udeps --workspace "${HOST_ONLY[@]}" $LOCKED --all-targets
 }
 
 # Native shell leg for hygg-tauri (the Tauri v2 desktop/mobile app that wraps the
@@ -121,10 +140,10 @@ ci_udeps () {
 # build` on the release runners. It reuses the wasm leg's Trunk output.
 ci_tauri () {
   ( cd packages/hygg-pwa && trunk build --release )
-  cargo +nightly clippy -p hygg-tauri $LOCKED --all-targets -- -D warnings
-  cargo +nightly build -p hygg-tauri $LOCKED
+  cargo $STABLE clippy -p hygg-tauri $LOCKED --all-targets -- -D warnings
+  cargo $STABLE build -p hygg-tauri $LOCKED
   # Native extraction commands (base64 decode + the txt/pdf/epub pipeline).
-  cargo +nightly test -p hygg-tauri $LOCKED
+  cargo $STABLE test -p hygg-tauri $LOCKED
 }
 
 # Browser/wasm leg for hygg-pwa. Compiles + lints the PWA for wasm32, confirms
@@ -132,11 +151,14 @@ ci_tauri () {
 # invariant (the CLI's native dependency tree must never pull the PWA's
 # Leptos/wasm stack).
 ci_wasm () {
-  rustup +nightly target add wasm32-unknown-unknown >/dev/null 2>&1 || true
+  # Both toolchains: the lint/build below are stable, the udeps after them is
+  # not, and each needs the target added to its own toolchain.
+  rustup $STABLE target add wasm32-unknown-unknown >/dev/null 2>&1 || true
+  rustup $NIGHTLY target add wasm32-unknown-unknown >/dev/null 2>&1 || true
 
-  cargo +nightly clippy -p hygg-pwa --target wasm32-unknown-unknown $LOCKED --all-features -- -D warnings
-  cargo +nightly build -p hygg-pwa --target wasm32-unknown-unknown $LOCKED
-  cargo +nightly udeps -p hygg-pwa --target wasm32-unknown-unknown $LOCKED
+  cargo $STABLE clippy -p hygg-pwa --target wasm32-unknown-unknown $LOCKED --all-features -- -D warnings
+  cargo $STABLE build -p hygg-pwa --target wasm32-unknown-unknown $LOCKED
+  cargo $NIGHTLY udeps -p hygg-pwa --target wasm32-unknown-unknown $LOCKED
   ( cd packages/hygg-pwa && trunk build --release )
 
   # (hygg-gui is a native desktop app — no wasm leg here; its build is covered by
@@ -160,10 +182,10 @@ ci () {
   ci_deps
   ci_audit
 
-  cargo +nightly check --workspace "${HOST_ONLY[@]}"
-  cargo +nightly fix --allow-dirty --workspace "${HOST_ONLY[@]}"
+  cargo $STABLE check --workspace "${HOST_ONLY[@]}"
+  cargo $STABLE fix --allow-dirty --workspace "${HOST_ONLY[@]}"
   ci_clippy
-  cargo +nightly fmt --all
+  cargo $NIGHTLY fmt --all
 
   # Run after fmt so the line counts reflect canonical formatting.
   ci_loc
@@ -182,6 +204,23 @@ LEGS="audit clippy fmt loc test tts udeps wasm tauri"
 
 if [ $# -eq 0 ]; then
   ci
+  exit
+fi
+
+# Not a leg: prints a pin from the block above so ci.yml can install the exact
+# toolchain the legs then invoke. This is the same argument the rest of this
+# file makes — a version hard-coded into the YAML as well is a second copy, and
+# a second copy drifts. Needs no toolchain itself, so the workflow can call it
+# before installing one.
+if [ "$1" = "toolchain" ]; then
+  case "${2:-}" in
+    stable) echo "${STABLE#+}" ;;
+    nightly) echo "${NIGHTLY#+}" ;;
+    *)
+      echo "usage: ${0##*/} toolchain [stable|nightly]" >&2
+      exit 2
+      ;;
+  esac
   exit
 fi
 

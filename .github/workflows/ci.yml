@@ -79,9 +79,15 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Rust toolchain (nightly)
-        uses: dtolnay/rust-toolchain@nightly
+      # tools/ci.sh pins the toolchain and the leg below invokes it by name, so
+      # ask the script which one to install rather than naming a version here
+      # too. Two copies of a version string are two copies that drift.
+      - id: toolchain
+        run: echo "v=$(./tools/ci.sh toolchain nightly)" >> "$GITHUB_OUTPUT"
+      - name: Rust toolchain (pinned nightly)
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.toolchain.outputs.v }}
           components: rustfmt
       - run: ./tools/ci.sh fmt
 
@@ -117,20 +123,27 @@ jobs:
       - run: ./tools/ci.sh audit
 
   # --- Gates that compile ------------------------------------------------------
-  # Nightly throughout, because tools/ci.sh is nightly throughout: udeps runs
-  # nowhere else, and a stable clippy would hold contributors to a different lint
-  # set than the maintainer's own pass. The cost of a floating nightly is that a
-  # new lint can redden an untouched tree — if that ever blocks real work, pin the
-  # date here (`@nightly-YYYY-MM-DD`) and bump it deliberately.
+  # Pinned throughout, and pinned in tools/ci.sh rather than here: each job below
+  # asks the script which toolchain its leg wants, so the version has one home.
+  #
+  # The note that used to sit here said a floating nightly's cost was that a new
+  # lint could redden an untouched tree, and to pin the date if that ever blocked
+  # real work. It did — clippy grew chunks_exact_to_as_chunks the night 0.1.23
+  # was tagged and took clippy, wasm and tauri down with it, over one line nobody
+  # had touched. Stable now runs everything that can run on stable, which is
+  # every leg but fmt and udeps; tools/ci.sh has the why for those two.
 
   clippy:
     name: clippy
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Rust toolchain (nightly)
-        uses: dtolnay/rust-toolchain@nightly
+      - id: toolchain
+        run: echo "v=$(./tools/ci.sh toolchain stable)" >> "$GITHUB_OUTPUT"
+      - name: Rust toolchain (pinned stable)
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.toolchain.outputs.v }}
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
@@ -161,8 +174,12 @@ jobs:
       - name: Verify pandoc is on PATH
         run: pandoc --version
 
-      - name: Rust toolchain (nightly)
-        uses: dtolnay/rust-toolchain@nightly
+      - id: toolchain
+        run: echo "v=$(./tools/ci.sh toolchain stable)" >> "$GITHUB_OUTPUT"
+      - name: Rust toolchain (pinned stable)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.v }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -189,8 +206,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake libasound2-dev
 
-      - name: Rust toolchain (nightly)
-        uses: dtolnay/rust-toolchain@nightly
+      - id: toolchain
+        run: echo "v=$(./tools/ci.sh toolchain stable)" >> "$GITHUB_OUTPUT"
+      - name: Rust toolchain (pinned stable)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.v }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -199,13 +220,18 @@ jobs:
 
       - run: ./tools/ci.sh tts
 
+  # Nightly, of necessity: cargo-udeps passes -Z flags. Pinned all the same.
   udeps:
     name: udeps
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Rust toolchain (nightly)
-        uses: dtolnay/rust-toolchain@nightly
+      - id: toolchain
+        run: echo "v=$(./tools/ci.sh toolchain nightly)" >> "$GITHUB_OUTPUT"
+      - name: Rust toolchain (pinned nightly)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.v }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
@@ -280,9 +306,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Rust toolchain (nightly + wasm)
-        uses: dtolnay/rust-toolchain@nightly
+      # Both toolchains, wasm32 on each: this leg lints and builds on stable and
+      # then runs udeps, which is nightly-only. Stable is installed second so it
+      # is the default, which is the toolchain the Trunk build picks up.
+      - id: toolchain-nightly
+        run: echo "v=$(./tools/ci.sh toolchain nightly)" >> "$GITHUB_OUTPUT"
+      - name: Rust toolchain (pinned nightly + wasm, for udeps)
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.toolchain-nightly.outputs.v }}
+          targets: wasm32-unknown-unknown
+
+      - id: toolchain-stable
+        run: echo "v=$(./tools/ci.sh toolchain stable)" >> "$GITHUB_OUTPUT"
+      - name: Rust toolchain (pinned stable + wasm)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain-stable.outputs.v }}
           targets: wasm32-unknown-unknown
           components: clippy
 
@@ -332,9 +372,12 @@ jobs:
 
       # wasm32 is required alongside the host target: the leg builds the hygg-pwa
       # frontend before hygg-tauri, whose generate_context! embeds the bundle.
-      - name: Rust toolchain (nightly + wasm)
-        uses: dtolnay/rust-toolchain@nightly
+      - id: toolchain
+        run: echo "v=$(./tools/ci.sh toolchain stable)" >> "$GITHUB_OUTPUT"
+      - name: Rust toolchain (pinned stable + wasm)
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.toolchain.outputs.v }}
           targets: wasm32-unknown-unknown
           components: clippy
 
