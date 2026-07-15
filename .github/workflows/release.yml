@@ -43,8 +43,37 @@ env:
   TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('untagged-{0}', github.sha) }}
 
 jobs:
+  # A tag naming a version the tree does not hold is silently wrong in both
+  # directions: release.yml names every artifact after the tag, while
+  # tools/.publish.sh reads the version out of Cargo.toml — so 0.1.23 built
+  # 0.1.22 binaries under a 0.1.23 name, and would have skipped the whole
+  # publish as already-uploaded. Neither shows up until the matrix below has
+  # already run, so spend six seconds ruling it out first.
+  #
+  # The job itself always runs: gating it on `if:` would skip it on a manual
+  # dry run, and a skipped job skips everything that needs it.
+  guard:
+    name: tag matches the workspace version
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - if: github.ref_type == 'tag'
+        run: |
+          set -euo pipefail
+          # Every member takes `version.workspace = true`, so [workspace.package]
+          # is the one version — the first `version =` in the root manifest.
+          v=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          [ "$v" = "$TAG" ] || {
+            echo "tag $TAG != workspace version $v" >&2
+            echo "Bump [workspace.package] version in Cargo.toml, commit, then" >&2
+            echo "delete and re-cut the tag. A published version is immutable." >&2
+            exit 1
+          }
+          echo "tag $TAG matches the workspace version"
+
   cli:
     name: cli (${{ matrix.name }})
+    needs: guard
     strategy:
       fail-fast: false
       matrix:
@@ -118,6 +147,7 @@ jobs:
 
   desktop:
     name: desktop (${{ matrix.name }})
+    needs: guard
     strategy:
       fail-fast: false
       matrix:
@@ -193,6 +223,7 @@ jobs:
 
   android:
     name: android (apk)
+    needs: guard
     runs-on: ubuntu-22.04
     env:
       ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
@@ -340,6 +371,7 @@ jobs:
   # exist.
   ios:
     name: ios (simulator)
+    needs: guard
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
