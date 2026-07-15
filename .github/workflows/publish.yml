@@ -42,9 +42,10 @@ jobs:
     runs-on: ubuntu-22.04
     # Scopes CARGO_REGISTRY_TOKEN to this job, and is the place to require a
     # reviewer if you want a human between a tag and an irreversible publish:
-    # Settings → Environments → crates-io → Required reviewers. ci.yml runs on
-    # this same tag but cannot gate this workflow, so that approval is the only
-    # thing that can hold a publish until the checks are read. The environment
+    # Settings → Environments → crates-io → Required reviewers. No check suite
+    # runs on a tag at all — ci.yml gates pull requests only — so that approval
+    # is the one thing that can hold a publish, and the tree's last green run
+    # was on the pull request the tagged commit came through. The environment
     # needs no setup to work — an unconfigured one simply runs.
     environment: crates-io
     steps:

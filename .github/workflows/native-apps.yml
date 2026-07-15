@@ -19,8 +19,8 @@ name: native-apps
 on:
   # Pull requests into main only — the same reasoning as ci.yml: the PR already
   # built the merge result, so the merge itself has nothing left to prove, and a
-  # push straight to main intentionally builds nothing. Unlike ci.yml there is no
-  # tag trigger, for the reason given above.
+  # push straight to main intentionally builds nothing. No tag trigger either,
+  # for the reason given above: release.yml builds these same apps on a tag.
   pull_request:
     branches: [main]
   # The same weekly cache warm as ci.yml, and for a sharper version of the same

@@ -21,24 +21,18 @@
 name: ci
 
 on:
-  # A release tag still runs: release.yml publishes from it, and now that main is
-  # not a trigger, a tag can carry commits no pull request ever saw. It is the
-  # last gate before anything ships.
+  # The only gate, and deliberately the only thing that fires here. A
+  # pull_request build checks out the *merge result* of head into base, so a
+  # green PR has already tested what main is about to become — re-running the
+  # identical tree on push to main spends a three-OS matrix to learn nothing.
   #
-  # The pattern matches this repository's tags, which are bare semver — 0.1.22,
-  # no `v` prefix. It read `v*` until 2026-07, which matched none of them, so
-  # every tag-triggered workflow here silently did nothing for its whole life.
-  # `[0-9]+` is a GitHub filter pattern, not a regex: `+` repeats the preceding
-  # bracket group. It matches 0.1.22 and declines to match tags like
-  # `backup-pre-squash-2026-07-14`, which must never start a release.
-  push:
-    tags: ["[0-9]+.[0-9]+.[0-9]+"]
-  # The gate. A pull_request build checks out the *merge result* of head into
-  # base, so a green PR has already tested what main is about to become —
-  # re-running the identical tree on push to main spends a three-OS matrix to
-  # learn nothing. It also means a commit pushed straight to main runs no
-  # pipeline at all, which is deliberate: that is the escape hatch for a README
-  # typo, and the reason to keep it for changes that cannot break a build.
+  # Neither a push to main nor a release tag runs this suite. Pushing straight to
+  # main is meant to run no pipeline at all, and a tag is meant to build and ship
+  # artifacts, not to re-litigate the tree: on a tag, release.yml (installers),
+  # publish.yml (crates.io), docker.yml (the GHCR image) and pages.yml (the PWA
+  # deploy) are the whole story. A tag can therefore carry commits no pull
+  # request ever saw — that is the trade this repository accepts, and the reason
+  # to tag a commit that went through one.
   pull_request:
     branches: [main]
   # Weekly cache warm, on main. An Actions cache is only restorable from the
@@ -61,9 +55,9 @@ on:
 
 # One live run per ref. A pull request now fans out to ten jobs, so a second push
 # arriving mid-flight would otherwise leave two full sets competing for runners
-# to answer a question only the newer one is still asking. Tags and the schedule
-# get a group but never cancel: the tag run is the last gate before a release
-# ships, and nothing should be able to cut it short.
+# to answer a question only the newer one is still asking. The weekly schedule
+# gets a group but never cancels: it is on nobody's critical path and has nothing
+# to race with.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
