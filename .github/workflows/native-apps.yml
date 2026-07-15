@@ -126,13 +126,22 @@ jobs:
       - uses: jetli/trunk-action@v0.5.0
         with:
           version: latest
-      # npm, not `cargo install tauri-cli`: that compiled the CLI from source on
-      # every run of this job, which cost more than seven minutes here and bought
-      # nothing. @tauri-apps/cli ships a prebuilt binary per platform and lands in
-      # seconds — it is the same CLI, and already how tauri-action installs it for
-      # the desktop jobs in this file.
+      # Prebuilt, not compiled: `cargo install tauri-cli` built the CLI from
+      # source on every run and cost minutes. Tauri publishes cargo-tauri
+      # binaries per platform, and binstall fetches the one for this runner in
+      # seconds.
+      #
+      # It has to land as `cargo-tauri` on PATH rather than as the npm CLI: the
+      # projects `tauri android init` / `ios init` generate re-invoke the CLI
+      # themselves — gradle's BuildTask.kt bakes in the executable it was
+      # initialised with and runs `cargo tauri android android-studio-script`,
+      # and the Xcode project bakes `cargo tauri ios xcode-script`. Installed
+      # any other way, init writes an invocation that later cannot be resolved.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
       - name: Install Tauri CLI
-        run: npm install -g @tauri-apps/cli@^2
+        run: cargo binstall tauri-cli --version "^2" --no-confirm
       - name: Build debug APK
         working-directory: packages/hygg-tauri
         env:
@@ -143,8 +152,8 @@ jobs:
           # weight — this is for build time and artifact size, not disk.
           CARGO_PROFILE_DEV_DEBUG: "0"
         run: |
-          tauri android init
-          tauri android build --debug --apk --target aarch64
+          cargo tauri android init
+          cargo tauri android build --debug --apk --target aarch64
       - uses: actions/upload-artifact@v4
         with:
           name: hygg-android-debug
@@ -175,18 +184,27 @@ jobs:
       # pods; cocoapods ships on the runner image, xcodegen does not.
       - name: Install iOS project tooling
         run: brew install xcodegen
-      # npm, not `cargo install tauri-cli`: that compiled the CLI from source on
-      # every run of this job, which cost more than seven minutes here and bought
-      # nothing. @tauri-apps/cli ships a prebuilt binary per platform and lands in
-      # seconds — it is the same CLI, and already how tauri-action installs it for
-      # the desktop jobs in this file.
+      # Prebuilt, not compiled: `cargo install tauri-cli` built the CLI from
+      # source on every run and cost minutes. Tauri publishes cargo-tauri
+      # binaries per platform, and binstall fetches the one for this runner in
+      # seconds.
+      #
+      # It has to land as `cargo-tauri` on PATH rather than as the npm CLI: the
+      # projects `tauri android init` / `ios init` generate re-invoke the CLI
+      # themselves — gradle's BuildTask.kt bakes in the executable it was
+      # initialised with and runs `cargo tauri android android-studio-script`,
+      # and the Xcode project bakes `cargo tauri ios xcode-script`. Installed
+      # any other way, init writes an invocation that later cannot be resolved.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
       - name: Install Tauri CLI
-        run: npm install -g @tauri-apps/cli@^2
+        run: cargo binstall tauri-cli --version "^2" --no-confirm
       - name: Build simulator app
         working-directory: packages/hygg-tauri
         run: |
-          tauri ios init --ci
-          tauri ios build --debug --target aarch64-sim
+          cargo tauri ios init --ci
+          cargo tauri ios build --debug --target aarch64-sim
       - uses: actions/upload-artifact@v4
         with:
           name: hygg-ios-simulator
