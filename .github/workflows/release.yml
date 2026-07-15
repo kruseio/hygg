@@ -9,9 +9,14 @@
 #   SHA256SUMS
 #
 # Every job uploads to a workflow artifact and a single publish job creates the
-# release at the end. That is deliberate: `gh release create` runs once, with
-# everything, so a failed platform means no release at all rather than a
-# half-populated one users can already download from.
+# release at the end, from whatever arrived. This file used to say the opposite —
+# that one `gh release create` with everything, or no release at all, was
+# preferable to a half-populated one — and 0.1.23 is what that policy paid out:
+# a shell builtin missing from macOS bash failed two Collect steps, and the
+# Linux and Windows binaries that had built perfectly well were withheld with
+# them. Nobody was protected from a partial release; they were left with no
+# release and no downloads at all. A missing platform is now a named gap in the
+# notes, and the platforms that built are attached.
 #
 # The PWA is not here — it deploys to Pages on the same tag (pages.yml).
 
@@ -422,8 +427,18 @@ jobs:
 
   publish:
     name: publish release
-    needs: [cli, desktop, android, ios]
-    if: github.ref_type == 'tag'
+    needs: [guard, cli, desktop, android, ios]
+    # Ship what built. A red leg means that one platform's artifact is missing,
+    # not that the other platforms' should be withheld — and withholding them is
+    # what happened on 0.1.23, where working Linux and Windows binaries went
+    # nowhere because a macOS shell builtin did not exist. `!cancelled()` rather
+    # than `always()` so that cancelling the run still cancels the release.
+    #
+    # The guard is the one exception, and is in `needs` purely to be depended on
+    # here: it is not a build whose absence costs one artifact, it is the check
+    # that the tag means what it says. If it failed, every artifact below is
+    # mislabelled and none of them should go out.
+    if: ${{ !cancelled() && github.ref_type == 'tag' && needs.guard.result == 'success' }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -438,10 +453,23 @@ jobs:
         working-directory: dist
         run: |
           set -euo pipefail
+          # Every leg failed, or none ran. There is no release to make, and the
+          # glob below would fail less legibly.
+          if [ -z "$(ls -A)" ]; then
+            echo "no platform produced an artifact — nothing to release" >&2
+            exit 1
+          fi
           sha256sum ./* > SHA256SUMS
           cat SHA256SUMS
 
       - name: Release notes
+        env:
+          # Not `success()`/`failure()`: those collapse the whole set to one
+          # bool, and the point here is which of them.
+          CLI: ${{ needs.cli.result }}
+          DESKTOP: ${{ needs.desktop.result }}
+          ANDROID: ${{ needs.android.result }}
+          IOS: ${{ needs.ios.result }}
         run: |
           owner="${{ github.repository_owner }}"
           repo="${{ github.event.repository.name }}"
@@ -479,6 +507,33 @@ jobs:
 
           Verify a download against \`SHA256SUMS\`.
           EOF
+
+          # The notes above describe the full set of downloads. When a platform
+          # did not build, the release goes out without it rather than not at
+          # all — so name the gap, instead of leaving someone scrolling for a
+          # file that was never uploaded.
+          incomplete=""
+          [ "$CLI" = success ] || incomplete="$incomplete- CLI archives\n"
+          [ "$DESKTOP" = success ] || incomplete="$incomplete- Desktop bundles\n"
+          [ "$ANDROID" = success ] || incomplete="$incomplete- Android APK\n"
+          [ "$IOS" = success ] || incomplete="$incomplete- iOS simulator build\n"
+
+          if [ -n "$incomplete" ]; then
+            # A matrix leg reports one result for every platform in it, so this
+            # says "some of", not "all of": desktop is red when any one of macOS
+            # / Linux / Windows is, and the other two are attached regardless.
+            # The asset list on the release is the precise answer.
+            {
+              echo
+              echo "> [!WARNING]"
+              echo "> Some builds did not complete for this tag, so this release"
+              echo "> is missing part or all of:"
+              printf '%b' "$incomplete" | sed 's/^/> /'
+              echo ">"
+              echo "> Everything else attached below is unaffected. See the"
+              echo "> assets for what is actually here."
+            } >> notes.md
+          fi
 
       - name: Create release
         env:
