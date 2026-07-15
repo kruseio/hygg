@@ -174,15 +174,15 @@ jobs:
       - name: Collect bundles
         run: |
           set -euo pipefail
-          shopt -s nullglob globstar
           mkdir -p dist
-          for f in target/${{ matrix.target }}/release/bundle/**/*; do
-            [ -f "$f" ] || continue
+          # find rather than `shopt -s globstar` + `**`: this job also runs on the
+          # macOS runner, whose /bin/bash is 3.2 and has no globstar.
+          while IFS= read -r -d '' f; do
             case "$f" in
               *.dmg|*.deb|*.AppImage|*.rpm|*.msi|*-setup.exe)
                 cp "$f" "dist/hygg-desktop-${TAG}-${{ matrix.name }}.${f##*.}" ;;
             esac
-          done
+          done < <(find "target/${{ matrix.target }}/release/bundle" -type f -print0)
           ls -lh dist
 
       - uses: actions/upload-artifact@v4
@@ -373,7 +373,6 @@ jobs:
       - name: Collect .app
         run: |
           set -euo pipefail
-          shopt -s nullglob globstar
           mkdir -p dist
           app=$(find packages/hygg-tauri/gen/apple/build -name '*.app' -print -quit)
           [ -n "$app" ] || { echo "no .app produced"; exit 1; }
