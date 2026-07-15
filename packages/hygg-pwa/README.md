@@ -30,10 +30,7 @@ kills the multi-MB wasm cold-compile tax and runs extraction at native speed
 (a real win on weaker mobile CPUs). The browser build keeps the wasm pipeline so
 it still extracts fully offline with no server.
 
-**This is where new reader features land.** The native iced client
-(`hygg-gui`) is **paused / feature-frozen** — kept as a legacy no-webview
-desktop option, to be revisited only once the iced ecosystem (mobile support,
-rich text) matures. See `../hygg-gui/README.md`.
+**This is where new reader features land.**
 
 ## What it does
 

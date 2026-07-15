@@ -2,11 +2,11 @@
 # ships it to desktop (Windows, macOS, Linux/GNOME) and mobile (iOS, Android).
 # See ./README.md.
 #
-# A workspace member (like hygg-gui / hygg-pwa) but kept out of `default-members`
+# A workspace member (like hygg-pwa) but kept out of `default-members`
 # — a bare `cargo build` skips the heavy Tauri stack; build it with
 # `-p hygg-tauri` or `cargo tauri build`. publish = false, and nothing in the
 # published `hygg` crate's tree references it, so `cargo install hygg` never
-# pulls Tauri — same isolation as hygg-gui / hygg-pwa / hygg-server.
+# pulls Tauri — same isolation as hygg-pwa / hygg-server.
 
 [package]
 name = "hygg-tauri"
@@ -44,8 +44,8 @@ tauri = { version = "2", features = [] }
 # argument serializes unambiguously; see src/lib.rs).
 base64 = "0.22"
 
-# The exact same native hygg pipeline hygg-gui uses — so a document renders as
-# the identical justified monospace column the CLI, PWA, and GUI show.
+# The exact same native hygg pipeline the CLI uses — so a document renders as
+# the identical justified monospace column the CLI and PWA show.
 cli-justify = { version = "0.1", path = "../cli-justify" }
 cli-epub-to-text = { version = "0.1", path = "../cli-epub-to-text" }
 cli-pdf-to-text = { version = "0.1", path = "../cli-pdf-to-text", features = [

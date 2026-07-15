@@ -205,12 +205,9 @@ ci_wasm () {
   # CI can see. The bundle this ships is not the place to find that out.
   ( cd packages/hygg-pwa && RUSTUP_TOOLCHAIN="${TOOLCHAIN#+}" trunk build --release )
 
-  # (hygg-gui is a native desktop app — no wasm leg here; its build is covered by
-  # the host --workspace legs above. The browser reader is hygg-pwa.)
-
-  # Isolation guard: fail if any Leptos/wasm or iced/GUI crate leaks into the
+  # Isolation guard: fail if any Leptos/wasm or GUI crate leaks into the
   # published CLI's normal dependency tree (cargo install hygg must never pull
-  # the PWA's Leptos/wasm stack or hygg-gui's iced/wgpu stack).
+  # the PWA's Leptos/wasm stack or a GUI shell's stack).
   if cargo $TOOLCHAIN tree -p hygg -e normal --prefix none 2>/dev/null \
        | grep -Eiq '^(leptos|gloo|wasm-bindgen|web-sys|js-sys|iced|wgpu|winit|tauri)'; then
     echo "ERROR: hygg dependency tree leaked PWA/GUI/Tauri crates (cargo install hygg must stay clean)" >&2

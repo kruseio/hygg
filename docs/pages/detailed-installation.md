@@ -14,7 +14,6 @@ book imported on one shows up as the same book on another once sync is on.
 | Web app | `hygg-pwa` | Offline touch reader, installs to the home screen | hosted, self-hosted, source |
 | Desktop app | `hygg-tauri` | Native shell around the web app's UI | installer, source |
 | Mobile app | `hygg-tauri` | The same UI on iOS and Android | APK, source |
-| Native desktop GUI | `hygg-gui` | iced, no webview — **paused / feature-frozen** | source only |
 | Sync server | `hygg-server` | Optional, self-hostable | container image, source |
 
 ## Terminal reader (CLI)
@@ -200,24 +199,6 @@ Developer certificate and provisioning profile.
 
 The generated `gen/apple` and `gen/android` projects are git-ignored until you
 customize signing or manifests.
-
-## Native desktop GUI (legacy)
-
-`hygg-gui` is the reader as a native [iced](https://iced.rs) app with no webview.
-It is **paused and feature-frozen** — the desktop path forward is the Tauri app
-above — but it still builds and runs, and it is the option to reach for if you
-want no webview at all.
-
-Source only; there are no prebuilt bundles:
-```sh
-cargo run -p hygg-gui
-cargo run -p hygg-gui -- ~/Documents/book.pdf   # open a document directly
-```
-
-It is kept out of the workspace `default-members` because it pulls the heavy
-iced/wgpu stack, so a bare `cargo build` skips it — build it explicitly with
-`-p hygg-gui`. To register it as the system's default PDF/EPUB/text reader, see
-`packages/hygg-gui/platform/README.md`.
 
 ## Sync server
 

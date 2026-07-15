@@ -2,7 +2,7 @@
 resolver = "3"
 
 # Every member lives under packages/, so the repository root holds the workspace
-# manifest, the licenses and the docs rather than fourteen crate directories.
+# manifest, the licenses and the docs rather than thirteen crate directories.
 # Spelled out rather than globbed as "packages/*": the notes below are the reason
 # each crate is in (or out of) `default-members` and the host CI legs, and a glob
 # would drop them.
@@ -37,20 +37,12 @@ members = [
   # the published `hygg` crate's tree references it.
   "packages/hygg-pwa",
 
-  # Native iced desktop GUI reader (Windows, Linux, macOS). publish = false.
-  # Kept out of `default-members` because it pulls the heavy iced/wgpu stack, so
-  # a bare `cargo build` skips it; build it explicitly with `-p hygg-gui`. It is
-  # still covered by host `--workspace` CI. Nothing in the published `hygg`
-  # crate's tree references it, so `cargo install hygg` never pulls iced.
-  "packages/hygg-gui",
-
   # Native Tauri v2 shell (Windows, macOS, Linux, iOS, Android) that wraps the
   # hygg-pwa Leptos UI and runs the extraction pipeline over native IPC. Kept
   # out of `default-members` (it pulls the heavy Tauri stack, so a bare
   # `cargo build` skips it; build it with `-p hygg-tauri` or `cargo tauri
   # build`). Nothing in the published `hygg` crate's tree references it, so
-  # `cargo install hygg` never pulls Tauri — same isolation as hygg-gui /
-  # hygg-pwa.
+  # `cargo install hygg` never pulls Tauri — same isolation as hygg-pwa.
   "packages/hygg-tauri",
 
   # Thin forks of upstream crates, published under hygg-* names so the

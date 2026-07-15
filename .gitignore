@@ -16,7 +16,3 @@ AGENTS.md
 packages/hygg-pwa/dist/
 .playwright-mcp/
 packages/hygg-pwa/.env
-
-# hygg-gui: optional local server URL override + the generated macOS app bundle.
-packages/hygg-gui/.env
-packages/hygg-gui/*.app/

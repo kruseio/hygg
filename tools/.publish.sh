@@ -11,7 +11,7 @@
 # sibling in the same release, and then it fails partway through a run, with the
 # earlier crates already pushed and immutable.
 #
-# The three clients (hygg-gui, hygg-pwa, hygg-tauri) are `publish = false` and
+# The two clients (hygg-pwa, hygg-tauri) are `publish = false` and
 # are deliberately absent.
 #
 # Re-running is safe: a crate already on crates.io at this version is skipped

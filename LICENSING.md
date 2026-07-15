@@ -53,14 +53,13 @@ Every crate in the workspace, and what covers it:
 | [`hygg-shared`](packages/hygg-shared) | Library | crates.io | **MIT** | Shared types, including the `sync::proto` client/server wire contract. Permissive so it can sit on both sides of that boundary. |
 | [`cli-text-reader`](packages/cli-text-reader) | Library | crates.io | **AGPL-3.0-only** | The reader/TUI engine — network copyleft keeps the product and its hosted forks open. |
 | [`hygg`](packages/hygg) | Binary | crates.io | **AGPL-3.0-only** | The shipped CLI, on top of `cli-text-reader`. |
-| [`hygg-gui`](packages/hygg-gui) | Binary | no (`publish = false`) | **AGPL-3.0-only** | The same reader product in a native iced desktop shell. |
 | [`hygg-pwa`](packages/hygg-pwa) | Binary / WASM | no (`publish = false`) | **AGPL-3.0-only** | The same reader product as a Rust/WASM Leptos PWA. Served over a network, so AGPL is the point. |
 | [`hygg-tauri`](packages/hygg-tauri) | Binary | no (`publish = false`) | **AGPL-3.0-only** | Native Tauri v2 desktop/mobile shell over the `hygg-pwa` UI — same product, same license. |
 | [`hygg-server`](packages/hygg-server) | Library / Binary | crates.io | **Elastic License 2.0** | The sync server — source-available. Self-host and modify freely; do not offer it to third parties as a managed service. ELv2 is **not** an OSI "open source" license. |
 | [`hygg-cff-parser`](packages/hygg-cff-parser) | Library | crates.io | **MIT OR Apache-2.0** | Thin fork of `cff-parser` — retains the upstream dual license. |
 | [`hygg-pdf-extract`](packages/hygg-pdf-extract) | Library | crates.io | **MIT** | Thin fork of `pdf-extract` — retains the upstream license. |
 
-The three `publish = false` clients (`hygg-gui`, `hygg-pwa`, `hygg-tauri`) are
+The two `publish = false` clients (`hygg-pwa`, `hygg-tauri`) are
 not on crates.io, but they ship to users as built binaries and hosted apps —
 their AGPL terms apply to those distributions exactly as they do to `hygg`.
 
@@ -78,9 +77,9 @@ direction rather than by convention:
 
 - **Every MIT crate depends only on permissive crates.** No AGPL or Elastic code
   is reachable from them, so they stay genuinely reusable.
-- **The AGPL clients sit at the top of the tree.** `hygg`, `hygg-gui`,
-  `hygg-pwa` and `hygg-tauri` are leaves that nothing else depends on; they may
-  absorb their MIT dependencies, which MIT permits.
+- **The AGPL clients sit at the top of the tree.** `hygg`, `hygg-pwa` and
+  `hygg-tauri` are leaves that nothing else depends on; they may absorb their
+  MIT dependencies, which MIT permits.
 - **The Elastic server shares no code with the AGPL clients.** `hygg-server`
   depends only on `hygg-shared`, `cli-pdf-to-text`, `cli-epub-to-text` and
   `cli-justify` — all MIT. It does not depend on `cli-text-reader` or any other
@@ -90,7 +89,7 @@ direction rather than by convention:
   crosses the boundary in either direction.
 
 One practical consequence: `cargo install hygg` never pulls the server's
-axum/tokio/sea-orm stack, and never pulls iced, Tauri or Leptos. The isolation
+axum/tokio/sea-orm stack, and never pulls Tauri or Leptos. The isolation
 is structural, not a packaging flag.
 
 ## Third-party material
@@ -100,7 +99,6 @@ is structural, not a packaging flag.
 | What | Where | License | Notes |
 |---|---|---|---|
 | PaddleOCR ONNX models | [`packages/cli-pdf-to-text/assets/ocr/monkt-paddleocr-onnx/`](packages/cli-pdf-to-text/assets/ocr/monkt-paddleocr-onnx) | **Apache-2.0** | Redistributed under the upstream repository's license. Only compiled in with the optional `pdf-ocr-bundled` feature. Provenance, revision and checksums are in that directory's [`MANIFEST.md`](packages/cli-pdf-to-text/assets/ocr/monkt-paddleocr-onnx/MANIFEST.md). |
-| Fira Mono (Medium) | [`packages/hygg-gui/assets/fonts/`](packages/hygg-gui/assets/fonts) | **SIL Open Font License 1.1** | Digitized data © 2012–2015 The Mozilla Foundation and Telefónica S.A. Full text: [`FiraMono-LICENSE`](packages/hygg-gui/assets/fonts/FiraMono-LICENSE). The OFL covers the font file only and does not affect the license of the software that embeds it. |
 
 ### Pulled in by the optional `tts` feature
 

@@ -20,9 +20,6 @@ as a PWA, and this crate wraps that same `dist/` bundle in an OS webview. The
 extraction, no multi-MB wasm cold-compile tax (which hurts most on mobile CPUs).
 Storage (IndexedDB), sync, and TTS stay in the webview, unchanged.
 
-`hygg-gui` (native iced) is paused/legacy; this is the reader's forward path
-until iced gains a mobile story. See `../hygg-gui/README.md`.
-
 ## Layout
 
 | Path | What |
@@ -70,7 +67,7 @@ customize signing/manifests, then commit them deliberately (see `.gitignore`).
 
 `publish = false`, and nothing in the published `hygg` crate's dependency tree
 references this crate — so `cargo install hygg` never pulls Tauri. Same posture
-as `hygg-pwa`, `hygg-gui`, and `hygg-server`.
+as `hygg-pwa` and `hygg-server`.
 
 ## License
 

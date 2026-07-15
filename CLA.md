@@ -23,7 +23,7 @@ You hereby grant kruseio (“Project Maintainer”) a perpetual, irrevocable, wo
 hygg is a multi-license workspace:
 
 - **MIT** — the reusable libraries and shared crates (`cli-justify`, `redirect-stderr`, `cli-image-to-ascii`, `hygg-shared`, `cli-epub-to-text`, `cli-pdf-to-text`, and the upstream forks `hygg-pdf-extract` and `hygg-cff-parser`, the latter dual-licensed **MIT OR Apache-2.0**);
-- **AGPL-3.0-only** — the reader and its clients (`cli-text-reader`, `hygg`, `hygg-gui`, `hygg-pwa`, `hygg-tauri`); and
+- **AGPL-3.0-only** — the reader and its clients (`cli-text-reader`, `hygg`, `hygg-pwa`, `hygg-tauri`); and
 - **Elastic License 2.0** — the sync server (`hygg-server`), a source-available license.
 
 Each crate's own `Cargo.toml` declaration is authoritative; [LICENSING.md](./LICENSING.md) documents the full breakdown.

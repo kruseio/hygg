@@ -301,7 +301,7 @@ jobs:
   # would only compile the thin trunk launcher and prove nothing about the app —
   # which is why the host legs exclude it and this leg exists. It also carries the
   # isolation guard, so this job is where `cargo install hygg` is held to a
-  # dependency tree free of the Leptos/wasm and iced/GUI stacks.
+  # dependency tree free of the Leptos/wasm and native-GUI stacks.
   pwa:
     name: hygg-pwa (wasm)
     runs-on: ubuntu-22.04
