@@ -116,6 +116,10 @@ body {
   right: 0;
   height: calc(var(--bar-h) + env(safe-area-inset-top));
   padding-top: env(safe-area-inset-top);
+  /* Small breathing room from the screen edges so the back chevron and the
+     settings gear aren't jammed into the corners (respects notch insets). */
+  padding-left: max(8px, env(safe-area-inset-left));
+  padding-right: max(8px, env(safe-area-inset-right));
   display: grid;
   grid-template-columns: 96px 1fr 96px;
   align-items: center;
@@ -149,6 +153,14 @@ body {
 .topbar__right {
   justify-content: flex-end;
 }
+/* Keep every control at its natural size — the fixed side columns are narrow,
+   so without this the flex default (shrink: 1) squeezes the cluster and clips
+   the Star button. Overflow spills toward the center, which is empty on Home
+   and comfortably wide on tablet. */
+.topbar__left > *,
+.topbar__right > * {
+  flex-shrink: 0;
+}
 .iconbtn {
   display: inline-flex;
   align-items: center;
@@ -174,28 +186,56 @@ body {
 .iconbtn:active {
   background: color-mix(in srgb, var(--reader-fg) 16%, transparent);
 }
-/* Live GitHub star count in the top bar: a compact pill sitting left of the
-   settings gear, linking to the repo so starring is one tap away. */
-.starbtn {
+/* Live GitHub Star affordance in the top bar, modelled on GitHub's own Star
+   button: a compact two-segment pill — the gold star glyph + "Star" label on
+   the left, the live star count on the right, split by a hairline — linking
+   to the repo so starring is one tap away. Sits at the left of the right
+   cluster (before any page action buttons and the gear). */
+.ghstar {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 10px;
+  align-items: stretch;
+  height: 30px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--card-bg);
-  color: var(--accent);
+  color: var(--reader-fg);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
   text-decoration: none;
+  overflow: hidden;
   -webkit-tap-highlight-color: transparent;
 }
-.starbtn:hover {
+.ghstar__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+}
+.ghstar__label svg {
+  color: var(--accent);
+}
+.ghstar__count {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border-left: 1px solid var(--border);
+  background: color-mix(in srgb, var(--reader-fg) 5%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+.ghstar:hover {
   border-color: var(--accent);
 }
-.starbtn__count {
-  color: var(--reader-fg);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
+.ghstar:hover .ghstar__count {
+  border-left-color: var(--accent);
+}
+/* On narrow phones the full "Star" label would crowd the centered page title,
+   so drop the word and keep the compact star + count (tablets and up, the
+   primary target, keep the full GitHub-style button). */
+@media (max-width: 600px) {
+  .ghstar__text {
+    display: none;
+  }
 }
 /* The About page's "Star · N" button: same accent-tinted star glyph. */
 .btn--star svg {

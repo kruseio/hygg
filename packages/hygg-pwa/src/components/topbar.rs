@@ -1,6 +1,7 @@
 //! Mobile-app style top bar: a back affordance on the left, the title in the
-//! middle, an optional live GitHub star pill and a settings gear on the
-//! right. Slides out of view when `visible` is false (the reader hides it on
+//! middle, and a right cluster that reads left-to-right as an optional live
+//! GitHub Star button, any page-specific action buttons, then the settings
+//! gear. Slides out of view when `visible` is false (the reader hides it on
 //! scroll-down for distraction-free reading). The gear is always present and
 //! lights up while the Settings page itself is open.
 
@@ -23,9 +24,9 @@ pub fn TopBar(
   /// Where the back chevron links; `None` hides it (e.g. on Home).
   #[prop(optional, into)]
   back_href: Option<String>,
-  /// Extra action buttons for the right zone, rendered just left of the
-  /// settings gear (e.g. the reader's read-aloud toggle). `None` on screens
-  /// with no page-specific actions.
+  /// Extra action buttons for the right zone, rendered between the Star
+  /// button and the settings gear (e.g. Home's Sync-now button, the reader's
+  /// read-aloud toggle). `None` on screens with no page-specific actions.
   #[prop(optional)]
   children: Option<Children>,
 ) -> impl IntoView {
@@ -60,16 +61,19 @@ pub fn TopBar(
       </div>
       <div class="topbar__title">{move || title.get()}</div>
       <div class="topbar__right">
-        {children.map(|c| c())}
         {move || settings.with(|s| s.show_github_stars).then(|| view! {
-          <a class="starbtn" href=bi::REPOSITORY target="_blank" rel="noopener"
+          <a class="ghstar" href=bi::REPOSITORY target="_blank" rel="noopener"
             aria-label="Star hygg on GitHub" title="Star hygg on GitHub">
-            {star_icon()}
+            <span class="ghstar__label">
+              {star_icon()}
+              <span class="ghstar__text">"Star"</span>
+            </span>
             {move || stars.count().map(|n| view! {
-              <span class="starbtn__count">{format_count(n)}</span>
+              <span class="ghstar__count">{format_count(n)}</span>
             })}
           </a>
         })}
+        {children.map(|c| c())}
         <A href=settings_href
           attr:class=move || {
             if on_settings() { "iconbtn iconbtn--on" } else { "iconbtn" }
