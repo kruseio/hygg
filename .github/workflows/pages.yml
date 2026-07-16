@@ -34,6 +34,10 @@ on:
       tag:
         description: "Tag to (re)deploy, e.g. 0.1.22"
         required: true
+      ref:
+        description: "Git ref to build from (default: the tag). Set to a branch like main to redeploy a tag from fixed sources after a build-tooling fix — the deploy still lands at the `tag` URLs, only the tree built changes."
+        required: false
+        default: ""
 
 permissions:
   contents: write # pushes the built site to gh-pages

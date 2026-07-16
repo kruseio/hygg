@@ -203,7 +203,14 @@ ci_wasm () {
   # says — which on a runner is decided by the order the toolchains were
   # installed in, and on a laptop by a machine-wide setting neither this file nor
   # CI can see. The bundle this ships is not the place to find that out.
-  ( cd packages/hygg-pwa && RUSTUP_TOOLCHAIN="${TOOLCHAIN#+}" trunk build --release )
+  # Not just that the bundle builds, but that the Pages post-processing accepts
+  # what Trunk emits: prepare_pages_dist.py rewrites the built index.html for a
+  # sub-path deploy, and 0.1.25 shipped a Trunk minifier that dropped the
+  # optional <head> and made that step abort. Running the real pages step here
+  # turns a Trunk/injector regression into a red PR rather than a failed tag.
+  ( cd packages/hygg-pwa \
+    && RUSTUP_TOOLCHAIN="${TOOLCHAIN#+}" trunk build --release \
+    && python3 tools/prepare_pages_dist.py dist /hygg/ci/ )
 
   # Isolation guard: fail if any Leptos/wasm or GUI crate leaks into the
   # published CLI's normal dependency tree (cargo install hygg must never pull
@@ -213,6 +220,14 @@ ci_wasm () {
     echo "ERROR: hygg dependency tree leaked PWA/GUI/Tauri crates (cargo install hygg must stay clean)" >&2
     exit 1
   fi
+}
+
+# Fast Pages-injector self-test: exercises prepare_pages_dist.py against a
+# minified, <head>-dropped document (what a Trunk release build can emit) with
+# no wasm compile and no Trunk build, so it belongs in the pre-push subset. The
+# full trunk-build-then-inject end-to-end check lives in ci_wasm.
+ci_pages () {
+  python3 packages/hygg-pwa/tools/test_prepare_pages_dist.py
 }
 
 # --- The passes ---------------------------------------------------------------
@@ -229,14 +244,17 @@ ci_all () {
   ci_test
   ci_tts
   ci_udeps
+  ci_pages
   ci_wasm
   ci_tauri
 }
 
 # What tools/hooks/pre-push runs, and the reason it is a subset rather than the
-# suite: the four legs here are the ones whose cost is a compile the laptop was
-# going to pay anyway, and they catch most of what turns a pull request red. The
-# five they leave out each want something a runner has and a laptop does not —
+# suite: four of the legs here are the ones whose cost is a compile the laptop
+# was going to pay anyway, plus ci_pages — a pure-Python injector self-test that
+# costs nothing and guards the Pages deploy that a tag, not a PR, used to be the
+# first to exercise. Together they catch most of what turns a pull request red.
+# The five they leave out each want something a runner has and a laptop does not —
 # espeak built through CMake (tts), a second full build on nightly (udeps), a
 # Trunk release bundle (wasm), a WebKitGTK stack and a Tauri binary (tauri) — or,
 # in audit's case, an answer that changes with the advisory database rather than
@@ -251,6 +269,7 @@ ci_fast () {
   ci_loc
   ci_clippy
   ci_test
+  ci_pages
 }
 
 # --- Dispatch -----------------------------------------------------------------
@@ -261,7 +280,7 @@ if [ "${BASH_SOURCE[0]}" != "$0" ]; then
   return 0
 fi
 
-LEGS="audit clippy fmt loc test tts udeps wasm tauri"
+LEGS="audit clippy fmt loc pages test tts udeps wasm tauri"
 
 if [ $# -eq 0 ]; then
   LOCKED="--locked"

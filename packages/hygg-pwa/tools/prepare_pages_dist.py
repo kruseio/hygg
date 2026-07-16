@@ -25,6 +25,13 @@ from pathlib import Path
 
 BASE_TAG = re.compile(r"<base\b[^>]*>", re.IGNORECASE)
 HEAD_OPEN = re.compile(r"<head\b[^>]*>", re.IGNORECASE)
+# `<head>` is an optional tag: an HTML minifier is allowed to drop it (its
+# children then belong to an implicit head). Trunk's release minifier does
+# exactly this — our source `<head>` carries no attributes, so it is elided,
+# while `<html lang=... class=...>` is kept because it does. When that happens
+# the <base> goes right after `<html ...>`, which is where the implicit head
+# begins, so it is still the first thing the head resolves against.
+HTML_OPEN = re.compile(r"<html\b[^>]*>", re.IGNORECASE)
 # Regions where a tag-shaped string is text, not an element: an HTML comment, or
 # the body of a <script>/<style>.
 INERT = re.compile(
@@ -58,10 +65,15 @@ def inject_base(html: str, public_url: str) -> str:
     existing = _first_element(BASE_TAG, html)
     if existing:  # idempotent: re-running retargets rather than stacking tags
         return html[: existing.start()] + tag + html[existing.end() :]
-    head = _first_element(HEAD_OPEN, html)
-    if not head:
-        raise SystemExit("no <head> in index.html — cannot inject <base>")
-    return html[: head.end()] + "\n    " + tag + html[head.end() :]
+    # Prefer just inside <head>; fall back to just after <html ...> when a
+    # minifier dropped the optional <head> tag. Both put <base> ahead of every
+    # ref it must govern.
+    anchor = _first_element(HEAD_OPEN, html) or _first_element(HTML_OPEN, html)
+    if not anchor:
+        raise SystemExit(
+            "no <head> or <html> in index.html — cannot inject <base>"
+        )
+    return html[: anchor.end()] + "\n    " + tag + html[anchor.end() :]
 
 
 def main() -> None:
