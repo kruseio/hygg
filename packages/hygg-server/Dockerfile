@@ -33,6 +33,18 @@ COPY . .
 RUN cargo build --release -p hygg-server
 
 FROM debian:bookworm-slim AS runtime
+# OCI labels for anything that builds this image outside CI (docker compose,
+# plain `docker build`). The GHCR workflow applies the same set through
+# docker/metadata-action — with an explicit `licenses` override there, because
+# the action's default derives the license from the *repository* (AGPL-3.0,
+# the reader's license) while hygg-server ships under Elastic-2.0 (see
+# packages/hygg-server/LICENSE); the auto label is what made the GHCR package
+# page advertise AGPL. `description` is what GHCR shows on the package page.
+LABEL org.opencontainers.image.title="hygg-server" \
+  org.opencontainers.image.description="Self-hostable, multi-tenant sync server for the hygg reader. Sync documents, reading progress, bookmarks, highlights and notes across devices. Single Rust binary backed by SQLite." \
+  org.opencontainers.image.licenses="Elastic-2.0" \
+  org.opencontainers.image.source="https://github.com/kruseio/hygg" \
+  org.opencontainers.image.documentation="https://github.com/kruseio/hygg/blob/main/packages/hygg-server/README.md"
 # pandoc is a runtime dependency, not a nicety: POST /api/v1/convert shells out
 # to it for DOCX/ODT/RTF (src/api/convert.rs), so without it the container
 # answers 500 for every format the endpoint advertises. PDF/EPUB/text and the

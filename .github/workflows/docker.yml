@@ -40,6 +40,15 @@ on:
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/hygg-server
+  # What the GHCR package page shows as the image description, sourced from
+  # packages/hygg-server/README.md's summary. Applied as a per-arch label and
+  # as an index annotation (GHCR reads a multi-arch image's metadata from the
+  # index).
+  DESCRIPTION: >-
+    Self-hostable, multi-tenant sync server for the hygg reader. Sync
+    documents, reading progress, bookmarks, highlights and notes across
+    devices. Single Rust binary backed by SQLite.
+  DOCS_URL: https://github.com/kruseio/hygg/blob/main/packages/hygg-server/README.md
 
 concurrency:
   group: docker-${{ github.ref }}
@@ -78,12 +87,20 @@ jobs:
 
       # Labels only — the tags are applied to the manifest, not to these
       # per-arch digests. org.opencontainers.image.source is what links the GHCR
-      # package back to this repository.
+      # package back to this repository. licenses/description are overridden:
+      # the action's defaults derive them from the repository (whose detected
+      # license is the reader's AGPL-3.0), which had the GHCR package page
+      # advertising AGPL for a crate that ships under Elastic-2.0.
       - name: Image labels
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
+          labels: |
+            org.opencontainers.image.title=hygg-server
+            org.opencontainers.image.description=${{ env.DESCRIPTION }}
+            org.opencontainers.image.licenses=Elastic-2.0
+            org.opencontainers.image.documentation=${{ env.DOCS_URL }}
 
       # Cache scoped per arch: the two runners produce different layers, and a
       # shared scope would have them evicting each other on every run.
@@ -184,22 +201,43 @@ jobs:
       # or without a `v`, so the bare tags this repository uses need nothing
       # special here. `latest=auto` leaves a pre-release (1.0.0-rc1) off :latest,
       # which is the point of tagging one.
+      # `annotations` (index level) is what GHCR actually reads for a
+      # multi-arch image's description and license on the package page — the
+      # per-arch labels above only cover single-platform pulls. Same override
+      # rationale as the build job: without it the page shows the repository's
+      # AGPL-3.0 instead of the server's Elastic-2.0.
       - name: Image tags
         id: meta
         uses: docker/metadata-action@v5
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: index
         with:
           images: ${{ env.IMAGE }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
           flavor: latest=auto
+          annotations: |
+            org.opencontainers.image.title=hygg-server
+            org.opencontainers.image.description=${{ env.DESCRIPTION }}
+            org.opencontainers.image.licenses=Elastic-2.0
+            org.opencontainers.image.documentation=${{ env.DOCS_URL }}
 
+      # Args are built as an array because tag values are trivially word-safe
+      # but annotation values contain spaces — the old inline $(jq ... join)
+      # would split them.
       - name: Create manifest
         working-directory: /tmp/digests
         run: |
           set -euo pipefail
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          args=()
+          while IFS= read -r tag; do
+            args+=(-t "$tag")
+          done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          while IFS= read -r annotation; do
+            args+=(--annotation "$annotation")
+          done < <(jq -r '.annotations[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          docker buildx imagetools create "${args[@]}" \
             $(printf "${IMAGE}@sha256:%s " *)
 
       - name: Inspect
