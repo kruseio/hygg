@@ -113,16 +113,23 @@ pub fn tts_settings() -> (String, f32) {
   (voice, speed)
 }
 
-/// Master TTS on/off switch (`ENABLE_TTS`), read the same lightweight way as
-/// `tts_settings` — environment first, then `~/.config/hygg/.env` if present —
-/// without materializing the config file. Falls back to `DEFAULT_TTS_ENABLED`.
+/// Master TTS on/off switch. Resolution order, highest priority first:
+///   1. `HYGG_TTS` — the runtime override (`1/0`, `on/off`, `true/false`).
+///   2. `ENABLE_TTS` — environment, then `~/.config/hygg/.env` if present (what
+///      `--tts` persists), read the same lightweight way as `tts_settings`.
+///   3. the compiled-in default `cfg!(feature = "tts")`: a build made with
+///      `--features tts` narrates by default; one without it does not (and its
+///      narration code is not compiled in at all).
 pub fn tts_enabled_setting() -> bool {
+  if let Some(over) = hygg_shared::parse_bool_env("HYGG_TTS") {
+    return over;
+  }
   let file_values = get_config_env_path()
     .ok()
     .and_then(|path| dotenvy::from_path_iter(path).ok())
     .map(|iter| iter.filter_map(Result::ok).collect::<HashMap<_, _>>())
     .unwrap_or_default();
-  config_bool("ENABLE_TTS", &file_values).unwrap_or(DEFAULT_TTS_ENABLED)
+  config_bool("ENABLE_TTS", &file_values).unwrap_or(cfg!(feature = "tts"))
 }
 
 /// OSC 52 clipboard forwarding on yank (`ENABLE_OSC52`). On by default: it is

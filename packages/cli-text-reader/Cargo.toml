@@ -19,7 +19,7 @@ workspace = true
 
 [features]
 default = []
-# Local Kokoro TTS narration. Opt-in like `pdf-ocr-bundled`: the default build
+# Local Kokoro TTS narration. Opt-in like the `ocr` feature: the default build
 # (and `cargo install hygg`) pulls none of these. `ort` downloads an ONNX
 # Runtime binary at build time; `espeak-rs` vendors espeak-ng and builds it
 # with CMake (needs a C toolchain). The model itself is downloaded on first

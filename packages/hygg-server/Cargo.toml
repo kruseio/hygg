@@ -39,7 +39,7 @@ hygg-shared = { version = "0.1", path = "../hygg-shared" }
 # (bundled pure-Rust tract engine) and the justification the PWA can't run in
 # the browser. EPUB/justify are light; DOCX/etc. go through the `pandoc` binary.
 cli-pdf-to-text = { version = "0.1", path = "../cli-pdf-to-text", features = [
-  "pdf-ocr-bundled",
+  "ocr",
 ] }
 cli-epub-to-text = { version = "0.1", path = "../cli-epub-to-text" }
 cli-justify = { version = "0.1", path = "../cli-justify" }

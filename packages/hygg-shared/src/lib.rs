@@ -9,6 +9,22 @@ pub mod sync;
 
 use std::path::{Path, PathBuf};
 
+/// Parse a boolean-ish environment variable into `Some(true)`/`Some(false)`, or
+/// `None` when it is unset or holds an unrecognized value. Accepts, case- and
+/// whitespace-insensitively, `1/true/yes/on` and `0/false/no/off`.
+///
+/// Used by the `HYGG_OCR` / `HYGG_TTS` runtime toggles: a `None` here means
+/// "not overridden", so the caller falls back to the saved config and, finally,
+/// to the compiled-in feature default (`cfg!(feature = "ocr" | "tts")`).
+pub fn parse_bool_env(name: &str) -> Option<bool> {
+  let raw = std::env::var(name).ok()?;
+  match raw.trim().to_ascii_lowercase().as_str() {
+    "1" | "true" | "yes" | "on" => Some(true),
+    "0" | "false" | "no" | "off" => Some(false),
+    _ => None,
+  }
+}
+
 /// Error type for path-related operations
 #[derive(Debug)]
 pub enum PathError {

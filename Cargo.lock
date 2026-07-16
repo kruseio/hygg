@@ -992,7 +992,7 @@ version = "0.1.24"
 dependencies = [
  "cli-image-to-ascii",
  "cli-justify",
- "flate2",
+ "dirs",
  "getopts",
  "hygg-pdf-extract",
  "hygg-shared",
@@ -1001,6 +1001,8 @@ dependencies = [
  "pdf_oxide",
  "rayon",
  "redirect-stderr",
+ "sha2 0.10.9",
+ "ureq",
 ]
 
 [[package]]

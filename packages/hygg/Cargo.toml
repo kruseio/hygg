@@ -20,8 +20,13 @@ workspace = true
 
 [features]
 default = []
-pdf-ocr-bundled = ["cli-pdf-to-text/pdf-ocr-bundled"]
+# Opt-in engines. Neither is compiled into the default build (`cargo install
+# hygg`); pass the feature to compile it in, which also flips that engine's
+# runtime default (HYGG_OCR / HYGG_TTS) to on. The models themselves are always
+# downloaded on first use and cached, never bundled.
+ocr = ["cli-pdf-to-text/ocr"]
 tts = ["cli-text-reader/tts"]
+full = ["ocr", "tts"]
 
 [[test]]
 name = "integration_test"

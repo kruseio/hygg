@@ -1,7 +1,7 @@
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 use super::region::PositionedText;
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 pub(crate) fn dedupe_positioned_ocr(
   ocr_regions: Vec<PositionedText>,
 ) -> Vec<PositionedText> {
@@ -33,7 +33,7 @@ pub(crate) fn dedupe_positioned_ocr(
   out
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 pub(crate) fn merge_native_and_ocr_regions_text(
   native: &str,
   native_regions: &[PositionedText],
@@ -73,7 +73,7 @@ pub(crate) fn merge_native_and_ocr_regions_text(
   if native.is_empty() { ocr } else { format!("{native}\n{ocr}") }
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn is_native_duplicate(
   native_regions: &[PositionedText],
   ocr: &PositionedText,
@@ -90,7 +90,7 @@ fn is_native_duplicate(
   })
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 pub(crate) fn normalized_text(text: &str) -> String {
   text
     .chars()

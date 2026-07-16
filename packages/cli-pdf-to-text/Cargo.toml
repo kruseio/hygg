@@ -20,7 +20,12 @@ workspace = true
 [features]
 default = []
 pdf-rendering = ["pdf_oxide/rendering"]
-pdf-ocr-bundled = ["pdf-rendering", "pdf_oxide/ocr-tract", "dep:flate2"]
+# Scanned-PDF OCR via pdf_oxide's pure-Rust tract backend. The ONNX models are
+# NOT bundled: they are downloaded on first use from this project's own
+# `ocr-models-v1.0` GitHub release, verified against a pinned sha256, and cached
+# under the platform cache dir — mirroring the TTS model fetch in cli-text-reader
+# (ureq fetches, sha2 verifies, dirs resolves the cache path). Native-only.
+ocr = ["pdf-rendering", "pdf_oxide/ocr-tract", "dep:ureq", "dep:sha2", "dep:dirs"]
 # High-fidelity visual extraction for a rich GUI (full-resolution embedded
 # images + rasterized table regions), exposed via `pdf_bytes_to_visuals`. It
 # enables pdf_oxide's rasterizer for table regions but DELIBERATELY does not
@@ -56,8 +61,16 @@ getopts = "0.2"
 # upstream fixes the blowup. Repro: cli-pdf-to-text stream test
 # `toc_section_labels_stay_separate`.
 pdf_oxide = { version = "=0.3.64", default-features = false }
-flate2 = { version = "1", optional = true }
 image = { version = "0.25.10", default-features = false, features = ["png"] }
+
+# --- OCR model fetch (feature = "ocr") ---
+# The OCR ONNX models are downloaded on first use and cached, rather than
+# embedded via include_bytes!. Only pulled in with the `ocr` feature, which is
+# native-only (the wasm PWA never enables it), so ureq/sha2/dirs never reach the
+# browser build.
+ureq = { version = "3", optional = true }
+sha2 = { version = "0.10", optional = true }
+dirs = { version = "6", optional = true }
 
 # Native-only backend for the non-streaming `pdf_to_text` layout path. These
 # don't build for wasm32 (rayon needs threads; redirect-stderr uses libc

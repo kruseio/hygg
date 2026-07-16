@@ -90,7 +90,7 @@ fn test_redirected_pdf_output_includes_inline_ansi_images() {
 }
 
 #[test]
-#[cfg(not(feature = "pdf-ocr-bundled"))]
+#[cfg(not(feature = "ocr"))]
 fn test_ocr_without_bundled_feature_gives_clear_error() {
   let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
     .parent()
@@ -111,35 +111,42 @@ fn test_ocr_without_bundled_feature_gives_clear_error() {
       .output()
       .expect("Failed to execute hygg");
 
-  // `#[cfg(not(feature = "pdf-ocr-bundled"))]` only reflects *this crate's*
-  // feature. Under `cargo test --workspace`, Cargo feature unification can
-  // still build the invoked `hygg` binary with
-  // `cli-pdf-to-text/pdf-ocr-bundled` (hygg-server enables it), in which case
-  // `--ocr=on` legitimately succeeds. The no-bundled-OCR error path only
-  // exists to assert against when the binary really lacks bundled OCR, so
-  // treat a success as "not applicable here".
-  if output.status.success() {
+  // `#[cfg(not(feature = "ocr"))]` only reflects *this crate's* feature. Under
+  // `cargo test --workspace`, Cargo feature unification can still build the
+  // invoked `hygg` binary with `cli-pdf-to-text/ocr` (hygg-server enables it),
+  // in which case `--ocr=on` runs the real engine — which now either succeeds
+  // or fails while *fetching* the models (they are downloaded on first use,
+  // not embedded). Neither is the no-bundled-OCR build this assertion
+  // targets. The no-feature stub is the only thing that emits "OCR support is
+  // not available in this build", so key off that marker rather than the exit
+  // status.
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  if !stderr.contains("OCR support is not available in this build") {
     eprintln!(
-      "hygg binary was built with bundled OCR (workspace feature unification); \
+      "hygg binary was built with OCR (workspace feature unification); \
        skipping the no-bundled-OCR error-path assertion"
     );
     return;
   }
 
-  let stderr = String::from_utf8_lossy(&output.stderr);
   assert!(
-    stderr.contains("--features pdf-ocr-bundled"),
+    stderr.contains("--features ocr"),
     "expected feature guidance in stderr, got: {stderr}"
   );
 }
 
 #[test]
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn test_ocr_with_bundled_feature_does_not_invoke_ocrmypdf() {
+  // Sanitize the thread name: libtest names the test thread after the full test
+  // path (`pdf_tests::test_...`), whose `::` would make the temp dir an invalid
+  // PATH entry for the `join_paths` below (`:` is the Unix PATH separator).
+  let thread = std::thread::current();
+  let thread_name = thread.name().unwrap_or("test").replace(':', "_");
   let temp_dir = std::env::temp_dir().join(format!(
     "hygg-bundled-ocr-{}-{}",
     std::process::id(),
-    std::thread::current().name().unwrap_or("test")
+    thread_name
   ));
   let _ = fs::remove_dir_all(&temp_dir);
   fs::create_dir(&temp_dir).expect("failed to create test temp directory");

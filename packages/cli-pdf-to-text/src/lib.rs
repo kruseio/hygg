@@ -203,8 +203,8 @@ pub fn pdf_bytes_to_ansi_text(
 
 /// Like [`pdf_bytes_to_ansi_text`] but runs the bundled OCR engine over image
 /// regions — for the server `/convert` endpoint extracting scanned PDFs from
-/// in-memory bytes. Native-only, gated on `pdf-ocr-bundled`.
-#[cfg(all(not(target_arch = "wasm32"), feature = "pdf-ocr-bundled"))]
+/// in-memory bytes. Native-only, gated on the `ocr` feature.
+#[cfg(all(not(target_arch = "wasm32"), feature = "ocr"))]
 pub fn pdf_bytes_to_ansi_text_with_bundled_ocr(
   pdf_bytes: Vec<u8>,
   col: usize,

@@ -2,7 +2,7 @@ mod compose;
 mod core;
 mod geometry;
 mod images;
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 mod ocr;
 mod overlay;
 mod text_lines;
@@ -11,7 +11,7 @@ mod types;
 mod vector;
 #[cfg(any(feature = "pdf-rendering", test))]
 mod vector_detect;
-#[cfg(any(feature = "pdf-rendering", feature = "pdf-ocr-bundled", test))]
+#[cfg(any(feature = "pdf-rendering", feature = "ocr", test))]
 mod vector_geom;
 
 // Public API — preserve the original `stream::...` external paths.
@@ -46,12 +46,12 @@ pub(crate) use types::{
 pub(crate) use vector::render_vector_diagram_regions;
 #[cfg(any(feature = "pdf-rendering", test))]
 pub(crate) use vector_detect::detect_vector_diagram_regions;
-#[cfg(any(feature = "pdf-rendering", feature = "pdf-ocr-bundled", test))]
+#[cfg(any(feature = "pdf-rendering", feature = "ocr", test))]
 pub(crate) use vector_geom::{
   has_nearby_figure_caption, is_figure_caption, visual_text_row_overlaps_region,
 };
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 pub(crate) use ocr::{
   has_near_duplicate_visual_text, normalized_visual_text,
   ocr_dynamic_image_text_rows, ocr_visual_text_rows, should_ocr_image_region,
@@ -61,7 +61,7 @@ pub(crate) use ocr::{
 mod tests_compose;
 #[cfg(test)]
 mod tests_extract;
-#[cfg(all(test, feature = "pdf-ocr-bundled"))]
+#[cfg(all(test, feature = "ocr"))]
 mod tests_ocr;
 #[cfg(test)]
 mod tests_reflow;

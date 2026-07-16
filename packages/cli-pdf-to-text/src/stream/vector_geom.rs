@@ -1,4 +1,4 @@
-#![cfg(any(feature = "pdf-rendering", feature = "pdf-ocr-bundled", test))]
+#![cfg(any(feature = "pdf-rendering", feature = "ocr", test))]
 
 use crate::stream::types::{PdfRegion, VisualTextRow};
 

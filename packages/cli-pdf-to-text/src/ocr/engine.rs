@@ -1,35 +1,9 @@
-#[cfg(feature = "pdf-ocr-bundled")]
-use std::io::Read;
-
-#[cfg(feature = "pdf-ocr-bundled")]
-use flate2::read::GzDecoder;
-
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 use super::extract::{extract_native_text_regions, ocr_missing_text_regions};
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 use super::merge::merge_native_and_ocr_regions_text;
 
-#[cfg(feature = "pdf-ocr-bundled")]
-const DET_MODEL_GZ: &[u8] =
-  include_bytes!("../../assets/ocr/monkt-paddleocr-onnx/det.onnx.gz");
-#[cfg(feature = "pdf-ocr-bundled")]
-const REC_MODEL_GZ: &[u8] =
-  include_bytes!("../../assets/ocr/monkt-paddleocr-onnx/rec.onnx.gz");
-#[cfg(feature = "pdf-ocr-bundled")]
-const DICT: &str =
-  include_str!("../../assets/ocr/monkt-paddleocr-onnx/dict.txt");
-
-#[cfg(feature = "pdf-ocr-bundled")]
-fn decompress_gzip(
-  bytes: &[u8],
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-  let mut decoder = GzDecoder::new(bytes);
-  let mut out = Vec::new();
-  decoder.read_to_end(&mut out)?;
-  Ok(out)
-}
-
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn bundled_ocr_config() -> pdf_oxide::ocr::OcrConfig {
   pdf_oxide::ocr::OcrConfig::builder()
     .det_max_side(960)
@@ -52,7 +26,7 @@ fn bundled_ocr_config() -> pdf_oxide::ocr::OcrConfig {
 /// person would try to read is touched, and `resize` preserves the aspect
 /// ratio, so callers normalizing OCR anchors against the returned image's
 /// dimensions stay correct. Borrowed, not copied, in the case that matters.
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 pub(crate) fn ocr_size_guarded(
   image: &image::DynamicImage,
 ) -> std::borrow::Cow<'_, image::DynamicImage> {
@@ -69,21 +43,31 @@ pub(crate) fn ocr_size_guarded(
   ))
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+/// Build the OCR engine, downloading the ONNX models on first use.
+///
+/// The detection/recognition models and the dictionary are fetched from this
+/// project's `ocr-models-v1.0` GitHub release, verified against pinned digests,
+/// and cached under the platform cache dir (see [`super::files`]). After the
+/// first call they load straight from disk. The bytes are handed to tract,
+/// which parses and executes them, so only a sha256-verified copy is ever read
+/// back.
+#[cfg(feature = "ocr")]
 pub(crate) fn bundled_ocr_engine()
 -> Result<pdf_oxide::ocr::OcrEngine, Box<dyn std::error::Error>> {
-  let det_model = decompress_gzip(DET_MODEL_GZ)?;
-  let rec_model = decompress_gzip(REC_MODEL_GZ)?;
+  let (det_path, rec_path, dict_path) = super::files::ensure_ocr_models()?;
+  let det_model = std::fs::read(&det_path)?;
+  let rec_model = std::fs::read(&rec_path)?;
+  let dict = std::fs::read_to_string(&dict_path)?;
   pdf_oxide::ocr::OcrEngine::from_bytes(
     &det_model,
     &rec_model,
-    DICT,
+    &dict,
     bundled_ocr_config(),
   )
-  .map_err(|e| format!("failed to initialize bundled OCR engine: {e}").into())
+  .map_err(|e| format!("failed to initialize OCR engine: {e}").into())
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 pub(crate) fn pdf_to_text_with_bundled_ocr(
   pdf_path: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -116,12 +100,12 @@ pub(crate) fn pdf_to_text_with_bundled_ocr(
   Ok(pages.join("\n\n"))
 }
 
-#[cfg(not(feature = "pdf-ocr-bundled"))]
+#[cfg(not(feature = "ocr"))]
 pub(crate) fn pdf_to_text_with_bundled_ocr(
   _pdf_path: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
   Err(
-    "OCR support is not available in this build. Rebuild with `--features pdf-ocr-bundled` to use the bundled English OCR engine."
+    "OCR support is not available in this build. Rebuild with `--features ocr` to use the bundled English OCR engine."
       .into(),
   )
 }

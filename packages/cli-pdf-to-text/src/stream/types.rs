@@ -18,7 +18,7 @@ pub struct PdfStream {
   pub(crate) canonical_path: PathBuf,
   pub(crate) doc: pdf_oxide::PdfDocument,
   pub(crate) total_pages: usize,
-  #[cfg(feature = "pdf-ocr-bundled")]
+  #[cfg(feature = "ocr")]
   pub(crate) ocr_engine: Option<pdf_oxide::ocr::OcrEngine>,
 }
 

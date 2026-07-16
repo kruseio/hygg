@@ -58,21 +58,26 @@ Unpack, put `hygg` on your path, done. See [verifying a
 download](#verifying-a-download).
 
 ### Optional: OCR for scanned documents
-Install with the bundled English OCR feature to enable OCR for scanned PDFs:
+Install with the English OCR feature to enable OCR for scanned PDFs:
 ```sh
-cargo install --locked --features pdf-ocr-bundled hygg
+cargo install --locked --features ocr hygg
 hygg --ocr=on doc.pdf
 ```
 
 When installing from a local checkout, pass the same feature flag to the `hygg`
 package:
 ```sh
-cargo install --locked --path hygg --features pdf-ocr-bundled
+cargo install --locked --path hygg --features ocr
 hygg --ocr=on doc.pdf
 ```
 
-The bundled OCR feature does not require `ocrmypdf` or Tesseract — the models
-ship inside the crate.
+The OCR feature does not require `ocrmypdf` or Tesseract — it runs a pure-Rust
+engine. The ONNX models are not bundled in the crate: on first use they download
+(~10 MB) from the project's `ocr-models-v1.0` GitHub release, are verified
+against a pinned checksum, and cached under your platform cache dir. Set
+`HYGG_OCR_MODEL_DIR` to point at a pre-downloaded copy for offline installs. A
+build made with `--features ocr` has OCR on by default; override it per run with
+`--ocr=off` or the `HYGG_OCR` environment variable (`1`/`0`, `on`/`off`).
 
 ### Optional: text to speech
 Narrate a document with a local neural voice:

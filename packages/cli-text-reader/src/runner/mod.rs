@@ -8,7 +8,8 @@ mod tests;
 
 pub use crate::editor::RunOutcome;
 pub use config::{
-  load_ocr_enabled_config, save_ocr_enabled_config, save_tts_enabled_config,
+  load_ocr_enabled_config, ocr_enabled_config_opt, save_ocr_enabled_config,
+  save_tts_enabled_config,
 };
 pub use entry::{
   run_cli_text_reader, run_cli_text_reader_with_content,

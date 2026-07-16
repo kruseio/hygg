@@ -1,11 +1,11 @@
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 use super::engine::ocr_size_guarded;
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 use super::merge::normalized_text;
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 use super::region::{PositionedText, TextRegion};
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 pub(crate) fn extract_native_text_regions(
   doc: &pdf_oxide::PdfDocument,
   page: usize,
@@ -44,7 +44,7 @@ pub(crate) fn extract_native_text_regions(
   out
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 pub(crate) fn ocr_missing_text_regions(
   doc: &pdf_oxide::PdfDocument,
   page: usize,
@@ -107,7 +107,7 @@ pub(crate) fn ocr_missing_text_regions(
 
 /// 64 megapixels of 120-DPI raster (~256 MB as RGBA). A letter page is 2.6 MP,
 /// and a region is a part of one; anything past this is not a diagram.
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn region_raster_is_oversized(width: f32, height: f32) -> bool {
   const MAX_REGION_PIXELS: f32 = 64_000_000.0;
   const SCALE: f32 = 120.0 / 72.0;
@@ -116,7 +116,7 @@ fn region_raster_is_oversized(width: f32, height: f32) -> bool {
   !pixels.is_finite() || pixels > MAX_REGION_PIXELS
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn ocr_dynamic_image_region(
   engine: &pdf_oxide::ocr::OcrEngine,
   image: &image::DynamicImage,
@@ -149,7 +149,7 @@ fn ocr_dynamic_image_region(
   out
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn ocr_polygon_to_pdf_region(
   polygon: &[[f32; 2]; 4],
   pdf_region: &TextRegion,
@@ -185,7 +185,7 @@ fn ocr_polygon_to_pdf_region(
   Some(TextRegion { left, bottom, right, top })
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn native_region_text_is_sufficient(
   native_regions: &[PositionedText],
   region: &TextRegion,
@@ -199,7 +199,7 @@ fn native_region_text_is_sufficient(
   normalized_text(&native_text).len() >= 8
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn detect_vector_diagram_regions(
   doc: &pdf_oxide::PdfDocument,
   page: usize,

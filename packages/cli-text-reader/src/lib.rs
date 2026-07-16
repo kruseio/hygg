@@ -33,8 +33,9 @@ mod runner;
 pub use config::config_env_path;
 pub use home::{run_home, should_show_home};
 pub use runner::{
-  RunOutcome, load_ocr_enabled_config, run_cli_text_reader,
-  run_cli_text_reader_pdf_path, run_cli_text_reader_pdf_path_with_bundled_ocr,
+  RunOutcome, load_ocr_enabled_config, ocr_enabled_config_opt,
+  run_cli_text_reader, run_cli_text_reader_pdf_path,
+  run_cli_text_reader_pdf_path_with_bundled_ocr,
   run_cli_text_reader_with_content, run_cli_text_reader_with_demo,
   run_cli_text_reader_with_demo_id, run_cli_text_reader_with_source,
   save_ocr_enabled_config, save_tts_enabled_config,

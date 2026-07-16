@@ -138,7 +138,7 @@ fn progit_figure_images_do_not_expose_internal_native_labels() {
   );
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 #[test]
 fn progit_figure_ocr_overlays_embedded_image_labels() {
   let pdf_path = Path::new(env!("CARGO_MANIFEST_DIR"))

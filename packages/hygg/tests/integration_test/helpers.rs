@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::Path;
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -30,7 +30,7 @@ pub fn hygg_command(test_name: &str) -> Command {
   command
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 pub fn write_native_text_pdf(path: &Path, text: &str) {
   let stream = format!("BT\n/F1 18 Tf\n40 90 Td\n({text}) Tj\nET\n");
   let objects = [
@@ -63,7 +63,7 @@ pub fn write_native_text_pdf(path: &Path, text: &str) {
   fs::write(path, pdf).expect("failed to write test PDF");
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 pub fn prepend_fake_ocrmypdf_to_path(dir: &Path) -> PathBuf {
   let fake_bin = dir.join("bin");
   fs::create_dir(&fake_bin).expect("failed to create fake bin directory");

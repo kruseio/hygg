@@ -1,7 +1,7 @@
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 use pdf_oxide::geometry::Rect;
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 #[derive(Clone, Debug)]
 pub(crate) struct TextRegion {
   pub(crate) left: f32,
@@ -10,7 +10,7 @@ pub(crate) struct TextRegion {
   pub(crate) top: f32,
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 impl TextRegion {
   pub(crate) fn from_rect(rect: &Rect) -> Option<Self> {
     let left = rect.left();
@@ -47,7 +47,7 @@ impl TextRegion {
   }
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 #[derive(Clone, Debug)]
 pub(crate) struct PositionedText {
   pub(crate) text: String,

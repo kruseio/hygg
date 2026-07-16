@@ -14,7 +14,7 @@ use crate::stream::types::{
 };
 use crate::stream::vector::render_vector_diagram_regions;
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 use crate::stream::ocr::{
   has_near_duplicate_visual_text, ocr_visual_text_rows,
 };
@@ -67,16 +67,16 @@ impl PdfStream {
       canonical_path: std::path::PathBuf::new(),
       doc,
       total_pages,
-      #[cfg(feature = "pdf-ocr-bundled")]
+      #[cfg(feature = "ocr")]
       ocr_engine: None,
     })
   }
 
   /// Open an in-memory PDF with the bundled OCR engine attached — for the
   /// server-side `/convert` endpoint that OCRs scanned uploads. Native-only and
-  /// gated on `pdf-ocr-bundled`; pairs `from_bytes` with the OCR engine the
+  /// gated on the `ocr` feature; pairs `from_bytes` with the OCR engine the
   /// path-based `open_with_bundled_ocr` uses.
-  #[cfg(all(not(target_arch = "wasm32"), feature = "pdf-ocr-bundled"))]
+  #[cfg(all(not(target_arch = "wasm32"), feature = "ocr"))]
   pub fn open_bytes_with_bundled_ocr(
     pdf_bytes: Vec<u8>,
   ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -106,13 +106,13 @@ impl PdfStream {
       .page_count()
       .map_err(|e| format!("pdf_oxide page_count failed: {e:?}"))?
       .min(MAX_STREAM_PAGES);
-    #[cfg(feature = "pdf-ocr-bundled")]
+    #[cfg(feature = "ocr")]
     let ocr_engine =
       if enable_ocr { Some(crate::ocr::bundled_ocr_engine()?) } else { None };
-    #[cfg(not(feature = "pdf-ocr-bundled"))]
+    #[cfg(not(feature = "ocr"))]
     if enable_ocr {
       return Err(
-        "OCR support is not available in this build. Rebuild with `--features pdf-ocr-bundled` to use the bundled English OCR engine."
+        "OCR support is not available in this build. Rebuild with `--features ocr` to use the bundled English OCR engine."
           .into(),
       );
     }
@@ -120,7 +120,7 @@ impl PdfStream {
       canonical_path,
       doc,
       total_pages,
-      #[cfg(feature = "pdf-ocr-bundled")]
+      #[cfg(feature = "ocr")]
       ocr_engine,
     })
   }
@@ -185,9 +185,9 @@ impl PdfStream {
     .unwrap_or_default();
 
     let native_text_rows = positioned_visual_text_rows(&self.doc, page_0based);
-    #[cfg(feature = "pdf-ocr-bundled")]
+    #[cfg(feature = "ocr")]
     let allow_unlabeled_vector_regions = self.ocr_engine.is_some();
-    #[cfg(not(feature = "pdf-ocr-bundled"))]
+    #[cfg(not(feature = "ocr"))]
     let allow_unlabeled_vector_regions = false;
 
     let mut image_rows =
@@ -200,7 +200,7 @@ impl PdfStream {
       allow_unlabeled_vector_regions,
     ));
 
-    #[cfg(feature = "pdf-ocr-bundled")]
+    #[cfg(feature = "ocr")]
     let overlay_text_rows = {
       let mut text_rows = native_text_rows.clone();
       if let Some(engine) = self.ocr_engine.as_ref() {
@@ -220,7 +220,7 @@ impl PdfStream {
       }
       text_rows
     };
-    #[cfg(not(feature = "pdf-ocr-bundled"))]
+    #[cfg(not(feature = "ocr"))]
     let overlay_text_rows = native_text_rows.clone();
 
     if image_rows.is_empty() {

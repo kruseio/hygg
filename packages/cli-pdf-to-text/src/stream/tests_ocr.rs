@@ -1,4 +1,4 @@
-#![cfg(feature = "pdf-ocr-bundled")]
+#![cfg(feature = "ocr")]
 
 use super::*;
 

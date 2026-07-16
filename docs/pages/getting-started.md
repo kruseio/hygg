@@ -85,18 +85,24 @@ hygg doc.docx
 ```
 
 ## OCR for scanned documents
-Install with the bundled English OCR feature to enable OCR for scanned PDFs:
+Install with the English OCR feature to enable OCR for scanned PDFs:
 ```sh
-cargo install --locked --features pdf-ocr-bundled hygg
+cargo install --locked --features ocr hygg
 hygg --ocr=on doc.pdf
 ```
 
 When installing from a local checkout, pass the same feature flag to the
 `hygg` package:
 ```sh
-cargo install --locked --path hygg --features pdf-ocr-bundled
+cargo install --locked --path hygg --features ocr
 hygg --ocr=on doc.pdf
 ```
+
+The models are not bundled: on first use they download (~10 MB) from the
+project's `ocr-models-v1.0` release, are verified against a pinned checksum, and
+cached under your platform cache dir (`HYGG_OCR_MODEL_DIR` overrides the location
+for offline use). An `--features ocr` build has OCR on by default; toggle it per
+run with `--ocr=off` or the `HYGG_OCR` environment variable.
 
 The bundled OCR feature does not require `ocrmypdf` or Tesseract.
 

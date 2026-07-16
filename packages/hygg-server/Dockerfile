@@ -47,8 +47,12 @@ LABEL org.opencontainers.image.title="hygg-server" \
   org.opencontainers.image.documentation="https://github.com/kruseio/hygg/blob/main/packages/hygg-server/README.md"
 # pandoc is a runtime dependency, not a nicety: POST /api/v1/convert shells out
 # to it for DOCX/ODT/RTF (src/api/convert.rs), so without it the container
-# answers 500 for every format the endpoint advertises. PDF/EPUB/text and the
-# bundled OCR are pure Rust and need nothing here.
+# answers 500 for every format the endpoint advertises. PDF/EPUB/text are pure
+# Rust; the OCR engine is too, but its ONNX models are no longer embedded — they
+# are downloaded from this project's `ocr-models-v1.0` release over HTTPS on the
+# first scanned-PDF convert (hence ca-certificates) and cached under
+# HYGG_OCR_MODEL_DIR, which points at the data volume below so the ~10 MB fetch
+# happens once for the life of the volume, not once per container start.
 #
 # libssl3 is named explicitly even though ca-certificates happens to pull it in:
 # the binary links it (see the builder stage), so it should not depend on a
@@ -59,13 +63,15 @@ RUN apt-get update \
   && useradd --create-home --uid 10001 hygg
 WORKDIR /app
 COPY --from=builder /build/target/release/hygg-server /usr/local/bin/hygg-server
-RUN mkdir -p /app/data /app/data/blobs /app/data/logs && chown -R hygg:hygg /app
+RUN mkdir -p /app/data /app/data/blobs /app/data/logs /app/data/models/ocr \
+  && chown -R hygg:hygg /app
 USER hygg
 ENV DATABASE_URL=sqlite:///app/data/hygg-server.db \
   HOST=0.0.0.0 \
   PORT=3032 \
   BLOB_DIR=/app/data/blobs \
   LOG_DIR=/app/data/logs \
+  HYGG_OCR_MODEL_DIR=/app/data/models/ocr \
   RUST_LOG=hygg_server=info,tower_http=info
 EXPOSE 3032
 CMD ["hygg-server"]

@@ -1,9 +1,9 @@
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn region(left: f32, bottom: f32, right: f32, top: f32) -> super::TextRegion {
   super::TextRegion { left, bottom, right, top }
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn positioned_text(
   text: &str,
   region: super::TextRegion,
@@ -12,22 +12,24 @@ fn positioned_text(
 }
 
 #[test]
-#[cfg(not(feature = "pdf-ocr-bundled"))]
+#[cfg(not(feature = "ocr"))]
 fn no_feature_ocr_returns_actionable_error() {
   let err = super::pdf_to_text_with_bundled_ocr("unused.pdf")
     .expect_err("OCR should be unavailable without the bundled feature");
-  assert!(err.to_string().contains("--features pdf-ocr-bundled"));
+  assert!(err.to_string().contains("--features ocr"));
+}
+
+// Fetches the models from the `ocr-models-v1.0` release on first run (or reads
+// a pre-seeded `HYGG_OCR_MODEL_DIR`), then caches them — so this needs either
+// network or a warm cache, unlike the old include_bytes! assets.
+#[test]
+#[cfg(feature = "ocr")]
+fn bundled_ocr_engine_loads_fetched_models() {
+  super::bundled_ocr_engine().expect("OCR model assets should initialize");
 }
 
 #[test]
-#[cfg(feature = "pdf-ocr-bundled")]
-fn bundled_ocr_engine_loads_embedded_assets() {
-  super::bundled_ocr_engine()
-    .expect("embedded OCR model assets should initialize");
-}
-
-#[test]
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn hybrid_merge_prefers_native_duplicate_text() {
   let native_region = region(10.0, 10.0, 100.0, 30.0);
   let native = vec![positioned_text("Hello World", native_region.clone())];
@@ -39,7 +41,7 @@ fn hybrid_merge_prefers_native_duplicate_text() {
 }
 
 #[test]
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn hybrid_merge_uses_ocr_when_native_text_is_empty() {
   let ocr = vec![positioned_text("Scan Text", region(10.0, 10.0, 100.0, 30.0))];
   assert_eq!(
@@ -49,7 +51,7 @@ fn hybrid_merge_uses_ocr_when_native_text_is_empty() {
 }
 
 #[test]
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn hybrid_merge_appends_distinct_ocr_text() {
   let native =
     vec![positioned_text("Native label", region(10.0, 60.0, 100.0, 80.0))];
@@ -62,7 +64,7 @@ fn hybrid_merge_appends_distinct_ocr_text() {
 }
 
 #[test]
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn hybrid_merge_deduplicates_case_and_punctuation_variants() {
   let native_region = region(10.0, 10.0, 140.0, 30.0);
   let native =
@@ -79,7 +81,7 @@ fn hybrid_merge_deduplicates_case_and_punctuation_variants() {
 }
 
 #[test]
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn hybrid_merge_keeps_same_text_when_position_is_not_nearby() {
   let native =
     vec![positioned_text("Status OK", region(10.0, 80.0, 100.0, 100.0))];
@@ -91,10 +93,10 @@ fn hybrid_merge_keeps_same_text_when_position_is_not_nearby() {
 }
 
 #[test]
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn bundled_ocr_reads_generated_image_with_confidence() {
   let engine =
-    super::bundled_ocr_engine().expect("embedded OCR engine should initialize");
+    super::bundled_ocr_engine().expect("OCR engine should initialize");
   let image = generated_ocr_fixture("HELLO OCR");
   let output =
     engine.ocr_image(&image).expect("generated image should OCR successfully");
@@ -112,7 +114,7 @@ fn bundled_ocr_reads_generated_image_with_confidence() {
   );
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn generated_ocr_fixture(text: &str) -> image::DynamicImage {
   let scale = 12u32;
   let glyph_width = 5u32;
@@ -141,7 +143,7 @@ fn generated_ocr_fixture(text: &str) -> image::DynamicImage {
   image::DynamicImage::ImageRgba8(image)
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn draw_glyph(
   image: &mut image::RgbaImage,
   x: u32,
@@ -170,7 +172,7 @@ fn draw_glyph(
   }
 }
 
-#[cfg(feature = "pdf-ocr-bundled")]
+#[cfg(feature = "ocr")]
 fn glyph_pattern(ch: char) -> Option<[&'static str; 7]> {
   match ch {
     'C' => {

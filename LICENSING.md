@@ -98,7 +98,7 @@ is structural, not a packaging flag.
 
 | What | Where | License | Notes |
 |---|---|---|---|
-| PaddleOCR ONNX models | [`packages/cli-pdf-to-text/assets/ocr/monkt-paddleocr-onnx/`](packages/cli-pdf-to-text/assets/ocr/monkt-paddleocr-onnx) | **Apache-2.0** | Redistributed under the upstream repository's license. Only compiled in with the optional `pdf-ocr-bundled` feature. Provenance, revision and checksums are in that directory's [`MANIFEST.md`](packages/cli-pdf-to-text/assets/ocr/monkt-paddleocr-onnx/MANIFEST.md). |
+| PaddleOCR ONNX models | [`ocr-models-v1.0` release](https://github.com/kruseio/hygg/releases/tag/ocr-models-v1.0) | **Apache-2.0** | Redistributed under the upstream repository's license. Not bundled in the crate: the optional `ocr` feature downloads them on first use from this project's own release and caches them locally. Provenance, revision and checksums are in [`MANIFEST.md`](packages/cli-pdf-to-text/assets/ocr/monkt-paddleocr-onnx/MANIFEST.md). |
 
 ### Pulled in by the optional `tts` feature
 

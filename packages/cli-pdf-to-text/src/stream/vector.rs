@@ -85,7 +85,7 @@ fn region_raster_is_oversized(region: &PdfRegion) -> bool {
   !pixels.is_finite() || pixels > MAX_REGION_PIXELS
 }
 
-#[cfg(any(feature = "pdf-rendering", feature = "pdf-ocr-bundled"))]
+#[cfg(any(feature = "pdf-rendering", feature = "ocr"))]
 pub(crate) fn page_metrics(
   doc: &pdf_oxide::PdfDocument,
   page_0based: usize,

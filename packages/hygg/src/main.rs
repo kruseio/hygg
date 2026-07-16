@@ -21,12 +21,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   let mut stdin_content = read_stdin_content();
   let ocr_from_cli = args.ocr.is_some();
+  // OCR enablement, highest priority first: the `--ocr` flag (which also
+  // persists the choice), then the `HYGG_OCR` runtime override, then the saved
+  // config, then the compiled-in default — `cfg!(feature = "ocr")`, so a build
+  // made with `--features ocr` OCRs scanned PDFs by default, while a build
+  // without it returns an actionable "rebuild with --features ocr" error if OCR
+  // is ever asked for.
   let ocr_enabled = if let Some(mode) = args.ocr {
     let enabled = mode.enabled();
     cli_text_reader::save_ocr_enabled_config(enabled)?;
     enabled
+  } else if let Some(over) = hygg_shared::parse_bool_env("HYGG_OCR") {
+    over
   } else {
-    cli_text_reader::load_ocr_enabled_config()
+    cli_text_reader::ocr_enabled_config_opt().unwrap_or(cfg!(feature = "ocr"))
   };
 
   // Persist the TTS on/off preference when passed; the reader picks it up from

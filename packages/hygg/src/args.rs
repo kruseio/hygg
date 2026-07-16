@@ -54,8 +54,9 @@ pub(crate) struct Args {
   #[arg(long)]
   pub(crate) config: bool,
 
-  /// Use bundled English OCR for scanned PDF documents
-  /// Requires a build with --features pdf-ocr-bundled
+  /// Use English OCR for scanned PDF documents (overrides HYGG_OCR/config).
+  /// Only works in a build made with --features ocr; the ONNX models are
+  /// downloaded from the ocr-models release and cached on first use.
   #[arg(
     long,
     value_enum,
