@@ -37,6 +37,38 @@ fn bundled_ocr_config() -> pdf_oxide::ocr::OcrConfig {
     .build()
 }
 
+/// A ceiling on what gets handed to the OCR engine, for absurd input only.
+///
+/// An earlier version of this pipeline resized every OCR input down to a 240px
+/// longest edge. That was removed deliberately — 240px is below what the
+/// recognizer can read, and it cost real accuracy on real pages — but it was
+/// also the only thing bounding the work an embedded image could ask for. The
+/// image comes out of the document: `det_max_side(960)` above downscales for
+/// the detection pass, while the recognition crops still come off whatever was
+/// passed in, so a page carrying one 40000x40000 image sets the CPU going for
+/// as long as it likes.
+///
+/// 4000px is over four times the detector's own working size, so no page a
+/// person would try to read is touched, and `resize` preserves the aspect
+/// ratio, so callers normalizing OCR anchors against the returned image's
+/// dimensions stay correct. Borrowed, not copied, in the case that matters.
+#[cfg(feature = "pdf-ocr-bundled")]
+pub(crate) fn ocr_size_guarded(
+  image: &image::DynamicImage,
+) -> std::borrow::Cow<'_, image::DynamicImage> {
+  const MAX_OCR_IMAGE_EDGE: u32 = 4000;
+
+  if image.width() <= MAX_OCR_IMAGE_EDGE && image.height() <= MAX_OCR_IMAGE_EDGE
+  {
+    return std::borrow::Cow::Borrowed(image);
+  }
+  std::borrow::Cow::Owned(image.resize(
+    MAX_OCR_IMAGE_EDGE,
+    MAX_OCR_IMAGE_EDGE,
+    image::imageops::FilterType::Triangle,
+  ))
+}
+
 #[cfg(feature = "pdf-ocr-bundled")]
 pub(crate) fn bundled_ocr_engine()
 -> Result<pdf_oxide::ocr::OcrEngine, Box<dyn std::error::Error>> {

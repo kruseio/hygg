@@ -42,11 +42,21 @@ pub struct Config {
   /// and nothing is written to `book_extractions`. Toggle with
   /// `HYGG_EXTRACTION_CACHE` (a kill switch if the cache misbehaves).
   pub extraction_cache: bool,
+  /// Maximum document conversions (`/convert` and the upload pre-warm) running
+  /// at once. Each pins a blocking thread for seconds — OCR, or the `pandoc`
+  /// child process — so an unbounded fan-out of hostile uploads would exhaust
+  /// the blocking pool and the host's CPU while every other request waits.
+  /// Callers past the limit get 429 rather than queueing (a queued request
+  /// keeps its whole body buffered). Override with `HYGG_CONVERT_CONCURRENCY`.
+  pub convert_concurrency: usize,
 }
 
 /// Default maximum request body size (128 MiB), large enough for document
 /// uploads.
 pub const DEFAULT_MAX_BODY_BYTES: usize = 128 * 1024 * 1024;
+
+/// Default number of document conversions allowed to run concurrently.
+pub const DEFAULT_CONVERT_CONCURRENCY: usize = 2;
 
 /// Default interface to bind: all interfaces, so the server is reachable on the
 /// LAN. Override with `HOST` (or set `127.0.0.1` for localhost-only).
@@ -81,6 +91,10 @@ impl Config {
       log_dir: env_nonempty("LOG_DIR")
         .unwrap_or_else(|| DEFAULT_LOG_DIR.to_string()),
       extraction_cache: env_bool("HYGG_EXTRACTION_CACHE", true),
+      convert_concurrency: env_nonempty("HYGG_CONVERT_CONCURRENCY")
+        .and_then(|v| v.parse().ok())
+        .filter(|&v: &usize| v > 0)
+        .unwrap_or(DEFAULT_CONVERT_CONCURRENCY),
     }
   }
 }

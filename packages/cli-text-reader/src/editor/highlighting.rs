@@ -8,6 +8,27 @@ use std::io::{Result as IoResult, Write};
 
 use super::core::Editor;
 
+// Search stores byte offsets it found in `line.to_lowercase()`, and lowercasing
+// can change a string's byte layout — 'İ' is two bytes, its lowercase form is
+// three — so those offsets are not guaranteed to land on the original line's
+// character boundaries, or even inside it. The renderer slices the original
+// with them, and a stray index is a panic that takes the reader down when the
+// user searches for the wrong Unicode. Clamp into range and settle each index
+// onto a real boundary so the slice below is always valid; for ordinary text
+// the offsets already satisfy this and nothing moves.
+fn safe_match_bounds(line: &str, start: usize, end: usize) -> (usize, usize) {
+  let floor = |mut i: usize| {
+    i = i.min(line.len());
+    while i > 0 && !line.is_char_boundary(i) {
+      i -= 1;
+    }
+    i
+  };
+  let start = floor(start);
+  let end = floor(end).max(start);
+  (start, end)
+}
+
 impl Editor {
   // Highlight current line
   pub fn highlight_current_line(
@@ -66,6 +87,7 @@ impl Editor {
     if let Some((line_idx, start, end)) = match_to_highlight
       && line_idx == self.offset + line_index
     {
+      let (start, end) = safe_match_bounds(line, start, end);
       write!(stdout, "{center_offset_string}")?;
       write!(stdout, "{}", &line[..start])?;
       execute!(
@@ -159,6 +181,7 @@ impl Editor {
     if let Some((line_idx, start, end)) = match_to_highlight
       && line_idx == self.offset + line_index
     {
+      let (start, end) = safe_match_bounds(line, start, end);
       write!(buffer, "{center_offset_string}")?;
       write!(buffer, "{}", &line[..start])?;
       buffer.queue(SetBackgroundColor(Color::Yellow))?;

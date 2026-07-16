@@ -8,7 +8,7 @@ use crate::db::Db;
 use crate::events::EventHub;
 use crate::ext::{Entitlements, NoopEntitlements, NoopWebExt, WebExt};
 use crate::migration::SchemaExt;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 use url::Url;
 use webauthn_rs::prelude::{
   PasskeyAuthentication, PasskeyRegistration, Webauthn, WebauthnBuilder,
@@ -55,15 +55,22 @@ pub struct AppState {
   ///
   /// [`runtime::serve_router`]: crate::runtime::serve_router
   pub schema_ext: Option<Arc<SchemaExt>>,
+  /// Permits for in-flight document conversions. Bounds the CPU-heavy
+  /// OCR/pandoc work `/convert` and the upload pre-warm spawn, so neither can
+  /// exhaust the blocking pool. Sized from `config.convert_concurrency`.
+  pub convert_slots: Arc<Semaphore>,
 }
 
 impl AppState {
   pub fn new(db: Db, config: Config) -> Self {
     let webauthn = build_webauthn(&config);
+    let convert_slots =
+      Arc::new(Semaphore::new(config.convert_concurrency.max(1)));
     Self {
       db,
       config,
       events: EventHub::default(),
+      convert_slots,
       webauthn: Arc::new(webauthn),
       passkey_registrations: Arc::new(Mutex::new(HashMap::new())),
       passkey_authentications: Arc::new(Mutex::new(HashMap::new())),

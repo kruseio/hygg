@@ -16,3 +16,9 @@ AGENTS.md
 packages/hygg-pwa/dist/
 .playwright-mcp/
 packages/hygg-pwa/.env
+
+# The TTS model + voices are distributed as release assets (too large for the
+# repo, and LFS bandwidth is metered), downloaded at runtime and verified by
+# SHA-256 — see cli-text-reader speech/kokoro/files.rs. This is only a local
+# staging spot for uploading them to a release; the bytes never belong in git.
+/assets/tts/

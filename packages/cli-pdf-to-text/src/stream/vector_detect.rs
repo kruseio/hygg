@@ -17,7 +17,16 @@ pub(crate) fn detect_vector_diagram_regions(
 ) -> Vec<PdfRegion> {
   let mut clusters: Vec<VectorPathCluster> = Vec::new();
 
-  for path in paths {
+  // Clustering is quadratic in the worst case: every accepted path is compared
+  // against every cluster so far, and a path far from all of them starts
+  // another cluster. Real diagrams converge — tens of primitives collapsing
+  // into one or two regions — but a page is free to carry a hundred thousand
+  // scattered table primitives, and then nothing converges and the scan below
+  // is O(n^2), before any of the cheap "is this even a diagram" checks get to
+  // run. The densest page in the test corpus is under 4k paths.
+  const MAX_VECTOR_PATHS: usize = 4096;
+
+  for path in paths.iter().take(MAX_VECTOR_PATHS) {
     let bbox = path.bbox;
     if !path.is_table_primitive()
       || !bbox.x.is_finite()

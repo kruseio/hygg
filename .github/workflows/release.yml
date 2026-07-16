@@ -34,8 +34,16 @@ on:
   # Dry run: builds and uploads workflow artifacts, but publishes no release.
   workflow_dispatch:
 
+# Read for every job; the `publish` job below re-grants itself the write it needs
+# to create the release. A default of `contents: write` is inherited by the build
+# matrix too, and those jobs run third-party actions, downloaded toolchains and —
+# through cargo, gradle and trunk — the build scripts of the whole dependency
+# tree. Any one of them could reach a write-capable token, via checkout's
+# persisted git credentials or the job context, and rewrite tags or releases.
+# None of them create anything on the repository, so none of them are given the
+# ability to.
 permissions:
-  contents: write # creates the release
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -61,7 +69,13 @@ jobs:
     name: tag matches the workspace version
     runs-on: ubuntu-22.04
     steps:
+      # persist-credentials: false on every build job here, for the reason given
+      # at `permissions` above: checkout otherwise writes the job's token into
+      # .git/config, where anything the build runs can read it. None of these
+      # jobs speak to the remote after this step.
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - if: github.ref_type == 'tag'
         run: |
           set -euo pipefail
@@ -100,6 +114,8 @@ jobs:
         shell: bash # git-bash on Windows: one script for all three runners
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -175,6 +191,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install Linux system deps
         if: matrix.os == 'ubuntu-22.04'
@@ -234,6 +252,8 @@ jobs:
       ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # See native-apps.yml: a one-off ENOSPC here never reproduced, and the
       # runner has ~104G free. Breadcrumb only.
@@ -394,6 +414,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Rust toolchain (iOS simulator + wasm targets)
         uses: dtolnay/rust-toolchain@stable
@@ -468,8 +490,16 @@ jobs:
     # mislabelled and none of them should go out.
     if: ${{ !cancelled() && github.ref_type == 'tag' && needs.guard.result == 'success' }}
     runs-on: ubuntu-22.04
+    # The one job that writes to the repository, and so the only one holding a
+    # token that can. `gh release create` below reads it from GH_TOKEN.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # `gh` authenticates with GH_TOKEN, not with git's credential helper,
+          # so nothing here needs the token left behind in .git/config.
+          persist-credentials: false
 
       - uses: actions/download-artifact@v4
         with:

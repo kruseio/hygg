@@ -36,7 +36,18 @@ pub(crate) struct Args {
   pub(crate) file: Option<String>,
 
   /// Set the column width
-  #[arg(short, long, default_value = "80")]
+  //
+  // Rejected at parse time rather than clamped inside the formatter: a width of
+  // zero drives cli_justify::justify into an unbounded loop, and `--col 0` is
+  // easy to type. The formatter guards itself too, but a usable error beats a
+  // silently-substituted width. The parser keeps the field a `usize`, so no
+  // call site changes.
+  #[arg(
+    short,
+    long,
+    default_value = "80",
+    value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
+  )]
   pub(crate) col: usize,
 
   /// Print the hygg config file path and exit

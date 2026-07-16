@@ -1,4 +1,6 @@
 #[cfg(feature = "pdf-ocr-bundled")]
+use super::engine::ocr_size_guarded;
+#[cfg(feature = "pdf-ocr-bundled")]
 use super::merge::normalized_text;
 #[cfg(feature = "pdf-ocr-bundled")]
 use super::region::{PositionedText, TextRegion};
@@ -9,9 +11,18 @@ pub(crate) fn extract_native_text_regions(
   page: usize,
 ) -> Vec<PositionedText> {
   let mut out = Vec::new();
-  let Ok(lines) = doc.extract_text_lines(page) else {
-    return out;
-  };
+  // catch_unwind for the same reason every other pdf_oxide extraction call in
+  // this workspace has one (stream/core.rs, stream/vector.rs, visuals.rs): a
+  // page that makes the extractor panic should cost that page, not the process.
+  // A bare `let Ok(..) else` handles the Err it returns and nothing about the
+  // panic it may raise instead, and `hygg --ocr` walks every page of a file the
+  // user merely opened.
+  let lines = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    doc.extract_text_lines(page)
+  }))
+  .ok()
+  .and_then(Result::ok)
+  .unwrap_or_default();
 
   for line in lines {
     let text = line
@@ -42,26 +53,37 @@ pub(crate) fn ocr_missing_text_regions(
 ) -> Vec<PositionedText> {
   let mut out = Vec::new();
 
-  if let Ok(images) = doc.extract_images(page) {
-    for image in images {
-      let Some(bbox) = image.bbox() else {
-        continue;
-      };
-      let Some(region) = TextRegion::from_rect(bbox) else {
-        continue;
-      };
-      if native_region_text_is_sufficient(native_regions, &region) {
-        continue;
-      }
-      let Ok(dynamic_image) = image.to_dynamic_image() else {
-        continue;
-      };
-      out.extend(ocr_dynamic_image_region(engine, &dynamic_image, &region));
+  let images = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    doc.extract_images(page)
+  }))
+  .ok()
+  .and_then(Result::ok)
+  .unwrap_or_default();
+  for image in images {
+    let Some(bbox) = image.bbox() else {
+      continue;
+    };
+    let Some(region) = TextRegion::from_rect(bbox) else {
+      continue;
+    };
+    if native_region_text_is_sufficient(native_regions, &region) {
+      continue;
     }
+    let Ok(dynamic_image) = image.to_dynamic_image() else {
+      continue;
+    };
+    out.extend(ocr_dynamic_image_region(engine, &dynamic_image, &region));
   }
 
   for region in detect_vector_diagram_regions(doc, page) {
     if native_region_text_is_sufficient(native_regions, &region) {
+      continue;
+    }
+    // The region is clamped to the media box and nothing else, and the media
+    // box is a number the document chose. See stream/vector.rs for the same
+    // guard on the sibling path: 120 DPI turns the 14400pt page the spec allows
+    // into a 24000x24000 raster, 2.3 GB, before anything looks at it.
+    if region_raster_is_oversized(region.width(), region.height()) {
       continue;
     }
     let options = pdf_oxide::rendering::RenderOptions::with_dpi(120);
@@ -83,12 +105,25 @@ pub(crate) fn ocr_missing_text_regions(
   super::merge::dedupe_positioned_ocr(out)
 }
 
+/// 64 megapixels of 120-DPI raster (~256 MB as RGBA). A letter page is 2.6 MP,
+/// and a region is a part of one; anything past this is not a diagram.
+#[cfg(feature = "pdf-ocr-bundled")]
+fn region_raster_is_oversized(width: f32, height: f32) -> bool {
+  const MAX_REGION_PIXELS: f32 = 64_000_000.0;
+  const SCALE: f32 = 120.0 / 72.0;
+
+  let pixels = (width * SCALE) * (height * SCALE);
+  !pixels.is_finite() || pixels > MAX_REGION_PIXELS
+}
+
 #[cfg(feature = "pdf-ocr-bundled")]
 fn ocr_dynamic_image_region(
   engine: &pdf_oxide::ocr::OcrEngine,
   image: &image::DynamicImage,
   pdf_region: &TextRegion,
 ) -> Vec<PositionedText> {
+  let image = ocr_size_guarded(image);
+  let image = image.as_ref();
   let Ok(ocr) = engine.ocr_image(image) else {
     return Vec::new();
   };
@@ -181,9 +216,12 @@ fn detect_vector_diagram_regions(
   }
   let page_right = page_left + page_width;
   let page_bottom = page_top + page_height;
-  let Ok(paths) = doc.extract_paths(page) else {
-    return Vec::new();
-  };
+  let paths = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    doc.extract_paths(page)
+  }))
+  .ok()
+  .and_then(Result::ok)
+  .unwrap_or_default();
 
   let mut count = 0usize;
   let mut left = f32::INFINITY;

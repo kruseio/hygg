@@ -28,6 +28,13 @@ pub(crate) fn justify_line(line: &[&str], line_width: usize) -> String {
 }
 
 pub fn justify(text: &str, line_width: usize) -> Vec<String> {
+  // A width of zero spins forever: the hard-split loop below asks
+  // `split_at_char(word, 0)` to peel off a zero-length prefix, gets back an
+  // empty string and the word untouched, and pushes empties without end until
+  // the process is out of memory. The width reaches here straight from the CLI
+  // `--col` flag, so `--col 0` is a one-word hang. One column is the narrowest
+  // width that can make progress.
+  let line_width = line_width.max(1);
   let paragraphs: Vec<&str> = text.split("\n\n").collect();
   let mut lines: Vec<String> = Vec::new();
 
@@ -81,6 +88,14 @@ mod tests {
   fn handles_long_words() {
     let input_text = r#"some text and a very loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong word but no cause to panic"#;
     let result = justify(input_text, 10);
+    assert!(!result.is_empty());
+  }
+
+  #[test]
+  fn zero_width_terminates_instead_of_hanging() {
+    // A width of zero used to loop forever on any non-empty word. It is clamped
+    // to one column, so this returns rather than exhausting memory.
+    let result = justify("hello world", 0);
     assert!(!result.is_empty());
   }
 

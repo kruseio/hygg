@@ -5,7 +5,9 @@ pub mod convert;
 pub mod devices;
 pub mod events;
 pub mod export;
+mod export_inputs;
 pub mod extraction;
+mod pandoc;
 pub mod sync;
 mod sync_inputs;
 // Row/principal -> shared-DTO conversions; no exported names, just trait impls.

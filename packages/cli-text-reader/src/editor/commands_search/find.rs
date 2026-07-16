@@ -205,7 +205,10 @@ impl Editor {
       self.offset = if new_offset < 0 {
         0
       } else if new_offset + content_height as i32 > self.total_lines as i32 {
-        self.total_lines - content_height
+        // A document shorter than the viewport (total_lines < content_height)
+        // with a match near its end reaches here and underflowed: panic in
+        // debug, a wildly wrong offset in release. Saturate to zero.
+        self.total_lines.saturating_sub(content_height)
       } else {
         new_offset as usize
       };

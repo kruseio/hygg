@@ -8,7 +8,11 @@ use super::core::Editor;
 fn osc52_copy(text: &str) {
   use std::io::{IsTerminal, Write};
   let mut stdout = std::io::stdout();
-  if !stdout.is_terminal() {
+  // Off means a yank stays on this machine — the arboard write above still
+  // populates the local clipboard, this only decides whether the sequence that
+  // reaches through to the outermost terminal's clipboard is emitted. On by
+  // default, so nothing changes for anyone who has not set ENABLE_OSC52=false.
+  if !stdout.is_terminal() || !crate::config::osc52_enabled_setting() {
     return;
   }
   let encoded = base64_encode(text.as_bytes());
@@ -128,30 +132,35 @@ impl Editor {
     if line_idx < self.lines.len() && !self.is_ansi_art_line(line_idx) {
       let line = &self.lines[line_idx];
 
-      // Find word boundaries
-      if col_idx < line.len() {
+      // Find word boundaries. `start` and `end` walk with `chars()`, so they
+      // count characters — which means they cannot index `line`, whose indices
+      // are bytes. They agree for ASCII and part ways at the first accented
+      // letter: `yw` on "café" asked for line[0..4], four bytes into a
+      // five-byte string and one byte inside the 'é', and Rust panics on a
+      // slice that splits a character. Walk a char vector instead, so the unit
+      // is the same on both sides.
+      let chars: Vec<char> = line.chars().collect();
+      if col_idx < chars.len() {
         let mut start = col_idx;
         while start > 0
-          && line
-            .chars()
-            .nth(start - 1)
+          && chars
+            .get(start - 1)
             .is_some_and(|c| !c.is_whitespace() && c.is_alphanumeric())
         {
           start -= 1;
         }
 
         let mut end = col_idx;
-        while end < line.len()
-          && line
-            .chars()
-            .nth(end)
+        while end < chars.len()
+          && chars
+            .get(end)
             .is_some_and(|c| !c.is_whitespace() && c.is_alphanumeric())
         {
           end += 1;
         }
 
         if start < end {
-          self.editor_state.yank_buffer = line[start..end].to_string();
+          self.editor_state.yank_buffer = chars[start..end].iter().collect();
 
           // Copy to system clipboard if available
           if let Some(clipboard) = &mut self.clipboard {
@@ -187,5 +196,18 @@ mod tests {
     editor.yank_line();
 
     assert_eq!(editor.editor_state.yank_buffer, "previous");
+  }
+
+  #[test]
+  fn yank_word_on_multibyte_word_does_not_panic() {
+    // "café" is five bytes; the fourth byte is inside 'é'. Walking with
+    // chars().nth() but slicing by those counts used to slice there and panic.
+    let mut editor = Editor::new(vec!["café here".to_string()], 80);
+    editor.cursor_y = 0;
+    editor.cursor_x = 0;
+
+    editor.yank_word();
+
+    assert_eq!(editor.editor_state.yank_buffer, "café");
   }
 }

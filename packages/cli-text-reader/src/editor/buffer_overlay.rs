@@ -90,13 +90,19 @@ impl Editor {
         validated_lines.len()
       ));
       if !validated_lines.is_empty() {
+        // Take 30 *characters*, not 30 bytes: overlay lines carry Unicode box
+        // and progress glyphs (━ █ ░) whose UTF-8 runs the byte slice would cut
+        // mid-character, panicking a debug preview that has nothing to do with
+        // the render. This fires on every overlay update — tutorial steps,
+        // help, credits — so it cannot be left to chance.
+        let preview = |l: &String| l.chars().take(30).collect::<String>();
         self.debug_log(&format!(
           "  First line preview: {:?}",
-          validated_lines.first().map(|l| &l[..l.len().min(30)])
+          validated_lines.first().map(preview)
         ));
         self.debug_log(&format!(
           "  Last line preview: {:?}",
-          validated_lines.last().map(|l| &l[..l.len().min(30)])
+          validated_lines.last().map(preview)
         ));
       }
 

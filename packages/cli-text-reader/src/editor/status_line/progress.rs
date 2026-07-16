@@ -38,8 +38,10 @@ impl Editor {
       self.total_lines
     );
 
-    let x = self.width as u16 - position_info.len() as u16 - 1;
-    let y = self.height as u16 - 1;
+    let x = (self.width as u16)
+      .saturating_sub(position_info.len() as u16)
+      .saturating_sub(1);
+    let y = (self.height as u16).saturating_sub(1);
     execute!(stdout, MoveTo(x, y))?;
     write!(stdout, "{position_info}")?;
     execute!(
@@ -62,7 +64,7 @@ impl Editor {
       message, self.view_mode, self.tutorial_demo_mode
     ));
     let x = self.progress_indicator_x() as u16;
-    let y = self.height as u16 - 2;
+    let y = (self.height as u16).saturating_sub(2);
     self.draw_pdf_loading_slots(stdout, x, y)?;
     execute!(stdout, MoveTo(x, y))?;
     write!(stdout, "{message}")?;
@@ -86,7 +88,7 @@ impl Editor {
       message, self.view_mode, self.tutorial_demo_mode
     ));
     let x = self.progress_indicator_x() as u16;
-    let y = self.height as u16 - 2;
+    let y = (self.height as u16).saturating_sub(2);
     self.draw_pdf_loading_slots_buffered(buffer, x, y)?;
     buffer.queue(MoveTo(x, y))?;
     write!(buffer, "{message}")?;

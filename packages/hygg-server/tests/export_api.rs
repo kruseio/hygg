@@ -202,3 +202,87 @@ async fn server_blob(state: &AppState, content_hash: &str) -> Vec<u8> {
       .unwrap();
   repo::blobs::get(&state.db.conn, &tenant, &book_id).await.unwrap().unwrap()
 }
+
+const OTHER_EMAIL: &str = "v@x.y";
+
+/// Register a second, unrelated user on the same tenant and return their token.
+async fn register_other(state: &AppState) -> String {
+  let tenant = ensure_default_tenant(state).await.unwrap();
+  let hash = hash_password("pw").unwrap();
+  repo::users::insert(
+    &state.db.conn,
+    &tenant,
+    OTHER_EMAIL,
+    "V",
+    Some(&hash),
+    "user",
+  )
+  .await
+  .unwrap();
+  let req = Request::builder()
+    .method("POST")
+    .uri("/api/v1/devices/register")
+    .header(header::CONTENT_TYPE, "application/json")
+    .body(Body::from(
+      json!({"email": OTHER_EMAIL, "password": "pw"}).to_string(),
+    ))
+    .unwrap();
+  let resp = app(state.clone()).oneshot(req).await.unwrap();
+  assert_eq!(resp.status(), StatusCode::OK);
+  json_body::<Value>(resp).await["token"].as_str().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn import_cannot_overwrite_another_users_document() {
+  // One server, one user who owns a document.
+  let (_dir, state) = setup().await;
+  let owner = register(&state).await;
+  seed_library(&state, &owner).await;
+
+  // A second user imports a bundle that names the same content hash — the only
+  // thing they need to know — with different metadata and different bytes.
+  let attacker = register_other(&state).await;
+  let bundle = json!({
+    "format_version": 1,
+    "exported_at": 0,
+    "profile": { "email": OTHER_EMAIL, "name": "V" },
+    "books": [{
+      "content_hash": HASH,
+      "title": "Overwritten",
+      "author": "Attacker",
+      "format": "pdf",
+      "size_bytes": 3,
+      "file_name": null,
+      "tags": [],
+      "blob_base64": general_purpose_encode(b"pwned"),
+      "progress": null,
+      "bookmarks": [], "highlights": [], "notes": []
+    }]
+  });
+  let req = Request::builder()
+    .method("POST")
+    .uri("/api/v1/import")
+    .header(header::AUTHORIZATION, format!("Bearer {attacker}"))
+    .header("x-hygg-user", OTHER_EMAIL)
+    .header("x-hygg-machine-id", "attacker-machine")
+    .header(header::CONTENT_TYPE, "application/json")
+    .body(Body::from(bundle.to_string()))
+    .unwrap();
+  let resp = send(&state, req).await;
+  assert_eq!(
+    resp.status(),
+    StatusCode::FORBIDDEN,
+    "importing onto another user's document must be refused"
+  );
+
+  // The owner's document is untouched: original bytes, original metadata.
+  assert_eq!(server_blob(&state, HASH).await, BLOB);
+  let bundle = export(&state, &owner).await;
+  assert_eq!(bundle.books[0].title, "The Title");
+  assert_eq!(bundle.books[0].author, "The Author");
+}
+
+fn general_purpose_encode(bytes: &[u8]) -> String {
+  use base64::Engine;
+  base64::engine::general_purpose::STANDARD.encode(bytes)
+}

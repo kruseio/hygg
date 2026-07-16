@@ -222,6 +222,14 @@ impl Editor {
             (0, line.len())
           };
 
+          // Ensure column indices are valid. The immediate renderer
+          // (highlight_selection) clamps here; this buffered copy did not, so a
+          // selection column left past the end of a now-shorter line — a stale
+          // visual selection, a restored one, a cross-buffer mismatch — sliced
+          // out of bounds and panicked the reader. Same clamp, same result.
+          let start_col = start_col.min(line.len());
+          let end_col = end_col.min(line.len());
+
           // Render the line with selection highlight
           write!(buffer, "{}", &line[..start_col])?;
 

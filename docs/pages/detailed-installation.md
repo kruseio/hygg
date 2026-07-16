@@ -260,5 +260,15 @@ since there is no pandoc to shell out to in a browser.
 ## Verifying a download
 Every release includes a `SHA256SUMS` file covering all its artifacts:
 ```sh
-sha256sum -c SHA256SUMS 2>/dev/null | grep -v FAILED
+sha256sum --ignore-missing -c SHA256SUMS
 ```
+`--ignore-missing` is what keeps it quiet about the artifacts you did not
+download — it checks the files you have and says nothing about the rest. Read
+the output: every line should end in `OK`, and the command exits non-zero if any
+of them says `FAILED`. A file that fails does not match the release it claims to
+be from; delete it rather than run it.
+
+(This replaces an older `... 2>/dev/null | grep -v FAILED`, which did the
+quietening by deleting the evidence: it hid the `FAILED` lines it was there to
+show you, and the pipeline then exited on `grep`'s status, so it reported
+success as long as *any* file passed.)

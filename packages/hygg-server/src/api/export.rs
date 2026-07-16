@@ -25,11 +25,14 @@ use hygg_shared::sync::proto::{
   BookmarkDto, HighlightDto, NoteDto, ProgressDto,
 };
 
+use super::export_inputs::{
+  bookmark_input, highlight_input, note_input, progress_input,
+};
 use crate::auth::Principal;
 use crate::error::{AppError, AppResult};
 use crate::repo;
 use crate::state::AppState;
-use crate::util::{new_id, now_millis};
+use crate::util::now_millis;
 
 /// `GET /api/v1/export` — the caller's complete personal library as a bundle.
 pub async fn export(
@@ -153,11 +156,9 @@ pub async fn import(
       bundle.format_version
     )));
   }
-  let tenant = &principal.tenant_id;
-  let user = &principal.user_id;
   let mut summary = ImportSummary::default();
   for book in bundle.books {
-    import_book(&state, tenant, user, book, &mut summary).await?;
+    import_book(&state, &principal, book, &mut summary).await?;
   }
   Ok(Json(summary))
 }
@@ -166,13 +167,49 @@ pub async fn import(
 /// library.
 async fn import_book(
   state: &AppState,
-  tenant: &str,
-  user: &str,
+  principal: &Principal,
   book: ExportBook,
   summary: &mut ImportSummary,
 ) -> AppResult<()> {
   let pool = &state.db.conn;
+  let (tenant, user) = (&principal.tenant_id, &principal.user_id);
   let hash = book.content_hash.as_str();
+
+  // A book is unique per *tenant* by its content hash (`uq_books_tenant_hash`),
+  // not per owner, so a bundle entry can name a document that already exists
+  // and belongs to someone else. The upsert below preserves that row's owner
+  // while overwriting its metadata, and the blob put further down replaces
+  // its stored bytes — so without a check here, any authenticated user who
+  // learns a hash (a shared document, an org book, a guessed common file)
+  // could overwrite another user's document through import. The regular
+  // upload path guards the same write with
+  // `library_for_hash(...).can_write()`; require it here too.
+  //
+  // Only when the book already exists: an unknown hash is a fresh personal
+  // import (the migration path this endpoint exists for), and
+  // `library_for_hash` returns `None` for a hash the tenant does not have —
+  // gating on that would reject every new import. The content hash is not
+  // verified against the blob bytes on purpose: a book id is often the
+  // SHA-256 of the document's extracted *text* (`book_id_from_text`), not of
+  // the uploaded file bytes, so the two do not match in general — the regular
+  // blob upload does not check it either.
+  if repo::books::access_meta(pool, tenant, hash).await?.is_some() {
+    let access = repo::access::library_for_hash(
+      pool,
+      state.entitlements.as_ref(),
+      tenant,
+      user,
+      principal.role.is_admin(),
+      principal.personal_sync,
+      Some(&principal.device_id),
+      hash,
+    )
+    .await?;
+    if !access.can_write() {
+      return Err(AppError::Forbidden);
+    }
+  }
+
   repo::books::upsert(
     pool,
     tenant,
@@ -227,64 +264,4 @@ async fn import_book(
     summary.notes += 1;
   }
   Ok(())
-}
-
-/// Imported annotations are not tied to a device (the export dropped device
-/// identity) and get a fresh idempotency id; `updated_at` is preserved so
-/// last-write-wins keeps the exporting server's ordering.
-fn progress_input(dto: ProgressDto) -> repo::progress::ProgressInput {
-  repo::progress::ProgressInput {
-    book_id: dto.book_id,
-    device_id: None,
-    offset_line: dto.offset_line,
-    total_lines: dto.total_lines,
-    percentage: dto.percentage,
-    viewport_offset: dto.viewport_offset,
-    cursor_y: dto.cursor_y,
-    page: dto.page,
-    line_in_page: dto.line_in_page,
-    word_offset: dto.word_offset,
-    op_id: new_id(),
-    updated_at: dto.updated_at,
-  }
-}
-
-fn bookmark_input(dto: BookmarkDto) -> repo::bookmarks::BookmarkInput {
-  repo::bookmarks::BookmarkInput {
-    book_id: dto.book_id,
-    device_id: None,
-    mark: dto.mark,
-    line: dto.line,
-    col: dto.col,
-    op_id: new_id(),
-    deleted: dto.deleted,
-    updated_at: dto.updated_at,
-  }
-}
-
-fn highlight_input(dto: HighlightDto) -> repo::highlights::HighlightInput {
-  repo::highlights::HighlightInput {
-    book_id: dto.book_id,
-    device_id: None,
-    start_offset: dto.start_offset,
-    end_offset: dto.end_offset,
-    op_id: new_id(),
-    deleted: dto.deleted,
-    created_at: dto.updated_at,
-    updated_at: dto.updated_at,
-  }
-}
-
-fn note_input(dto: NoteDto) -> repo::notes::NoteInput {
-  repo::notes::NoteInput {
-    note_uid: dto.id,
-    book_id: dto.book_id,
-    device_id: None,
-    anchor_line: dto.anchor_line,
-    body: dto.body,
-    op_id: new_id(),
-    deleted: dto.deleted,
-    created_at: dto.created_at,
-    updated_at: dto.updated_at,
-  }
 }

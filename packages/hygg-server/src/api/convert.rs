@@ -6,9 +6,6 @@
 //!
 //! Extraction is CPU-heavy (OCR especially), so it runs on a blocking thread.
 
-use std::io::Write;
-use std::process::{Command, Stdio};
-
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Query, State};
@@ -84,6 +81,16 @@ pub async fn convert(
   }
 
   // Miss: run the CPU-heavy extraction on a blocking thread, then cache it.
+  // Take a conversion permit first. Each conversion pins a blocking thread for
+  // seconds (OCR, or a pandoc child), so without a bound a burst of uploads
+  // starves the pool and the CPU. `try_acquire` rather than `acquire`: a queued
+  // request would sit here holding its entire decoded body, so refuse with 429
+  // and let the client back off instead.
+  let _permit = state
+    .convert_slots
+    .clone()
+    .try_acquire_owned()
+    .map_err(|_| AppError::TooManyRequests)?;
   let bytes = body.to_vec();
   let filename = q.filename;
   let width = q.col;
@@ -125,6 +132,7 @@ pub fn spawn_prewarm_extraction(
   bytes: Vec<u8>,
 ) {
   let pool = state.db.conn.clone();
+  let slots = state.convert_slots.clone();
   let tenant_id = tenant_id.to_string();
   let content_hash = content_hash.to_string();
   let col = PREWARM_COL as i64;
@@ -149,6 +157,12 @@ pub fn spawn_prewarm_extraction(
       return;
     };
     let filename = file_name.unwrap_or_else(|| format!("document.{format}"));
+    // Share the conversion budget with `/convert`. This is background work, so
+    // it waits for a permit rather than refusing; if the semaphore is gone
+    // (shutdown) there is nothing to warm.
+    let Ok(_permit) = slots.acquire_owned().await else {
+      return;
+    };
     let extracted = tokio::task::spawn_blocking(move || {
       convert_bytes(&filename, bytes, PREWARM_COL)
     })
@@ -192,45 +206,9 @@ pub fn convert_bytes(
     "txt" | "text" | "md" | "markdown" => {
       cli_justify::justify(&String::from_utf8_lossy(&bytes), col).join("\n")
     }
-    other => pandoc_convert(&bytes, other, col)?,
+    other => super::pandoc::pandoc_convert(&bytes, other, col)?,
   };
   Ok(ConvertResponse { title: title_from(filename), format: ext, text })
-}
-
-/// Convert a binary document through the `pandoc` CLI (read from stdin so no
-/// temp file is needed), then justify the resulting plain text.
-fn pandoc_convert(bytes: &[u8], ext: &str, col: usize) -> AppResult<String> {
-  let mut child = Command::new("pandoc")
-    .args(["-f", pandoc_format(ext), "-t", "plain", "--wrap=none"])
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::null())
-    .spawn()
-    .map_err(|_| {
-      AppError::BadRequest("server cannot convert this format".to_string())
-    })?;
-  child
-    .stdin
-    .take()
-    .ok_or(AppError::Internal)?
-    .write_all(bytes)
-    .map_err(|_| AppError::Internal)?;
-  let out = child.wait_with_output().map_err(|_| AppError::Internal)?;
-  if !out.status.success() {
-    return Err(AppError::BadRequest(format!("could not convert .{ext}")));
-  }
-  let text = String::from_utf8_lossy(&out.stdout).into_owned();
-  Ok(cli_justify::justify(&text, col).join("\n"))
-}
-
-/// Map a file extension to pandoc's input-format name (most match directly).
-fn pandoc_format(ext: &str) -> &str {
-  match ext {
-    "htm" => "html",
-    "tex" => "latex",
-    "md" | "markdown" => "markdown",
-    other => other,
-  }
 }
 
 fn extension(filename: &str) -> String {

@@ -20,7 +20,7 @@ impl Editor {
     if !self.tts_enabled {
       return;
     }
-    let all = build_word_spans(&self.lines, &self.line_kinds);
+    let mut all = build_word_spans(&self.lines, &self.line_kinds);
     let current_line = self.offset + self.cursor_y;
     // Narrate from the first word at or after the reading line. If there is no
     // such word — the cursor sits on ASCII art, on a blank/placeholder row, or
@@ -32,7 +32,11 @@ impl Editor {
     else {
       return;
     };
-    let spans: Vec<WordSpan> = all[start_idx..].to_vec();
+    // Drop the already-read head in place rather than cloning the tail with
+    // `to_vec`: `all` holds one span per word in the whole document, so a copy
+    // here is a second document-sized allocation. `drain` reuses the buffer.
+    all.drain(..start_idx);
+    let spans: Vec<WordSpan> = all;
 
     #[cfg(feature = "tts")]
     {

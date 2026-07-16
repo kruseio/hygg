@@ -39,7 +39,7 @@ fn ensure_config_file() -> Result<(), Box<dyn std::error::Error>> {
   let config_path = get_config_env_path()?;
   ensure_config_file_with_defaults(
     &config_path,
-    "ENABLE_TUTORIAL=true\nENABLE_LINE_HIGHLIGHTER=true\nSHOW_CURSOR=true\nSHOW_PROGRESS=true\nPDF_OCR=false\nENABLE_TTS=true\nTUTORIAL_SHOWN=false\nSERVER_URL=\nUSERNAME=\nAPI_TOKEN=\nSYNC=true\nAUTO_SYNC=books\nDEVICE_ID=\n",
+    "ENABLE_TUTORIAL=true\nENABLE_LINE_HIGHLIGHTER=true\nSHOW_CURSOR=true\nSHOW_PROGRESS=true\nPDF_OCR=false\nENABLE_TTS=true\nENABLE_OSC52=true\nTUTORIAL_SHOWN=false\nSERVER_URL=\nUSERNAME=\nAPI_TOKEN=\nSYNC=true\nAUTO_SYNC=books\nDEVICE_ID=\n",
   )
 }
 
@@ -123,6 +123,25 @@ pub fn tts_enabled_setting() -> bool {
     .map(|iter| iter.filter_map(Result::ok).collect::<HashMap<_, _>>())
     .unwrap_or_default();
   config_bool("ENABLE_TTS", &file_values).unwrap_or(DEFAULT_TTS_ENABLED)
+}
+
+/// OSC 52 clipboard forwarding on yank (`ENABLE_OSC52`). On by default: it is
+/// how a yank reaches the outermost terminal's clipboard across an SSH session,
+/// where the local clipboard library cannot. Turning it off keeps a yank inside
+/// the process's own machine — the setting exists because a document's contents
+/// are not always something the reader should be allowed to place on the
+/// clipboard of whatever terminal is at the end of the chain.
+pub const DEFAULT_OSC52_ENABLED: bool = true;
+
+/// Whether a yank may emit OSC 52. Read the same lightweight way as
+/// `tts_enabled_setting`; falls back to `DEFAULT_OSC52_ENABLED`.
+pub fn osc52_enabled_setting() -> bool {
+  let file_values = get_config_env_path()
+    .ok()
+    .and_then(|path| dotenvy::from_path_iter(path).ok())
+    .map(|iter| iter.filter_map(Result::ok).collect::<HashMap<_, _>>())
+    .unwrap_or_default();
+  config_bool("ENABLE_OSC52", &file_values).unwrap_or(DEFAULT_OSC52_ENABLED)
 }
 
 pub fn save_config(

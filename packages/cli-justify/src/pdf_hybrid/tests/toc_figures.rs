@@ -92,3 +92,16 @@ fn preserves_figure_and_table_aligned_entries() {
     "expected Figure 3 line preserved, got: {out:?}"
   );
 }
+
+#[test]
+fn unicode_whitespace_after_label_does_not_panic() {
+  // U+2003 EM SPACE is one character but three UTF-8 bytes, so the label-gap
+  // width — once counted in characters and reused as a byte index — used to
+  // slice inside its encoding and panic. The line must survive to output.
+  let input = "FIGURE\u{2003}1  A caption that follows the figure label\n";
+  let out = justify_pdf_hybrid(input, 80);
+  assert!(
+    out.iter().any(|line| line.contains("FIGURE") && line.contains("caption")),
+    "expected the figure line preserved, got: {out:?}"
+  );
+}

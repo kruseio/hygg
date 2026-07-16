@@ -19,6 +19,18 @@ use crate::stream::ocr::{
   has_near_duplicate_visual_text, ocr_visual_text_rows,
 };
 
+/// Upper bound on the page count taken from a PDF's catalog.
+///
+/// `page_count()` reads the document's declared `/Count`, which is a number the
+/// file chooses — a few-kilobyte PDF can claim millions of pages. The
+/// interactive reader turns that count into allocation directly: one `PageSlot`
+/// per page, plus a page-load-order vector sized to match. pdf_oxide already
+/// refuses a `/Count` beyond ~8.4M (it falls back to walking the page tree),
+/// but 8.4M slots is still well over a gigabyte from nothing. No document a
+/// person reads approaches this bound, so clamping it costs real files nothing
+/// while keeping the up-front allocation bounded.
+const MAX_STREAM_PAGES: usize = 200_000;
+
 impl PdfStream {
   /// Open a PDF and parse its catalog. Does not extract any page text.
   ///
@@ -49,7 +61,8 @@ impl PdfStream {
       .map_err(|e| format!("pdf_oxide from_bytes failed: {e:?}"))?;
     let total_pages = doc
       .page_count()
-      .map_err(|e| format!("pdf_oxide page_count failed: {e:?}"))?;
+      .map_err(|e| format!("pdf_oxide page_count failed: {e:?}"))?
+      .min(MAX_STREAM_PAGES);
     Ok(Self {
       canonical_path: std::path::PathBuf::new(),
       doc,
@@ -71,7 +84,8 @@ impl PdfStream {
       .map_err(|e| format!("pdf_oxide from_bytes failed: {e:?}"))?;
     let total_pages = doc
       .page_count()
-      .map_err(|e| format!("pdf_oxide page_count failed: {e:?}"))?;
+      .map_err(|e| format!("pdf_oxide page_count failed: {e:?}"))?
+      .min(MAX_STREAM_PAGES);
     Ok(Self {
       canonical_path: std::path::PathBuf::new(),
       doc,
@@ -90,7 +104,8 @@ impl PdfStream {
       .map_err(|e| format!("pdf_oxide open failed: {e:?}"))?;
     let total_pages = doc
       .page_count()
-      .map_err(|e| format!("pdf_oxide page_count failed: {e:?}"))?;
+      .map_err(|e| format!("pdf_oxide page_count failed: {e:?}"))?
+      .min(MAX_STREAM_PAGES);
     #[cfg(feature = "pdf-ocr-bundled")]
     let ocr_engine =
       if enable_ocr { Some(crate::ocr::bundled_ocr_engine()?) } else { None };

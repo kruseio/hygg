@@ -79,14 +79,36 @@ fn complete_argument(
 }
 
 fn replace_last_word(input: &str, replacement: &str) -> String {
-  let Some((start, _)) =
+  let Some((start, separator)) =
     input.char_indices().rev().find(|(_, c)| c.is_whitespace())
   else {
     return replacement.to_string();
   };
-  format!("{}{}", &input[..=start], replacement)
+  // `..=start` includes one byte of the separator, which is fine for a plain
+  // ASCII space but cuts inside a multibyte whitespace character (NBSP, EM
+  // SPACE) and panics. Step over the whole character by its byte length; for an
+  // ASCII space that is exactly `..=start`.
+  format!("{}{}", &input[..start + separator.len_utf8()], replacement)
 }
 
 pub(crate) fn top_level_commands() -> Vec<&'static str> {
   COMMANDS.iter().map(|command| command.name).collect()
+}
+
+#[cfg(test)]
+mod replace_last_word_tests {
+  use super::replace_last_word;
+
+  #[test]
+  fn ascii_space_is_unchanged() {
+    assert_eq!(replace_last_word("set o", "on"), "set on");
+  }
+
+  #[test]
+  fn multibyte_whitespace_does_not_panic() {
+    // U+2003 EM SPACE is one character, three bytes; `..=start` used to cut one
+    // byte into it and panic. The whole separator is stepped over instead.
+    assert_eq!(replace_last_word("set\u{2003}o", "on"), "set\u{2003}on");
+    assert_eq!(replace_last_word("set\u{00a0}o", "on"), "set\u{00a0}on");
+  }
 }

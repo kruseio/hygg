@@ -105,6 +105,35 @@ fn extract_with_layout_text(
   Ok(combined)
 }
 
+/// The passes that must run with stdout redirected, in one fallible unit.
+///
+/// Returns the sanitized layout text and, when the layout pass came out damaged
+/// enough to be worth a second opinion, the plaintext fallback's raw output.
+#[cfg(not(target_arch = "wasm32"))]
+fn extract_under_redirected_stdout(
+  canonical_path: &std::path::Path,
+) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
+  let layout_text = extract_with_layout_text(canonical_path)?;
+  let mut layout_sanitized = sanitize_layout_text(&layout_text);
+
+  if let Ok(Some(recovered)) =
+    recover_sparse_code_blocks(canonical_path, &layout_sanitized)
+  {
+    layout_sanitized = recovered;
+  }
+
+  // Only run the slower plaintext fallback when the layout pass shows
+  // damage that the plaintext heuristic might actually prefer. On large
+  // PDFs this halves wall time.
+  let plaintext_result = if layout_needs_plaintext_fallback(&layout_sanitized) {
+    pdf_extract::extract_text(canonical_path).ok()
+  } else {
+    None
+  };
+
+  Ok((layout_sanitized, plaintext_result))
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn pdf_to_text(
   pdf_path: &str,
@@ -114,29 +143,17 @@ pub fn pdf_to_text(
   // `redirect_stderr::redirect_stdout` works on both Windows and Unix now;
   // suppress the noisy logging pdf_extract / lopdf write to stdout while we
   // do the extraction passes.
+  //
+  // The extraction is a separate function so that the restore below is not
+  // something the code between here and there can jump over. It used to be one
+  // straight-line body with a `?` in the middle, and that `?` returned with the
+  // process's stdout still pointing at /dev/null — a malformed PDF thus
+  // silently muted every later `println!` in the program. This is a library;
+  // the caller is not always about to exit.
   redirect_stderr::redirect_stdout()?;
-
-  let layout_text = extract_with_layout_text(&canonical_path);
-
-  let layout_text = layout_text?;
-  let mut layout_sanitized = sanitize_layout_text(&layout_text);
-
-  if let Ok(Some(recovered)) =
-    recover_sparse_code_blocks(&canonical_path, &layout_sanitized)
-  {
-    layout_sanitized = recovered;
-  }
-
-  // Only run the slower plaintext fallback when the layout pass shows
-  // damage that the plaintext heuristic might actually prefer. On large
-  // PDFs this halves wall time.
-  let plaintext_result = if layout_needs_plaintext_fallback(&layout_sanitized) {
-    pdf_extract::extract_text(&canonical_path).ok()
-  } else {
-    None
-  };
-
+  let extracted = extract_under_redirected_stdout(&canonical_path);
   redirect_stderr::restore_stdout()?;
+  let (layout_sanitized, plaintext_result) = extracted?;
 
   if let Some(plaintext_output) = plaintext_result {
     let plaintext_sanitized = sanitize_layout_text(&plaintext_output);

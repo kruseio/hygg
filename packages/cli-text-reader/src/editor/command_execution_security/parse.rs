@@ -36,11 +36,12 @@ pub fn parse_secure_command(cmd: &str) -> Result<SecureCommand, String> {
       || cmd_string.contains(" | ")
   };
 
-  // For non-Windows, keep the original reference
+  // For non-Windows, keep the original reference. `is_powershell_command` is
+  // only consulted by the Windows-only wrap block below (validation no longer
+  // branches on it — it is always strict, and always on the user's own args),
+  // so it is not defined here.
   #[cfg(not(target_os = "windows"))]
   let cmd_to_parse = cmd;
-  #[cfg(not(target_os = "windows"))]
-  let is_powershell_command = false;
 
   // Whitelist of allowed commands - focus on read-only, generally safe commands
   // Security Note: Even read-only commands can have security implications:
@@ -89,7 +90,9 @@ pub fn parse_secure_command(cmd: &str) -> Result<SecureCommand, String> {
     "free",
     "ps",
     "top",
-    "env",
+    // `env` is deliberately absent: `env PROG ...` runs PROG, so allowlisting
+    // it whitelists everything (`:!env sh`, `:!env rm file`). `printenv`
+    // prints the environment and launches nothing, so it stays.
     "printenv",
     "history",
     // Archive viewing (read-only access, but see security note above)
@@ -125,9 +128,12 @@ pub fn parse_secure_command(cmd: &str) -> Result<SecureCommand, String> {
     "Measure-Object",
     "Where-Object",
     "Sort-Object",
-    // PowerShell.exe for Windows
-    "powershell.exe",
-    "powershell",
+    // `powershell` / `powershell.exe` are deliberately absent: a bare
+    // `:!powershell.exe -Command ...` (or `-EncodedCommand <base64>`) runs
+    // arbitrary code, which is the whole policy this list exists to hold. The
+    // Windows translation path below still spawns powershell.exe itself, but
+    // only after an allowlisted *cmdlet* (Get-Content, …) passed this check —
+    // it hardcodes the program, it does not read it from the user.
   ]
   .iter()
   .cloned()
@@ -146,39 +152,56 @@ pub fn parse_secure_command(cmd: &str) -> Result<SecureCommand, String> {
     return Err(format!("Command '{program}' is not allowed"));
   }
 
-  // Validate arguments - reject dangerous characters to prevent shell injection
-  // Even though we're not using shell execution, some commands might interpret
-  // these
-  let dangerous_chars: &[char] = if is_powershell_command {
-    // For PowerShell commands, allow pipes but still restrict other dangerous
-    // chars
-    &['&', ';', '`', '$', '(', ')', '<', '>', '\\', '*', '?']
-  } else {
-    // For regular commands, maintain strict validation
-    &['|', '&', ';', '`', '$', '(', ')', '<', '>', '\\', '*', '?']
-  };
-
-  // Special handling for PowerShell - don't validate the full command string
-  if is_powershell_command {
-    // For PowerShell, we'll validate differently since the whole command is one
-    // string Just check for the most dangerous characters
-    if cmd_to_parse.chars().any(|c| ['`', ';', '&'].contains(&c)) {
-      return Err(
-        "PowerShell command contains dangerous characters".to_string(),
-      );
+  // A handful of allowlisted read-only tools have an argument form that
+  // launches another program — `find -exec`, `tar --to-command` — which is
+  // the same whole-whitelist bypass that keeping `env` off the list closes.
+  // Deny those forms per utility, on the original command's tokens; every
+  // read-only use of each tool keeps working. Matched against the user's own
+  // program name (these are not translated on Windows, so it is the real
+  // utility either way).
+  let orig_parts: Vec<&str> = cmd.split_whitespace().collect();
+  let denied_args: &[&str] = match orig_parts.first().copied().unwrap_or("") {
+    "find" => &[
+      "-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprintf", "-fprint",
+      "-fls",
+    ],
+    "tar" => {
+      &["--to-command", "--use-compress-program", "-I", "--checkpoint-action"]
     }
-  } else {
-    // Regular validation for non-PowerShell commands
-    for arg in &parts[1..] {
-      if arg.chars().any(|c| dangerous_chars.contains(&c)) {
-        return Err(format!("Argument contains dangerous characters: {arg}"));
-      }
+    "zip" | "unzip" => &["-T", "-TT", "--unzip-command"],
+    _ => &[],
+  };
+  for arg in orig_parts.iter().skip(1) {
+    // `--flag=value` and `--flag value` both, so the `=` form cannot slip past.
+    let flag = arg.split('=').next().unwrap_or(arg);
+    if denied_args.contains(&flag) {
+      return Err(format!(
+        "Argument '{arg}' is not allowed for '{}'",
+        orig_parts[0]
+      ));
+    }
+  }
 
-      // Additional safety: reject very long arguments that could cause buffer
-      // overflows
-      if arg.len() > 1000 {
-        return Err("Argument too long (max 1000 characters)".to_string());
-      }
+  // Reject dangerous characters to prevent shell/PowerShell injection. Validate
+  // the ORIGINAL user input, never the translated string: on Windows the
+  // translated command is handed to `powershell.exe -Command`, which re-parses
+  // it as source, so `$()`, backticks, and `|` a user smuggled into an argument
+  // would execute there. The only pipes a translated command contains are the
+  // ones the translator itself emitted (Get-ChildItem | Select-Object …), and
+  // those are trusted by construction — so `|` can stay in the strict set that
+  // applies to the user's own tokens. (On non-Windows the translation is a
+  // no-op and this is exactly the original strict check.)
+  let dangerous_chars: &[char] =
+    &['|', '&', ';', '`', '$', '(', ')', '<', '>', '\\', '*', '?'];
+  for arg in orig_parts.iter().skip(1) {
+    if arg.chars().any(|c| dangerous_chars.contains(&c)) {
+      return Err(format!("Argument contains dangerous characters: {arg}"));
+    }
+
+    // Additional safety: reject very long arguments that could cause buffer
+    // overflows
+    if arg.len() > 1000 {
+      return Err("Argument too long (max 1000 characters)".to_string());
     }
   }
 

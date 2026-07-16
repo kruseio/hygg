@@ -201,7 +201,16 @@ pub(crate) fn push_pdf_word_gap(
     return;
   }
 
-  let gap_chars = ((gap_pt / pt_per_char).round() as usize).max(1);
+  // Capped for the same reason layout_text_output::write_n_spaces caps at 200:
+  // the gap is a subtraction of two document-supplied coordinates, not a
+  // measurement of anything real. A 612pt page is ~122 cells at 5pt/char, so no
+  // honest intra-row gap comes near this; a hostile one is unbounded, and
+  // `f32 as usize` saturates rather than wrapping — an infinite gap_pt asks for
+  // usize::MAX spaces in a String. Downstream justify re-wraps at `col`
+  // regardless, so the cap is invisible to real documents.
+  const MAX_GAP_CHARS: usize = 200;
+  let gap_chars =
+    ((gap_pt / pt_per_char).round() as usize).clamp(1, MAX_GAP_CHARS);
   body.extend(std::iter::repeat_n(' ', gap_chars));
 }
 

@@ -234,3 +234,14 @@ fn pdf_image_height_uses_display_bbox_aspect_ratio() {
   assert_eq!(pdf_image_height_rows(100.0, 200.0, 20), 40);
   assert_eq!(pdf_image_height_rows(0.0, 200.0, 20), 1);
 }
+
+#[test]
+fn pdf_image_height_is_bounded_for_hostile_bboxes() {
+  // A hairline-wide, page-tall placement: the ratio is 1e6 and the cast used
+  // to saturate all the way into render_half_block's allocation.
+  assert_eq!(pdf_image_height_rows(0.001, 1000.0, 1), 400);
+  // Non-finite dimensions pass a bare `> 0.0` and saturate the cast too.
+  assert_eq!(pdf_image_height_rows(1.0, f32::INFINITY, 20), 1);
+  assert_eq!(pdf_image_height_rows(f32::NAN, 200.0, 20), 1);
+  assert_eq!(pdf_image_height_rows(1.0, f32::NAN, 20), 1);
+}

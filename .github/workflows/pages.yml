@@ -48,18 +48,33 @@ jobs:
     name: deploy pwa
     runs-on: ubuntu-22.04
     steps:
+      # Before the checkout, because it needs nothing from the tree and the tag
+      # decides what the tree even is.
+      #
+      # The tag reaches half the `run:` scripts below, and GitHub substitutes
+      # ${{ }} into a script before the shell parses it — double quotes stop
+      # word splitting, they do not stop $( ) or backticks. A ref name may
+      # contain both. The push trigger's filter happens to constrain
+      # github.ref_name to digits and dots already; workflow_dispatch takes the
+      # string as typed and constrains nothing. So the shape is checked once,
+      # here, and every step downstream reads the checked value out of `env`
+      # rather than pasting the raw one.
+      - name: Resolve tag and base path
+        id: vars
+        env:
+          TAG_IN: ${{ inputs.tag || github.ref_name }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG_IN" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+            { echo "::error::'$TAG_IN' is not a bare-semver tag like 0.1.22"; exit 1; }
+          echo "tag=$TAG_IN" >> "$GITHUB_OUTPUT"
+          echo "base=/$REPO" >> "$GITHUB_OUTPUT"
+          echo "Deploying $TAG_IN to /$REPO/ and /$REPO/$TAG_IN/"
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag || github.ref }}
-
-      - name: Resolve tag and base path
-        id: vars
-        run: |
-          tag="${{ inputs.tag || github.ref_name }}"
-          base="/${{ github.event.repository.name }}"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "base=$base" >> "$GITHUB_OUTPUT"
-          echo "Deploying $tag to $base/ and $base/$tag/"
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -82,15 +97,22 @@ jobs:
       # repository root.
       - name: Build latest (served at ${{ steps.vars.outputs.base }}/)
         working-directory: packages/hygg-pwa
+        env:
+          BASE: ${{ steps.vars.outputs.base }}
         run: |
-          trunk build --release --public-url "${{ steps.vars.outputs.base }}/"
-          python3 tools/prepare_pages_dist.py dist "${{ steps.vars.outputs.base }}/"
+          set -euo pipefail
+          trunk build --release --public-url "$BASE/"
+          python3 tools/prepare_pages_dist.py dist "$BASE/"
           mv dist ../../dist-latest
 
       - name: Build pinned (served at ${{ steps.vars.outputs.base }}/${{ steps.vars.outputs.tag }}/)
         working-directory: packages/hygg-pwa
+        env:
+          BASE: ${{ steps.vars.outputs.base }}
+          TAG: ${{ steps.vars.outputs.tag }}
         run: |
-          url="${{ steps.vars.outputs.base }}/${{ steps.vars.outputs.tag }}/"
+          set -euo pipefail
+          url="$BASE/$TAG/"
           trunk build --release --public-url "$url"
           python3 tools/prepare_pages_dist.py dist "$url"
           mv dist ../../dist-pinned
@@ -110,46 +132,62 @@ jobs:
           fi
 
       - name: Assemble site
+        env:
+          TAG: ${{ steps.vars.outputs.tag }}
+          BASE: ${{ steps.vars.outputs.base }}
         run: |
           set -euo pipefail
-          tag="${{ steps.vars.outputs.tag }}"
 
-          # Replace the root deploy, keeping every pinned version dir. Matching
-          # on v<digit> (not v*) so a root file like "versions.html" is not
-          # mistaken for a version directory and preserved as stale.
+          # Replace the root deploy, keeping every pinned version dir. The tags
+          # here are bare (0.1.22), so this has to match a leading digit — it
+          # read `site/v[0-9].*` until 2026-07, from back when the trigger was
+          # `v*`, and would have deleted every pinned directory this workflow
+          # has ever written on the next deploy. An optional `v` so that any dir
+          # left over from that era survives too. Anchored to a full X.Y.Z so a
+          # root file like versions.html is not mistaken for a version
+          # directory and preserved as stale; posix-extended because findutils'
+          # default regex dialect wants `\?` for an optional atom.
           find site -mindepth 1 -maxdepth 1 \
+            -regextype posix-extended \
             -not -name '.git' \
-            -not -regex 'site/v[0-9].*' \
+            -not -regex 'site/v?[0-9]+\.[0-9]+\.[0-9]+.*' \
             -exec rm -rf {} +
           cp -R dist-latest/. site/
 
           # The pinned copy is immutable: re-tagging the same version replaces it,
           # anything else is left alone.
-          rm -rf "site/$tag"
-          mkdir -p "site/$tag"
-          cp -R dist-pinned/. "site/$tag/"
+          rm -rf "site/$TAG"
+          mkdir -p "site/$TAG"
+          cp -R dist-pinned/. "site/$TAG/"
 
           # Pages runs Jekyll otherwise, which drops files starting with "_".
           touch site/.nojekyll
-          python3 packages/hygg-pwa/tools/write_versions_index.py site "${{ steps.vars.outputs.base }}/"
+          python3 packages/hygg-pwa/tools/write_versions_index.py site "$BASE/"
 
       - name: Commit and push
         working-directory: site
+        env:
+          TAG: ${{ steps.vars.outputs.tag }}
         run: |
+          set -euo pipefail
           git add -A
           if git diff --cached --quiet; then
             echo "site unchanged — nothing to push"
             exit 0
           fi
-          git commit -m "pages: deploy ${{ steps.vars.outputs.tag }}"
+          git commit -m "pages: deploy $TAG"
           git push origin gh-pages
 
       - name: Summary
+        env:
+          TAG: ${{ steps.vars.outputs.tag }}
+          BASE: ${{ steps.vars.outputs.base }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           {
             echo "### PWA deployed"
             echo
-            echo "- latest: https://${{ github.repository_owner }}.github.io${{ steps.vars.outputs.base }}/"
-            echo "- pinned: https://${{ github.repository_owner }}.github.io${{ steps.vars.outputs.base }}/${{ steps.vars.outputs.tag }}/"
-            echo "- all versions: https://${{ github.repository_owner }}.github.io${{ steps.vars.outputs.base }}/versions.html"
+            echo "- latest: https://$OWNER.github.io$BASE/"
+            echo "- pinned: https://$OWNER.github.io$BASE/$TAG/"
+            echo "- all versions: https://$OWNER.github.io$BASE/versions.html"
           } >> "$GITHUB_STEP_SUMMARY"

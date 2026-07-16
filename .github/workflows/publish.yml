@@ -36,6 +36,11 @@ concurrency:
   group: publish-crates-io
   cancel-in-progress: false
 
+# Nothing here reads the repository through the job's token — checkout below is
+# the only thing that touches it, and a public repo needs no token to be cloned.
+permissions:
+  contents: read
+
 jobs:
   crates-io:
     name: crates.io
@@ -49,7 +54,47 @@ jobs:
     # needs no setup to work — an unconfigured one simply runs.
     environment: crates-io
     steps:
+      # What this job hands ./tools/.publish.sh is a long-lived crates.io token
+      # with publish-update on every crate here, and what it runs is whatever
+      # that script says on the ref it was pointed at. The tag filter above only
+      # constrains the push trigger; workflow_dispatch takes any ref in the
+      # repository, so without this, one branch push is enough to rewrite the
+      # script, dispatch this, and read the token out — no crates.io ownership,
+      # no review, no tag.
+      #
+      # So: a release tag, or main. Both are refs whose contents went through a
+      # pull request; a scratch branch is not. This is a check inside the run,
+      # which is the part that lives in the repository — the enforcement that
+      # cannot be edited by the ref it is judging belongs on the environment:
+      # Settings → Environments → crates-io → deployment branch and tag rules,
+      # `main` plus a protected tag pattern. Configure both; they fail closed in
+      # different ways.
+      - name: Refuse to publish from an unreviewed ref
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          case "$REF" in
+            refs/heads/main) echo "ref: main" ;;
+            refs/tags/[0-9]*.[0-9]*.[0-9]*)
+              # Same bare-semver shape the push trigger filters on, checked
+              # again because a dispatch is not filtered at all.
+              tag="${REF#refs/tags/}"
+              [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+                { echo "::error::'$tag' is not a release tag"; exit 1; }
+              echo "ref: tag $tag"
+              ;;
+            *)
+              echo "::error::publishing is allowed from main or a release tag, not '$REF'"
+              exit 1
+              ;;
+          esac
+
       - uses: actions/checkout@v4
+        with:
+          # Nothing below pushes; cargo reads its own token from the
+          # environment. Leaving a repository token in .git/config would put it
+          # within reach of every build script cargo runs while verifying.
+          persist-credentials: false
 
       # Stable, deliberately: crates.io publishes are what users build with
       # stable, and the verification build cargo runs per crate should be the

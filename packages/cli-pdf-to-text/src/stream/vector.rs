@@ -1,5 +1,7 @@
 #[cfg(feature = "pdf-rendering")]
 use crate::stream::images::render_dynamic_image_region;
+#[cfg(feature = "pdf-rendering")]
+use crate::stream::types::PdfRegion;
 use crate::stream::types::{VisualImageRows, VisualTextRow};
 #[cfg(feature = "pdf-rendering")]
 use crate::stream::vector_detect::detect_vector_diagram_regions;
@@ -37,6 +39,9 @@ pub(crate) fn render_vector_diagram_regions(
   let options = pdf_oxide::rendering::RenderOptions::with_dpi(120);
   let mut out = Vec::new();
   for region in regions {
+    if region_raster_is_oversized(&region) {
+      continue;
+    }
     let rendered = pdf_oxide::rendering::render_page_region(
       doc,
       page_0based,
@@ -60,6 +65,24 @@ pub(crate) fn render_vector_diagram_regions(
     }
   }
   out
+}
+
+/// Would rasterizing this region at 120 DPI ask for an unreasonable image?
+///
+/// A detected region is clamped to the page's media box and nothing else, and
+/// the media box is a number in the document. At 120 DPI each point becomes
+/// 1.67 px and each pixel four bytes, so the 14400pt page the PDF spec permits
+/// rasterizes to 24000 x 24000 — 2.3 GB, for a "diagram". 64 megapixels is
+/// ~256 MB and still far past anything real: a letter page is 1.4k x 1.8k px,
+/// 2.6 MP, and a region is only ever a part of one. Whatever survives is about
+/// to be downsampled to `col` terminal cells regardless.
+#[cfg(feature = "pdf-rendering")]
+fn region_raster_is_oversized(region: &PdfRegion) -> bool {
+  const MAX_REGION_PIXELS: f32 = 64_000_000.0;
+  const SCALE: f32 = 120.0 / 72.0;
+
+  let pixels = (region.width * SCALE) * (region.height * SCALE);
+  !pixels.is_finite() || pixels > MAX_REGION_PIXELS
 }
 
 #[cfg(any(feature = "pdf-rendering", feature = "pdf-ocr-bundled"))]

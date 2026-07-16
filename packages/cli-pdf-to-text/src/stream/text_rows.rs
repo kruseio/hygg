@@ -100,7 +100,7 @@ pub(crate) fn filter_visual_text_rows(
 pub(crate) fn normalize_visual_text_row(text: &str) -> String {
   let mut normalized = String::with_capacity(text.len());
   for ch in text.chars() {
-    if is_private_use_or_format_char(ch) {
+    if is_private_use_or_format_char(ch) || is_terminal_control_char(ch) {
       continue;
     }
     if ch == '\u{00A0}' {
@@ -122,6 +122,13 @@ fn is_private_use_or_format_char(ch: char) -> bool {
       | '\u{200B}'..='\u{200D}'
       | '\u{2060}'
   )
+}
+
+/// Cc: ESC and friends are obeyed by a terminal rather than printed, and a
+/// glyph's decoded value is document data. See the twin in sanitize/chars.rs
+/// for the full reasoning; TAB is kept because it is layout.
+fn is_terminal_control_char(ch: char) -> bool {
+  ch.is_control() && ch != '\t'
 }
 
 fn is_visual_running_header(text: &str) -> bool {

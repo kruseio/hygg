@@ -167,7 +167,18 @@ fi
 # Commit first, tag second. The tag would carry the commit with it either way,
 # but this order means a rejected push leaves no tag behind to clean up, and
 # main never points at something the tag does not.
-$bump && git push --quiet origin main && echo "pushed main"
+#
+# `if`, not `$bump && git push ... && echo ...`: errexit is ignored for every
+# command of an AND-OR list but the last, so a rejected push — a protected
+# branch, a race, no network — would not have stopped the script. It would have
+# gone on to tag anyway, and that tag is the trigger for four workflows and an
+# irreversible crates.io publish of a commit origin/main does not have. The
+# whole point of the ordering above is that the push is what gates the tag, so
+# the push has to be able to fail.
+if $bump; then
+  git push --quiet origin main
+  echo "pushed main"
+fi
 
 git tag -a "$VERSION" -m "$VERSION"
 git push --quiet origin "refs/tags/$VERSION"

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Write versions.json + versions.html listing every pinned PWA deploy.
 
-The Pages site keeps one directory per tag (v0.1.21/, v0.1.22/, ...) alongside
-the latest build at the root. This enumerates them newest-first so a pinned
-version is discoverable without knowing tag names by heart.
+The Pages site keeps one directory per tag (0.1.21/, 0.1.22/, ...) alongside the
+latest build at the root. This enumerates them newest-first so a pinned version
+is discoverable without knowing tag names by heart.
 
 Usage: write_versions_index.py <site-dir> <base-url>
 Example: write_versions_index.py site /hygg/
@@ -14,7 +14,10 @@ import re
 import sys
 from pathlib import Path
 
-VERSION_DIR = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:[-.](.+))?$")
+# The `v` is optional because this repository's tags are bare — 0.1.22, not
+# v0.1.22. Requiring it matched none of the directories pages.yml actually
+# writes, so every pinned deploy was left out of both files this generates.
+VERSION_DIR = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-.](.+))?$")
 
 
 def sort_key(name: str):

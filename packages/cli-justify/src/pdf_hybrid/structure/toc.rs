@@ -226,12 +226,20 @@ pub(crate) fn normalize_preserved_compact_layout_line(line: &str) -> String {
   }
 
   let after_label = &trimmed[label_end..];
-  let label_gap_width =
-    after_label.chars().take_while(|ch| ch.is_whitespace()).count();
-  if label_gap_width == 0 {
+  // Measure the gap in bytes, not characters. `label_end` is a byte offset from
+  // `find`, and a single Unicode space such as U+2003 EM SPACE is one character
+  // but three bytes — slicing by the character count lands one byte inside its
+  // encoding, which panics. A caption like "FIGURE\u{2003}1  title" reaches
+  // here from the public justify_pdf_hybrid entry point.
+  let label_gap_len: usize = after_label
+    .chars()
+    .take_while(|ch| ch.is_whitespace())
+    .map(char::len_utf8)
+    .sum();
+  if label_gap_len == 0 {
     return line.to_string();
   }
-  let after_label = &after_label[label_gap_width..];
+  let after_label = &after_label[label_gap_len..];
 
   let mut number_end = 0usize;
   for ch in after_label.chars() {

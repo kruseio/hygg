@@ -79,6 +79,12 @@ pub(crate) fn ocr_dynamic_image_text_rows(
   image: &image::DynamicImage,
   pdf_region: PdfRegion,
 ) -> Vec<VisualTextRow> {
+  // Bound the recognition input against an absurdly large embedded image; see
+  // ocr_size_guarded. The anchor math below normalizes span polygons by
+  // image_width/image_height, so those must come from the guarded image the
+  // engine actually saw, not the original — otherwise every anchor shifts.
+  let image = crate::ocr::ocr_size_guarded(image);
+  let image = image.as_ref();
   let Ok(output) = engine.ocr_image(image) else {
     return Vec::new();
   };

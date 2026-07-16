@@ -50,35 +50,105 @@ env:
     devices. Single Rust binary backed by SQLite.
   DOCS_URL: https://github.com/kruseio/hygg/blob/main/packages/hygg-server/README.md
 
+# Read by default; the two jobs that push to GHCR re-grant themselves the
+# `packages: write` they need. Without this, a job that declared no permissions
+# would inherit the repository's default token scope, which can be write. The
+# scheduled and pull-request runs of the build job below still carry
+# `packages: write` because job permissions are static across triggers and the
+# tag run of that same job pushes by digest — tightening that further means
+# splitting the tag-only push into its own job, tracked separately.
+permissions:
+  contents: read
+
 concurrency:
   group: docker-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  # Non-tag runs — pull requests, the weekly cache warm, manual dispatch — only
+  # prove the image still builds and runs. They push nothing, so they hold no
+  # registry token: this job is `contents: read` and never logs in to GHCR.
+  # That is the whole reason the build is split in two rather than one job with
+  # per-step `if`s — job permissions are static across triggers, so the only way
+  # the scheduled path can be denied `packages: write` is for its work to live
+  # in a job that never asks for it. amd64 only; arm64 is a tag-time concern.
+  ci-build:
+    name: build (amd64)
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (load, no push)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/hygg-server/Dockerfile
+          platforms: linux/amd64
+          cache-from: type=gha,scope=amd64
+          cache-to: type=gha,mode=max,scope=amd64
+          # Load into the local daemon so the smoke test has something to run,
+          # and push nowhere.
+          load: true
+          tags: hygg-server:ci
+
+      - name: Smoke test
+        env:
+          REF: hygg-server:ci
+        run: |
+          set -euo pipefail
+          docker run -d --name smoke -p 3032:3032 "$REF"
+          ok=
+          for _ in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:3032/health 2>/dev/null | grep -q '"ok"'; then
+              ok=1; break
+            fi
+            sleep 1
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::server never answered /health"
+            docker logs smoke
+            exit 1
+          fi
+          echo "health: ok"
+          # The dependency /convert needs; absent, DOCX/ODT/RTF 500 at runtime.
+          docker exec smoke pandoc --version | head -1
+          docker stop smoke >/dev/null
+
+  # Tag runs build both arches by digest and push them. This is the only build
+  # job that holds `packages: write`, and it runs on tags alone.
+  release-build:
     name: build (${{ matrix.arch }})
-    # Both arches on a tag; amd64 alone on a pull request, which only needs to
-    # prove the image still builds — arm64 there would double the wait for no
-    # extra signal. The selection lives in the matrix because a job-level `if`
-    # cannot see the `matrix` context, while `strategy` can see `github`.
+    if: github.ref_type == 'tag'
     strategy:
       fail-fast: false
       matrix:
-        include: >-
-          ${{ github.ref_type == 'tag'
-          && fromJSON('[{"runner":"ubuntu-22.04","platform":"linux/amd64","arch":"amd64"},{"runner":"ubuntu-22.04-arm","platform":"linux/arm64","arch":"arm64"}]')
-          || fromJSON('[{"runner":"ubuntu-22.04","platform":"linux/amd64","arch":"amd64"}]') }}
+        include:
+          - runner: ubuntu-22.04
+            platform: linux/amd64
+            arch: amd64
+          - runner: ubuntu-22.04-arm
+            platform: linux/arm64
+            arch: arm64
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: github.ref_type == 'tag'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -103,8 +173,9 @@ jobs:
             org.opencontainers.image.documentation=${{ env.DOCS_URL }}
 
       # Cache scoped per arch: the two runners produce different layers, and a
-      # shared scope would have them evicting each other on every run.
-      - name: Build${{ github.ref_type == 'tag' && ' and push by digest' || '' }}
+      # shared scope would have them evicting each other on every run. The amd64
+      # scope is the one ci-build warms and reads.
+      - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v6
         with:
@@ -114,14 +185,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
-          # On a tag: push the arch-specific layers unnamed, to be joined into a
-          # manifest below. On a PR: load it into the local daemon instead, so
-          # the smoke test below has something to run, and push nowhere.
-          load: ${{ github.ref_type != 'tag' }}
-          tags: ${{ github.ref_type != 'tag' && 'hygg-server:ci' || '' }}
-          outputs: ${{ github.ref_type == 'tag'
-            && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE)
-            || '' }}
+          # Push the arch-specific layers unnamed, to be joined into a manifest
+          # by the merge job below.
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       # Compiling is not the same as running. The image previously shipped
       # without pandoc, which `/convert` shells out to, and the binary links
@@ -130,9 +196,7 @@ jobs:
       # so it can execute it directly.
       - name: Smoke test
         env:
-          REF: ${{ github.ref_type == 'tag'
-            && format('{0}@{1}', env.IMAGE, steps.build.outputs.digest)
-            || 'hygg-server:ci' }}
+          REF: ${{ format('{0}@{1}', env.IMAGE, steps.build.outputs.digest) }}
         run: |
           set -euo pipefail
           docker run -d --name smoke -p 3032:3032 "$REF"
@@ -154,7 +218,6 @@ jobs:
           docker stop smoke >/dev/null
 
       - name: Export digest
-        if: github.ref_type == 'tag'
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
@@ -165,7 +228,6 @@ jobs:
           touch "/tmp/digests/${DIGEST#sha256:}"
 
       - uses: actions/upload-artifact@v4
-        if: github.ref_type == 'tag'
         with:
           name: digest-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -176,7 +238,7 @@ jobs:
   # resolves to the right architecture on its own.
   merge:
     name: publish manifest
-    needs: build
+    needs: release-build
     if: github.ref_type == 'tag'
     runs-on: ubuntu-22.04
     permissions:

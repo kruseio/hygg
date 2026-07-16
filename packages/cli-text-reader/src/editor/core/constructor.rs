@@ -5,6 +5,31 @@ use arboard::Clipboard;
 use cli_pdf_to_text::PdfLineKind;
 use crossterm::terminal;
 
+/// Strip terminal control characters from a document line.
+///
+/// The reader writes each line straight to the terminal, and a document is
+/// untrusted input — the README itself suggests `curl example.com | hygg`, and
+/// a plain file or EPUB can carry anything. A terminal *executes* the C0/C1
+/// controls rather than printing them: ESC opens the CSI/OSC sequences that
+/// repaint the screen, retitle the window, or write the clipboard (OSC 52), and
+/// U+009B is an 8-bit CSI. None of that belongs in prose, so drop the whole
+/// class. TAB is kept — it is legitimate layout — and no newline reaches here,
+/// since lines are already split.
+///
+/// This is the funnel for stdin, plain-text, and EPUB content, which all arrive
+/// stamped `PdfLineKind::Text`. PDF text is already sanitized by
+/// cli-pdf-to-text before it gets here, and the streaming PDF path carries its
+/// own line kinds (image rows are `AnsiArt`, whose escapes *are* the content) —
+/// neither passes through this constructor, so nothing legitimately colored is
+/// touched.
+fn sanitize_document_line(line: &str) -> String {
+  if line.chars().any(|c| c.is_control() && c != '\t') {
+    line.chars().filter(|&c| !c.is_control() || c == '\t').collect()
+  } else {
+    line.to_string()
+  }
+}
+
 impl Editor {
   pub fn new(lines: Vec<String>, col: usize) -> Self {
     Self::new_internal(lines, col, None)
@@ -24,6 +49,13 @@ impl Editor {
     raw_content: Option<String>,
   ) -> Self {
     crate::debug::debug_log("editor", "Creating new Editor instance");
+
+    // Neutralize terminal control sequences in the document before it is stored
+    // or rendered. See sanitize_document_line: this constructor is the entry
+    // for stdin/plain-text/EPUB content, which is untrusted and printed
+    // verbatim.
+    let lines: Vec<String> =
+      lines.iter().map(|line| sanitize_document_line(line)).collect();
 
     // Generate hash from raw content if provided, otherwise from lines
     let document_hash = if let Some(content) = &raw_content {
@@ -114,6 +146,7 @@ impl Editor {
       tutorial_start_time: None,
       demo_script: None,
       demo_action_index: 0,
+      demo_saved_highlights: None,
       demo_id: None,
       demo_last_action_time: None,
       demo_hint_text: None,
@@ -174,5 +207,40 @@ impl Editor {
       reading_last_flush: std::time::Instant::now(),
       exit_to_home: false,
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn document_lines_are_stripped_of_terminal_controls() {
+    // An OSC 52 clipboard write and a CSI colour, as a hostile `curl | hygg`
+    // response might carry. Removing the control bytes (ESC, BEL) is what
+    // disarms the sequence: with no ESC introducer the terminal cannot act on
+    // the leftover printable body, so the clipboard is never written and the
+    // colour never applied — even though `]52;c;…` survives as inert text.
+    let editor = Editor::new(
+      vec![
+        "hello\x1b]52;c;cGF5bG9hZA==\x07world".to_string(),
+        "\x1b[31mred\x1b[0m text\ttabbed".to_string(),
+      ],
+      80,
+    );
+    // No ESC remains, so nothing the terminal will execute does.
+    assert!(!editor.lines.iter().any(|l| l.contains('\x1b')));
+    assert!(!editor.lines.iter().any(|l| l.contains('\x07')));
+    // The visible characters and a real tab are preserved.
+    assert!(
+      editor.lines[0].contains("hello") && editor.lines[0].contains("world")
+    );
+    assert_eq!(editor.lines[1], "[31mred[0m text\ttabbed");
+  }
+
+  #[test]
+  fn ordinary_text_is_untouched() {
+    let editor = Editor::new(vec!["a normal line of prose".to_string()], 80);
+    assert_eq!(editor.lines[0], "a normal line of prose");
   }
 }

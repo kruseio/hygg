@@ -8,6 +8,11 @@ impl Editor {
   pub fn start_demo_mode(&mut self, demo_id: usize) {
     self.debug_log(&format!("Starting demo mode with ID: {demo_id}"));
 
+    // Remember the document's real highlights before the demo touches them: the
+    // demo runs `:h` and its cleanup rewrites the highlight file, so without
+    // this a demo over a real document erases that document's highlights.
+    self.demo_saved_highlights = Some(self.highlights.highlights.clone());
+
     // Load demo content if the document is empty or inappropriate for demo
     if self.lines.is_empty() || self.lines.len() < 10 {
       self.load_demo_content(demo_id);
@@ -69,8 +74,19 @@ impl Editor {
     self.demo_pending_keys.clear();
     self.demo_last_action_time = None;
 
-    // Clear all highlights created during demo
-    self.highlights.clear_all_highlights();
+    // Restore the highlights the document had before the demo, rather than
+    // clearing everything: the demo added its own via `:h`, but it ran on the
+    // user's real document, so a blanket clear (which also rewrites the file)
+    // took the user's highlights with it. Restoring the snapshot both drops the
+    // demo's additions and rewrites the original set to disk.
+    if let Some(saved) = self.demo_saved_highlights.take() {
+      self.highlights.highlights = saved;
+      if let Err(e) = crate::highlights::save_highlights(&self.highlights) {
+        self.debug_log(&format!("Failed to restore demo highlights: {e}"));
+      }
+    } else {
+      self.highlights.clear_all_highlights();
+    }
 
     // Clear selection state
     self.clear_selection();
