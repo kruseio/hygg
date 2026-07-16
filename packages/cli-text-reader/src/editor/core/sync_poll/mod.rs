@@ -34,6 +34,12 @@ impl Editor {
           self.create_overlay("notification", lines);
           self.mark_dirty();
         }
+        SyncEvent::Connectivity { online } => {
+          if self.sync_offline == online {
+            self.sync_offline = !online;
+            self.mark_dirty();
+          }
+        }
         SyncEvent::Progress(progress) if is_current(&progress.book_id) => {
           self.handle_server_progress(progress);
         }
@@ -239,3 +245,5 @@ impl Editor {
 mod tests_basic;
 #[cfg(test)]
 mod tests_pdf;
+#[cfg(test)]
+mod tests_snapshot;

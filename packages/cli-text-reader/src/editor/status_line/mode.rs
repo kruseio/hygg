@@ -134,6 +134,17 @@ impl Editor {
               crossterm::terminal::ClearType::UntilNewLine
             )
           )?;
+        } else if self.sync_offline {
+          write!(
+            stdout,
+            "⚠ no connection to sync server — progress saved locally, syncs when it's back"
+          )?;
+          execute!(
+            stdout,
+            crossterm::terminal::Clear(
+              crossterm::terminal::ClearType::UntilNewLine
+            )
+          )?;
         } else {
           execute!(
             stdout,
@@ -216,6 +227,11 @@ impl Editor {
           )?;
         } else if let Some(err) = self.tts_error_message() {
           write!(buffer, "⚠ narration: {err}")?;
+        } else if self.sync_offline {
+          write!(
+            buffer,
+            "⚠ no connection to sync server — progress saved locally, syncs when it's back"
+          )?;
         }
       }
     }

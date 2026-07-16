@@ -164,6 +164,7 @@ impl Editor {
       last_synced_offset: None,
       last_local_progress_updated_at: None,
       startup_progress_reconcile: false,
+      sync_offline: false,
       reading_time_seconds: 0,
       reading_accrued: 0.0,
       reading_persisted_seconds: 0,

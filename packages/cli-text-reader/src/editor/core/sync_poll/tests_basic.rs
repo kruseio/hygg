@@ -263,21 +263,3 @@ fn grace_expiry_keeps_local_and_clears_the_prompt() {
   assert!(editor.pending_server_progress.is_none());
   assert!(editor.server_progress_scroll_at.is_none());
 }
-
-#[test]
-fn exit_snapshot_does_not_re_push_an_unchanged_position() {
-  use crate::editor::core::SnapshotReason;
-  let mut editor = editor_at(40, 1_000);
-  // Line 40 was already synced this session.
-  editor.last_synced_offset = Some(40);
-
-  // Leaving without moving must not re-assert it — that fresh-timestamped push
-  // would clobber a peer's newer position under last-write-wins.
-  assert!(!editor.snapshot_should_push(SnapshotReason::Exit, 40));
-  assert!(!editor.snapshot_should_push(SnapshotReason::Passive, 40));
-
-  // But an explicit `:sync` always pushes, and a position the user *moved* to
-  // still flushes on exit.
-  assert!(editor.snapshot_should_push(SnapshotReason::Explicit, 40));
-  assert!(editor.snapshot_should_push(SnapshotReason::Exit, 55));
-}

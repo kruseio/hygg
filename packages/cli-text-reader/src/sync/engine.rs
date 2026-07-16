@@ -134,6 +134,9 @@ pub fn run_engine(
     match sync_once(&client, &mut pending, &mut cursor, &tx, &clock) {
       Ok(()) => {
         failures = 0;
+        if !healthy {
+          let _ = tx.send(SyncEvent::Connectivity { online: true });
+        }
         healthy = true;
         let interval = if sse_healthy { SLOW_INTERVAL } else { FAST_INTERVAL };
         next_attempt = Instant::now() + interval;
@@ -148,8 +151,15 @@ pub fn run_engine(
       Err(message) => {
         failures = (failures + 1).min(MAX_BACKOFF_SHIFT);
         next_attempt = Instant::now() + FAST_INTERVAL * (1 << failures);
-        // Announce on explicit request, or once when sync first breaks.
-        if report_status || healthy {
+        // The transition into failure raises the passive offline indicator,
+        // not an overlay: an unreachable server (laptop offline, server down)
+        // is a background condition the reader lives with, so it must never
+        // interrupt reading. Only an explicitly requested sync reports its
+        // failure as a notification.
+        if healthy {
+          let _ = tx.send(SyncEvent::Connectivity { online: false });
+        }
+        if report_status {
           let _ = tx.send(SyncEvent::Status {
             ok: false,
             message: format!("Sync failed: {message}"),

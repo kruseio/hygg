@@ -33,6 +33,18 @@ impl Editor {
     if self.total_lines == 0 {
       return Ok(());
     }
+    // Reading progress is a property of the document buffer (index 0) alone.
+    // While an overlay or split buffer owns the editor, `offset`/`cursor_y`/
+    // `total_lines` describe *that* buffer — a save here would record e.g. the
+    // top of a 3-line notification as "position 0 of a 3-line document" and
+    // push it to the server with a fresh timestamp, clobbering the real
+    // position on every device under last-write-wins. (This is exactly what
+    // the offline "Sync failed" overlay used to do: its periodic passive
+    // saves silently reset the book to 0%.) The document's own position was
+    // saved when it was last active and is saved again on return/exit.
+    if self.active_buffer != 0 {
+      return Ok(());
+    }
     if self.pdf_pending.is_some() && self.pdf_streaming.is_none() {
       return Ok(());
     }

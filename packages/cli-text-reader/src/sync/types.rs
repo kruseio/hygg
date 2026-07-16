@@ -142,7 +142,18 @@ pub enum SyncCmd {
 /// single changed row for the editor to act on (jump prompt for progress;
 /// apply-and-persist for annotations of the current book).
 pub enum SyncEvent {
-  Status { ok: bool, message: String },
+  Status {
+    ok: bool,
+    message: String,
+  },
+  /// Server reachability changed. Sent once per transition (never per retry):
+  /// `online: false` when a sync cycle first fails, `online: true` when a
+  /// later cycle succeeds again. Drives the passive status-line indicator —
+  /// unlike `Status`, it never raises an overlay, so an unreachable server
+  /// doesn't interrupt reading.
+  Connectivity {
+    online: bool,
+  },
   SyncCycleComplete,
   Progress(ServerProgress),
   Bookmark(ServerBookmark),

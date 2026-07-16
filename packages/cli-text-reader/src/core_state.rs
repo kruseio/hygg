@@ -182,6 +182,11 @@ pub struct Editor {
   // True until the first successful startup pull completes. During this window
   // newer server progress is applied automatically instead of prompting.
   pub startup_progress_reconcile: bool,
+  // Whether the sync server is currently unreachable (set/cleared by the
+  // engine's `Connectivity` transitions). Shown as a passive status-line note
+  // — the offline analogue of the PWA's connection toast — and cleared the
+  // moment a sync cycle succeeds again.
+  pub sync_offline: bool,
   // Cumulative active reading time for the current document on this device, in
   // seconds. Seeded from saved progress on open so it accrues across sessions.
   pub reading_time_seconds: u64,
