@@ -963,7 +963,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cli-epub-to-text"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "epub",
  "html2text",
@@ -974,21 +974,21 @@ dependencies = [
 
 [[package]]
 name = "cli-image-to-ascii"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "image",
 ]
 
 [[package]]
 name = "cli-justify"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "getopts",
 ]
 
 [[package]]
 name = "cli-pdf-to-text"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "cli-image-to-ascii",
  "cli-justify",
@@ -1007,7 +1007,7 @@ dependencies = [
 
 [[package]]
 name = "cli-text-reader"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "arboard",
  "chrono",
@@ -3037,7 +3037,7 @@ dependencies = [
 
 [[package]]
 name = "hygg"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "clap",
  "cli-epub-to-text",
@@ -3051,11 +3051,11 @@ dependencies = [
 
 [[package]]
 name = "hygg-cff-parser"
-version = "0.1.24"
+version = "0.1.25"
 
 [[package]]
 name = "hygg-pdf-extract"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "adobe-cmap-parser",
  "encoding_rs",
@@ -3070,7 +3070,7 @@ dependencies = [
 
 [[package]]
 name = "hygg-pwa"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "base64 0.22.1",
  "cli-epub-to-text",
@@ -3097,7 +3097,7 @@ dependencies = [
 
 [[package]]
 name = "hygg-server"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "argon2",
  "async-trait",
@@ -3135,7 +3135,7 @@ dependencies = [
 
 [[package]]
 name = "hygg-shared"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "serde",
  "serde_json",
@@ -3145,7 +3145,7 @@ dependencies = [
 
 [[package]]
 name = "hygg-tauri"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "base64 0.22.1",
  "cli-epub-to-text",
@@ -5878,7 +5878,7 @@ dependencies = [
 
 [[package]]
 name = "redirect-stderr"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
