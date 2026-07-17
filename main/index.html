@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en" class="theme-dark">
+  <head>
+    <base href="/hygg/main/">
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5"
+    />
+    <meta name="theme-color" content="#0b0b0b" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="hygg" />
+    <title>hygg</title>
+
+    <!-- Relative, not root-absolute: the versioned Pages deploys serve this
+         bundle from /hygg/v<tag>/, where a leading "/" would escape the deploy.
+         These resolve against <base href> (injected per deploy by
+         tools/prepare_pages_dist.py), or against the document at "/" when there
+         is no base — the Tauri shell and a plain `trunk serve`. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="icons/icon-192.png" />
+
+    <!-- Trunk: copy static PWA assets to dist unhashed (referenced by name). -->
+    
+    
+    
+
+    <link rel="stylesheet" href="/hygg/main/main-53c97afff6cf17f0.css" integrity="sha384-ydcmbZbkwdnVe6pdPbELqJYnyjVRyjs5FT/gkghFXtIEu1M0dtynGVG6tqA2UEBg"/>
+    
+<script type="module">
+import init, * as bindings from '/hygg/main/hygg-pwa-f27630edc6cc2001.js';
+const wasm = await init({ module_or_path: '/hygg/main/hygg-pwa-f27630edc6cc2001_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+
+    <script>
+      // Capture the install prompt so the in-app banner can trigger it later.
+      window.__hyggDeferredPrompt = null;
+      window.addEventListener("beforeinstallprompt", (e) => {
+        e.preventDefault();
+        window.__hyggDeferredPrompt = e;
+        window.dispatchEvent(new Event("hygg:installable"));
+      });
+      window.__hyggInstall = async () => {
+        const e = window.__hyggDeferredPrompt;
+        if (!e) return "unavailable";
+        e.prompt();
+        const choice = await e.userChoice;
+        window.__hyggDeferredPrompt = null;
+        return choice.outcome;
+      };
+      window.addEventListener("appinstalled", () => {
+        window.__hyggDeferredPrompt = null;
+      });
+      // Register the service worker for offline support — but not inside the
+      // Tauri shell, where the bundle is already local (served over a custom
+      // protocol) so a SW is pointless and its registration can error.
+      if ("serviceWorker" in navigator && !window.__TAURI__) {
+        window.addEventListener("load", () => {
+          // Relative: resolves against <base href>, which both points at this
+          // deploy's own sw.js and scopes it to this deploy — so /hygg/ and
+          // /hygg/v0.1.21/ get independent workers instead of one stomping the
+          // other's cache.
+          navigator.serviceWorker.register("sw.js").catch(() => {});
+        });
+      }
+    </script>
+  <link rel="modulepreload" href="/hygg/main/hygg-pwa-f27630edc6cc2001.js" crossorigin="anonymous" integrity="sha384-hp6zkoYv1fp753k2uKbhfZ2SKVK5FqQvpykjkTIZV2Q3oySNY4ThtDQnd1Sbw3Y3"><link rel="preload" href="/hygg/main/hygg-pwa-f27630edc6cc2001_bg.wasm" crossorigin="anonymous" integrity="sha384-MxkAfCIrnR6bd2Lf/BU6qAqHoAz3+oWIOEkaH8ubHG9gc8wYqrA2UJdByXwNigaZ" as="fetch" type="application/wasm"></head>
+  <body></body>
+</html>
