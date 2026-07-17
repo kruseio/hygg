@@ -15,9 +15,10 @@ const DISMISS_KEY: &str = "hygg.install_dismissed";
 /// Shared flag: is the install banner currently on screen? Provided by `App`
 /// and mirrored here from [`Mode`]. The update banner reads it to stay hidden
 /// while this one is up, so the two fixed bottom banners never stack on top of
-/// each other — they can co-occur only in a browser tab that is both installable
-/// and behind, and there the install CTA takes the corner (a tab picks up a
-/// fresh build on any navigation regardless, via the network-first worker).
+/// each other — they can co-occur only in a browser tab that is both
+/// installable and behind, and there the install CTA takes the corner (a tab
+/// picks up a fresh build on any navigation regardless, via the network-first
+/// worker).
 #[derive(Clone, Copy)]
 pub struct InstallVisible(pub RwSignal<bool>);
 
