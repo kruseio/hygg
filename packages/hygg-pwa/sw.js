@@ -72,6 +72,29 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (belongsToAnotherDeploy(url)) return;
 
+  // The version manifest is a mutable pointer, like the HTML shell: the in-app
+  // update checker polls it to learn when a newer build has shipped, so a cached
+  // copy would freeze it at this build's view of "latest" and no update would
+  // ever surface. Network-first, keeping the last good copy under a query-
+  // stripped key as an offline fallback — the checker cache-busts with a query
+  // string, which would otherwise leave a dead cache entry per poll.
+  if (url.pathname.endsWith("/versions.json")) {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(CACHE);
+        const key = url.origin + url.pathname;
+        try {
+          const res = await fetch(req);
+          if (res && res.ok) cache.put(key, res.clone());
+          return res;
+        } catch (err) {
+          return (await cache.match(key)) || Response.error();
+        }
+      })(),
+    );
+    return;
+  }
+
   if (req.mode === "navigate") {
     event.respondWith(
       (async () => {

@@ -12,6 +12,15 @@ use wasm_bindgen::prelude::*;
 
 const DISMISS_KEY: &str = "hygg.install_dismissed";
 
+/// Shared flag: is the install banner currently on screen? Provided by `App`
+/// and mirrored here from [`Mode`]. The update banner reads it to stay hidden
+/// while this one is up, so the two fixed bottom banners never stack on top of
+/// each other — they can co-occur only in a browser tab that is both installable
+/// and behind, and there the install CTA takes the corner (a tab picks up a
+/// fresh build on any navigation regardless, via the network-first worker).
+#[derive(Clone, Copy)]
+pub struct InstallVisible(pub RwSignal<bool>);
+
 #[derive(Clone, Copy, PartialEq)]
 enum Mode {
   Hidden,
@@ -22,6 +31,12 @@ enum Mode {
 #[component]
 pub fn InstallPrompt() -> impl IntoView {
   let mode = RwSignal::new(Mode::Hidden);
+
+  // Keep the shared visibility flag in step with our mode, so a sibling banner
+  // can defer to us. No-op when the context isn't provided (e.g. in isolation).
+  if let Some(vis) = use_context::<InstallVisible>() {
+    Effect::new(move |_| vis.0.set(mode.get() != Mode::Hidden));
+  }
 
   Effect::new(move |prev: Option<()>| {
     if prev.is_some() {

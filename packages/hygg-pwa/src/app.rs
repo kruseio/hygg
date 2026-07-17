@@ -7,7 +7,7 @@ use leptos::prelude::*;
 use leptos_router::components::{Route, Router, Routes};
 use leptos_router::path;
 
-use crate::components::InstallPrompt;
+use crate::components::{InstallPrompt, InstallVisible, UpdatePrompt};
 use crate::github::GithubStars;
 use crate::routes::{About, Credits, Home, Reader, SettingsView};
 use crate::settings::Settings;
@@ -48,6 +48,14 @@ fn router_base() -> Cow<'static, str> {
   BASE.with(|base| Cow::Owned(base.clone()))
 }
 
+/// This bundle's deploy base path — "" at the origin root (the Tauri shell,
+/// `trunk serve`), else no trailing slash ("/hygg", "/hygg/0.1.26",
+/// "/hygg/main"). The update checker derives the Pages site root — and hence
+/// the version manifest — from it.
+pub fn deploy_base() -> String {
+  BASE.with(|base| base.clone())
+}
+
 /// An in-app link target — always route this through here rather than writing
 /// `<A href="/settings">` directly.
 ///
@@ -67,6 +75,8 @@ pub fn App() -> impl IntoView {
   // Shared star count for the top-bar pill and the About page. Lazy — no
   // network request until a component that shows stars asks for it.
   provide_context(GithubStars::new());
+  // Lets the update banner defer to the install banner so they never overlap.
+  provide_context(InstallVisible(RwSignal::new(false)));
 
   // Reflect the chosen theme onto <html> so the stylesheet can theme globally.
   Effect::new(move |_| {
@@ -88,6 +98,7 @@ pub fn App() -> impl IntoView {
         <Route path=path!("/credits") view=Credits/>
       </Routes>
       <InstallPrompt/>
+      <UpdatePrompt/>
     </Router>
   }
 }
