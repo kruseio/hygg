@@ -1,0 +1,1 @@
+../../../../docs/pages/responsible-ai.md

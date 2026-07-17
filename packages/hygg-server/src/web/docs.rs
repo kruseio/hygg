@@ -72,6 +72,11 @@ const DOC_SOURCES: &[DocSource] = &[
     markdown: include_str!("../../docs/pages/development.md"),
   },
   DocSource {
+    slug: "responsible-ai",
+    title: "Responsible AI",
+    markdown: include_str!("../../docs/pages/responsible-ai.md"),
+  },
+  DocSource {
     slug: "benchmark",
     title: "Benchmark",
     markdown: include_str!("../../docs/pages/benchmark.md"),

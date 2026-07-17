@@ -20,6 +20,7 @@ async fn docs_index_lists_every_page_and_offers_search() {
     "text-to-speech",
     "reference",
     "development",
+    "responsible-ai",
     "benchmark",
   ] {
     assert!(
