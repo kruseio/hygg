@@ -1,4 +1,4 @@
-// Demo content for marketing demonstration
+// Demo content for the feature showcase
 
 #[allow(dead_code)]
 pub fn get_demo_content() -> Vec<String> {

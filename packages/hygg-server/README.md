@@ -8,13 +8,15 @@ Built as a single Rust binary: `axum` + `tokio` + `sea-orm`, server-rendered
 UI, no Node build step. Stores everything in **SQLite** — a file, no extra
 services to run.
 
-> Status: progress + bookmark/highlight/note sync, documents/blobs,
-> per-device auth and document scopes, request body caps, payment gating, SSE push, and the
-> multi-tenant data model are implemented and tested. The server-rendered web UI
-> includes signup, password/recovery login, user device-token creation, and an
-> admin backoffice for users, roles, disabling users, device permissions/tokens,
-> recovery passwords, and passkey revocation. Full WebAuthn passkey ceremonies
-> and rate limiting are still on the roadmap.
+> Status: progress + bookmark/highlight/note sync, documents/blobs, per-device
+> auth and document scopes, request body caps, auth rate limiting, SSE push,
+> organizations with groups and permissions, peer document sharing, export/import,
+> and the multi-tenant data model are implemented and tested. The server-rendered
+> web UI includes signup, password/recovery login, full WebAuthn passkey
+> registration and login ceremonies, browser session management, user
+> device-token creation, a `/docs` help center, and an admin backoffice for users,
+> roles, disabling users, device permissions/tokens, recovery passwords, and
+> passkey revocation.
 
 ## One-command self-host (SQLite)
 
@@ -93,7 +95,7 @@ All settings come from environment variables (autoloaded from `.env`). See
 | `MAX_BODY_BYTES` | `134217728` | max request body (caps blob uploads; 413 over) |
 | `ADMIN_BOOTSTRAP_EMAIL` / `_PASSWORD` | — | create the first admin on an empty DB |
 | `SESSION_SECRET` | — | reserved for signed-cookie deployments; sessions are DB-backed opaque ids |
-| `RP_ID` / `RP_ORIGIN` / `RP_NAME` | localhost | WebAuthn / passkeys (future ceremonies) |
+| `RP_ID` / `RP_ORIGIN` / `RP_NAME` | localhost | WebAuthn relying party for the passkey ceremonies |
 
 If the server was started once before `ADMIN_BOOTSTRAP_*` was set, add those
 values to `.env` and restart it. Startup will create the admin, or promote and
@@ -139,8 +141,8 @@ curl -X POST http://localhost:3032/api/v1/devices/register \
 
 All endpoints require `Authorization: Bearer <token>` except `register`.
 
-All endpoints below `register` require a token. Nothing else is gated: a
-downstream `Entitlements` implementation may additionally answer 403 on sync,
+All endpoints below `register` require a token, and nothing else is restricted.
+A downstream `Entitlements` implementation may additionally answer 403 on sync,
 document and blob endpoints — in its own words, which clients show as-is —
 while `me` and device management stay available.
 
@@ -197,22 +199,25 @@ that propagates to other devices). Examples:
 
 `hygg-server` is source-available (Elastic License 2.0) and published to
 crates.io, and it is designed to be embedded as a Rust library and extended
-in-process — no forking, no REST shim. A downstream crate can add its own rules,
-pages and limits this way, and the result is a single statically-linked binary.
+in-process — no forking, no REST shim. A downstream crate can add its own rules
+and pages this way, and the result is a single statically-linked binary.
 
 The extension seams are plain Rust APIs:
 
 - **`ext::Entitlements`** — an `Arc<dyn Entitlements>` held in `AppState`
-  (default `NoopEntitlements` = fully open). Override `resolve` (personal sync +
-  workspace access), `authorize_device_registration`, `authorize_upload`,
-  `org_caps`, `tier_label`, `storage_limit`, `org_limits` to gate access and
-  drive the quota UI. Install with
-  `AppState::new(db, config).with_entitlements(...)`.
+  (default `NoopEntitlements` = fully open, nothing restricted). Override
+  `resolve` (personal sync + workspace access), `sync_denial`,
+  `authorize_device_registration`, `authorize_upload`, `org_caps`,
+  `authorize_share_participant`, `share_limit`, `account_label`,
+  `storage_limit` or `org_limits` to answer any of those questions differently.
+  An override that declines supplies its own wording via `Denial`, which the
+  core relays untouched — no policy or vocabulary is the core's concern.
+  Install with `AppState::new(db, config).with_entitlements(...)`.
 - **`ext::WebExt`** — injects presentation into the core's server-rendered
-  pages: extra admin sidenav links, the devices-page quota badge, org plan
-  panels, org-wizard fields (+ `on_org_created`), admin dashboard panels, and
-  the redirect target for users without workspace access. Install with
-  `.with_web_ext(...)`.
+  pages: extra admin sidenav links and nav groups, extra CSS, account rows, the
+  devices-page panel head, org panels, org-wizard fields (+ `on_org_created`),
+  admin dashboard panels, and the redirect target for users without workspace
+  access. Install with `.with_web_ext(...)`.
 - **`migration::SchemaExt`** — your own migrations, run after the core's
   against the same database. Additive only: add tables that reference the
   core's by id rather than altering them. Name them so they cannot collide

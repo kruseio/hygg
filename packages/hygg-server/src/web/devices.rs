@@ -21,7 +21,7 @@ pub(crate) async fn devices_page(
   let active = devices.len() as i64;
   // The web extension may replace the panel head; the core default is a plain
   // count.
-  let quota_head =
+  let panel_head =
     state.web_ext.devices_panel_head(&user, active).await.unwrap_or_else(
       || {
         format!(
@@ -72,7 +72,7 @@ pub(crate) async fn devices_page(
         </section>
         {quick_start}
       </div>
-      <section class="panel">{quota_head}
+      <section class="panel">{panel_head}
         <table><thead><tr><th>Name</th><th>Platform</th><th>Default access</th><th></th></tr></thead>
         <tbody>{rows}</tbody></table>
       </section>"#,

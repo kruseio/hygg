@@ -31,8 +31,8 @@ pub struct NavLink {
 /// Who sees an injected [`NavGroup`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NavAudience {
-  /// Everyone, signed in or not. Marketing nav wants this: a visitor who
-  /// lands on a public page keeps the group as they move through the app.
+  /// Everyone, signed in or not. A public-page nav group wants this: a visitor
+  /// who lands on one keeps the group as they move through the app.
   Everyone,
   /// Signed-in users only.
   SignedIn,

@@ -16,7 +16,7 @@ use hygg_shared::sync::proto::DenialBody;
 pub const OVERSCAN: usize = 8;
 
 /// Build the scroll body: while the book is loading show the spinner (or a load
-/// error with an optional upgrade link); once loaded, render the virtualized
+/// error with the server's optional link); once loaded, render the virtualized
 /// window around the current scroll position. `line_h` is the reader's fitted
 /// line height, evaluated only past the loading guard so its reactive deps are
 /// tracked exactly as when this lived inline in the reader.

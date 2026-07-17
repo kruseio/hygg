@@ -203,7 +203,7 @@ fn sync_once(
   // Upload books best-effort: a vanished or rejected document must never block
   // progress sync. A successful upload is removed from the queue; an unreadable
   // file or a permanent server rejection (4xx — e.g. the content already exists
-  // under another account, or the plan's storage is full) is dropped with a
+  // under another account, or the server declined the upload) is dropped with a
   // one-off status so the user learns why; a transient error keeps the book
   // queued to retry next cycle.
   let book_ids: Vec<String> = pending.books.keys().cloned().collect();

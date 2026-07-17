@@ -9,7 +9,7 @@
 //!    `HYGG_PWA_SERVER_URL` in `packages/hygg-pwa/.env` (gitignored) — this
 //!    emits it as a compile-time env var that `Settings::default` reads via
 //!    `option_env!`, so no address is hardcoded (or committed) in the source.
-//!    Unset → the SaaS default. An explicit environment variable takes
+//!    Unset → the hosted default. An explicit environment variable takes
 //!    precedence over the `.env` file.
 
 use std::path::Path;

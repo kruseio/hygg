@@ -75,7 +75,7 @@ pub struct Editor {
   pub demo_action_index: usize,
   // The document's real highlights, snapshotted when a demo starts. The demo
   // drives `:h` on the user's own document and its cleanup used to clear every
-  // highlight for that document from disk — so a marketing demo run over a
+  // highlight for that document from disk — so a showcase demo run over a
   // real book erased that book's highlights. Restored verbatim on
   // completion.
   pub demo_saved_highlights: Option<Vec<crate::highlights::Highlight>>,

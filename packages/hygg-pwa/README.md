@@ -43,9 +43,9 @@ it still extracts fully offline with no server.
   a settings gear and back navigation. No keyboard / vim surface.
 - **Installable.** A dismiss-once banner offers home-screen install (Chromium
   `beforeinstallprompt`; iOS/iPadOS "Add to Home Screen" instructions).
-- **Sync (optional).** Connect a server (defaults to the SaaS) to push/pull
-  reading progress and your library across devices — all best-effort, the reader
-  never depends on it.
+- **Sync (optional).** Connect a `hygg-server` — your own, or the hosted one it
+  defaults to — to push/pull reading progress and your library across devices,
+  all best-effort; the reader never depends on it.
 - **Read aloud.** A speaker button narrates the document line-by-line via the Web
   Speech API, highlighting the current line and auto-scrolling to follow along.
 - **Settings.** Font size, theme (dark/light/sepia), import column width,
@@ -53,8 +53,9 @@ it still extracts fully offline with no server.
 
 Formats: TXT / Markdown / EPUB / text-PDF are extracted **client-side** (offline).
 Scanned (OCR) PDFs and pandoc formats (DOCX/ODT/RTF) are converted on the server
-(`POST /api/v1/convert`, entitlement-gated) when connected — a `403` shows an
-upgrade nudge. The reader works fully offline for the client-side formats.
+(`POST /api/v1/convert`) when connected — a server that declines answers `403`
+with its own wording, which the reader shows as-is. The reader works fully
+offline for the client-side formats.
 
 ## Develop
 
@@ -90,7 +91,7 @@ with an SPA fallback that serves `index.html` for unknown paths (so deep links
 like `/read/:id` work). The bundled service worker also falls back to the cached
 shell when offline.
 
-The PWA defaults its server URL to the SaaS server (`https://hygg.kruseio.com`)
+The PWA defaults its server URL to the hosted server (`https://hygg.kruseio.com`)
 and talks to its bearer-token `/api/v1` JSON API; that requires a CORS allow-list
 for the PWA origin on the server side (added with the sync work).
 

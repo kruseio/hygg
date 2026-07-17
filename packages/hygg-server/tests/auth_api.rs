@@ -111,5 +111,5 @@ async fn me_with_bogus_token_is_unauthorized() {
   assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-// Tests for a gated account live with whatever override does the gating; this
+// Tests for a restricted account live with whatever override restricts it; this
 // server admits any authenticated user.

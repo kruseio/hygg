@@ -55,8 +55,8 @@ fn authed(req: RequestBuilder, creds: &Creds) -> RequestBuilder {
 
 /// Identify the authenticated principal — validates the username + device
 /// token (and binds this browser's machine id on first use), yielding the
-/// device id + plan (the PWA connects by username + token, like the CLI's
-/// `:auth`).
+/// device id + account label (the PWA connects by username + token, like the
+/// CLI's `:auth`).
 pub async fn fetch_me(creds: &Creds) -> Res<MeResponse> {
   let resp = authed(Request::get(&api(&creds.server, "/me")), creds)
     .send()

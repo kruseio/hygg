@@ -77,7 +77,7 @@ publish cli-pdf-to-text
 publish cli-text-reader
 
 # Top of the tree. hygg-server is here because it is `publish = true` and
-# consumable as a library (hygg-saas embeds it) — nothing in hygg's tree
+# consumable as a library by a downstream crate — nothing in hygg's tree
 # references it, and no license crosses between them.
 publish hygg        # + cli-epub-to-text, cli-text-reader, redirect-stderr
 publish hygg-server # cli-epub-to-text, cli-justify, cli-pdf-to-text, hygg-shared

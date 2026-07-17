@@ -17,16 +17,11 @@ members = [
   "packages/hygg",
 
   # Self-hostable sync server. Elastic License 2.0, source-available, published
-  # to crates.io and usable as a library (hygg-saas embeds it). It is NOT in the
-  # `hygg` CLI's dependency tree, so `cargo install hygg` never pulls its
-  # axum/tokio/sea-orm stack — isolation is by dependency direction, not a
-  # publish flag.
+  # to crates.io and usable as a library (a downstream crate can embed it and
+  # extend it in-process). It is NOT in the `hygg` CLI's dependency tree, so
+  # `cargo install hygg` never pulls its axum/tokio/sea-orm stack — isolation is
+  # by dependency direction, not a publish flag.
   "packages/hygg-server",
-
-  # NOTE: hygg-saas (the proprietary, closed-source SaaS layer that extends
-  # hygg-server in-process with landing/pricing/payments/tiers/limits) has
-  # graduated to its own private repo. The dependency still points saas ->
-  # server, so publishing hygg-server never pulls it.
 
   # Rust/WASM offline-first touch PWA (Leptos + Trunk). publish = false. The real
   # app builds for wasm32-unknown-unknown (via Trunk); the Leptos/web-sys stack

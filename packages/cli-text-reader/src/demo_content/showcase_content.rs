@@ -1,6 +1,6 @@
-// Demo content for marketing demonstration
+// Demo content for the feature showcase
 
-pub fn get_marketing_demo_content() -> String {
+pub fn get_showcase_demo_content() -> String {
   r#"# The Art of Reading in the Digital Age
 
 In an era where information flows ceaselessly through countless channels, the simple act of reading has become both more crucial and more challenging than ever before. We find ourselves navigating between the need for deep, focused comprehension and the relentless pull of digital distractions.

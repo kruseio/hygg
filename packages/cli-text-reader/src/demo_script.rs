@@ -42,7 +42,7 @@ impl DemoScript {
     Self { actions }
   }
 
-  pub fn marketing_demo() -> Self {
+  pub fn showcase_demo() -> Self {
     Self::from_components(&[
       "intro_message",
       "select_paragraph",
@@ -268,8 +268,8 @@ mod tests {
   }
 
   #[test]
-  fn test_marketing_demo_has_correct_components() {
-    let demo = DemoScript::marketing_demo();
+  fn test_showcase_demo_has_correct_components() {
+    let demo = DemoScript::showcase_demo();
     assert!(!demo.actions.is_empty());
   }
 

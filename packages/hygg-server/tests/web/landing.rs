@@ -5,9 +5,9 @@ use axum::http::StatusCode;
 
 use crate::helpers::*;
 
-/// On the open self-host server nothing is gated: an admin gets the admin nav
-/// *and* the full workspace (home / devices / organizations). An override can
-/// withhold this via the entitlements hook.
+/// On the open self-host server nothing is withheld: an admin gets the admin
+/// nav *and* the full workspace (home / devices / organizations). An override
+/// can withhold this via the entitlements hook.
 #[tokio::test]
 async fn admin_sees_admin_and_workspace_nav() {
   let (_dir, state) = migrated_state().await;
@@ -33,8 +33,8 @@ async fn admin_sees_admin_and_workspace_nav() {
   assert!(html.contains(r#"href="/app/home""#));
   assert!(html.contains(r#"href="/app/devices""#));
   // Any extra backoffice pages are injected, not served by the core.
-  assert!(!html.contains(r#"href="/app/admin/tiers""#));
-  assert!(!html.contains(r#"href="/app/admin/quotes""#));
+  assert!(!html.contains(r#"href="/app/admin/injected-one""#));
+  assert!(!html.contains(r#"href="/app/admin/injected-two""#));
 
   let home = get(state.clone(), "/app/home", Some(&cookie)).await;
   assert_eq!(home.status(), StatusCode::OK);
@@ -43,8 +43,8 @@ async fn admin_sees_admin_and_workspace_nav() {
   assert_eq!(devices.status(), StatusCode::OK);
 }
 
-/// A plain signup on self-host lands on the full workspace home (no plan
-/// gating in the open core).
+/// A plain signup on self-host lands on the full workspace home (the open core
+/// withholds nothing).
 #[tokio::test]
 async fn regular_user_login_lands_on_home() {
   let (_dir, state) = migrated_state().await;

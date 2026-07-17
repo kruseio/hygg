@@ -15,7 +15,7 @@ use hygg_shared::sync::proto::DenialBody;
 /// Load the book + its saved position once on mount. Resolves the document
 /// (local cache or on-demand server fetch), seeds the resume line and the live
 /// last-write-wins baseline timestamp, and — when the document can't be opened
-/// — surfaces the load error and optional upgrade nudge instead of a spinner.
+/// — surfaces the load error and the server's own explanation, not a spinner.
 #[allow(clippy::too_many_arguments)]
 pub fn install_load_effect(
   book_id: String,

@@ -83,7 +83,7 @@ pub(crate) struct Args {
   #[arg(long, value_name = "OFFSET", hide = true)]
   pub(crate) set_progress: Option<usize>,
 
-  /// Run interactive tutorial in demo mode for marketing (7 seconds total)
+  /// Run the interactive tutorial in showcase demo mode (7 seconds total)
   #[arg(long, default_value = "false", hide = true)]
   pub(crate) tutorial_demo: bool,
 

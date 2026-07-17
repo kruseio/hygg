@@ -2,8 +2,9 @@
 //! **username** and a **device token** (created in the server's Devices page or
 //! via the API) — same model as the CLI's `:auth <username> <token>`. No
 //! password in the PWA. Both are validated against `/me`, which also binds this
-//! browser's machine id to the token and yields the device id + plan. Optional
-//! throughout — the reader works fully offline without ever connecting.
+//! browser's machine id to the token and yields the device id + account label.
+//! Optional throughout — the reader works fully offline without ever
+//! connecting.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -43,7 +44,7 @@ pub fn AccountSection() -> impl IntoView {
   let account = RwSignal::new(String::new());
 
   // When already connected, confirm the stored credentials still work and show
-  // the account's plan.
+  // the account label the server supplied.
   Effect::new(move |prev: Option<()>| {
     if prev.is_some() {
       return;

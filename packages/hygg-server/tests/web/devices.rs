@@ -141,7 +141,7 @@ async fn admin_can_create_device_with_document_permission_override() {
 }
 
 #[tokio::test]
-async fn devices_page_shows_plain_count_without_plans() {
+async fn devices_page_shows_plain_count_without_budgets() {
   let (_dir, state) = migrated_state().await;
   seed_admin_and_user(&state).await;
 
@@ -154,7 +154,7 @@ async fn devices_page_shows_plain_count_without_plans() {
   .await;
   let cookie = session_cookie(&login);
 
-  // The core has no device caps of its own: a plain count, no quota badge,
+  // The core has no device caps of its own: a plain count, no budget badge,
   // and the create button stays enabled. Caps are an injected concern.
   let page = get(state.clone(), "/app/devices", Some(&cookie)).await;
   let html = body_text(page).await;
@@ -162,8 +162,8 @@ async fn devices_page_shows_plain_count_without_plans() {
     html.contains(r#"<span class="device-quota">0 devices</span>"#),
     "{html}"
   );
-  assert!(!html.contains("0 / "), "no quota badge on self-host: {html}");
-  assert!(!html.contains("reached your device limit"), "{html}");
+  assert!(!html.contains("0 / "), "no budget badge on self-host: {html}");
+  assert!(!html.contains("device limit"), "{html}");
   assert!(
     html.contains("<button type=\"submit\" >Create token</button>"),
     "{html}"
