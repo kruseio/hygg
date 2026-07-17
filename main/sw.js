@@ -10,10 +10,11 @@
 //     content-hashed URL never changes meaning.
 //
 // Everything below keys off `self.registration.scope` rather than "/", because
-// the Pages site serves many deploys from one origin: the latest build at /hygg/
-// and every tagged build at /hygg/v<tag>/. CacheStorage is per-origin, not
-// per-scope, so an unqualified cache name would leave those deploys sharing —
-// and evicting — one another's entries.
+// the Pages site serves many deploys from one origin: the latest build at
+// /hygg/, every tagged build at /hygg/<tag>/, and the main branch at
+// /hygg/main/. CacheStorage is per-origin, not per-scope, so an unqualified
+// cache name would leave those deploys sharing — and evicting — one another's
+// entries.
 
 // This deploy's root: an absolute URL ending in "/", e.g.
 // "https://kruseio.github.io/hygg/v0.1.21/". Doubles as the app-shell cache key,
@@ -22,15 +23,20 @@ const SCOPE = self.registration.scope;
 const CACHE_PREFIX = "hygg-cache-";
 const CACHE = `${CACHE_PREFIX}v3:${SCOPE}`;
 
-// A pinned deploy (/hygg/v0.1.21/) sits *inside* the latest deploy's scope
-// (/hygg/), so the latest worker sees the pinned deploy's requests until that
-// deploy's own worker takes over. They are not ours: caching a pinned build's
-// HTML under our shell key would serve v0.1.21 at the root URL when offline. The
-// more specific registration wins once it exists, so this only covers the first
-// load — which is exactly when the damage would be done.
+// A sibling deploy — a pinned release (/hygg/0.1.25/) or the main channel
+// (/hygg/main/) — sits *inside* the latest deploy's scope (/hygg/), so the
+// latest worker sees its requests until that deploy's own worker takes over.
+// They are not ours: caching a sibling's HTML under our shell key would serve
+// it at the root URL when offline. The more specific registration wins once it
+// exists, so this only covers the first load — which is exactly when the damage
+// would be done. The first path segment past the scope names the sibling:
+// `main`, or a bare version like `0.1.25` (this repo tags 0.1.25, not v0.1.25,
+// so the old `v\d` test matched neither `main` nor any tag and let both leak
+// into this cache).
 function belongsToAnotherDeploy(url) {
   if (!url.href.startsWith(SCOPE)) return false;
-  return /^v\d[^/]*\//.test(url.href.slice(SCOPE.length));
+  const seg = url.href.slice(SCOPE.length).split("/")[0];
+  return seg === "main" || /^v?\d+\.\d+\.\d+/.test(seg);
 }
 
 self.addEventListener("install", (event) => {

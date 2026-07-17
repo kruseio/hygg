@@ -1,82 +1,47 @@
 <!DOCTYPE html>
-<html lang="en" class="theme-dark">
+<html lang="en">
   <head>
-    <base href="/hygg/">
     <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5"
-    />
-    <meta name="theme-color" content="#0b0b0b" />
-    <meta name="color-scheme" content="dark light" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta
-      name="apple-mobile-web-app-status-bar-style"
-      content="black-translucent"
-    />
-    <meta name="apple-mobile-web-app-title" content="hygg" />
     <title>hygg</title>
+    <!--
+      The site's single root 404. GitHub Pages serves one 404.html per site (no
+      per-directory 404), and this site hosts several client-side-routed SPA
+      deploys side by side:
 
-    <!-- Relative, not root-absolute: the versioned Pages deploys serve this
-         bundle from /hygg/v<tag>/, where a leading "/" would escape the deploy.
-         These resolve against <base href> (injected per deploy by
-         tools/prepare_pages_dist.py), or against the document at "/" when there
-         is no base — the Tauri shell and a plain `trunk serve`. -->
-    <link rel="manifest" href="manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-    <link rel="icon" type="image/png" href="icons/icon-192.png" />
+        /hygg/            the latest release
+        /hygg/<x.y.z>/    each pinned release
+        /hygg/main/       the main branch
 
-    <!-- Trunk: copy static PWA assets to dist unhashed (referenced by name). -->
-    
-    
-    
-
-    <link rel="stylesheet" href="/hygg/main-3aaf741a3dc6c0c9.css" integrity="sha384-t9IxW655g1oG8wvsuRm2fxn2j9SVHL2oz557xqjFqi+v9Yy0toGeFnFTxo16Nbkk"/>
-    
-<script type="module">
-import init, * as bindings from '/hygg/hygg-pwa-1f102fc57769d6c4.js';
-const wasm = await init({ module_or_path: '/hygg/hygg-pwa-1f102fc57769d6c4_bg.wasm' });
-
-
-window.wasmBindings = bindings;
-
-
-dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
-
-</script>
-
+      A sub-route like /hygg/main/settings is not a real file, so a hard load,
+      refresh, or shared deep link lands here. Forward it to the owning deploy's
+      real index with the intended route encoded in the query string; that
+      index's decoder (in index.html) restores it before the router runs. This
+      is the rafgraph/spa-github-pages redirect, generalized to pick the deploy
+      directory: the first path segment is the project-page repo root, and the
+      second — when it is `main` or a version — is the deploy dir. Everything
+      else routes at the repo root (the latest release).
+    -->
     <script>
-      // Capture the install prompt so the in-app banner can trigger it later.
-      window.__hyggDeferredPrompt = null;
-      window.addEventListener("beforeinstallprompt", (e) => {
-        e.preventDefault();
-        window.__hyggDeferredPrompt = e;
-        window.dispatchEvent(new Event("hygg:installable"));
-      });
-      window.__hyggInstall = async () => {
-        const e = window.__hyggDeferredPrompt;
-        if (!e) return "unavailable";
-        e.prompt();
-        const choice = await e.userChoice;
-        window.__hyggDeferredPrompt = null;
-        return choice.outcome;
-      };
-      window.addEventListener("appinstalled", () => {
-        window.__hyggDeferredPrompt = null;
-      });
-      // Register the service worker for offline support — but not inside the
-      // Tauri shell, where the bundle is already local (served over a custom
-      // protocol) so a SW is pointless and its registration can error.
-      if ("serviceWorker" in navigator && !window.__TAURI__) {
-        window.addEventListener("load", () => {
-          // Relative: resolves against <base href>, which both points at this
-          // deploy's own sw.js and scopes it to this deploy — so /hygg/ and
-          // /hygg/v0.1.21/ get independent workers instead of one stomping the
-          // other's cache.
-          navigator.serviceWorker.register("sw.js").catch(() => {});
-        });
-      }
+      (function () {
+        var l = window.location;
+        var segs = l.pathname.split("/"); // ["", "hygg", "main", "settings"]
+        var keep = 2; // "" + repo root
+        var chan = segs[2];
+        if (chan === "main" || /^v?\d+\.\d+\.\d+/.test(chan)) keep = 3;
+        var root = segs.slice(0, keep).join("/") + "/";
+        var rest = segs.slice(keep).join("/");
+        l.replace(
+          l.protocol +
+            "//" +
+            l.host +
+            root +
+            "?/" +
+            rest.replace(/&/g, "~and~") +
+            (l.search ? "&" + l.search.slice(1).replace(/&/g, "~and~") : "") +
+            l.hash,
+        );
+      })();
     </script>
-  <link rel="modulepreload" href="/hygg/hygg-pwa-1f102fc57769d6c4.js" crossorigin="anonymous" integrity="sha384-E1mvCukHsFFU13oCYlHz5Rh1qXbNfLPlru9KTormUyCrVGKQHdj8NJNsB6ur06fb"><link rel="preload" href="/hygg/hygg-pwa-1f102fc57769d6c4_bg.wasm" crossorigin="anonymous" integrity="sha384-YfdYK1bVQ0xamp4Gb/R419CvRtjliP3R6v7R4z1DSQFZdF8LT+fh3R2ndUkLVESW" as="fetch" type="application/wasm"></head>
+  </head>
   <body></body>
 </html>

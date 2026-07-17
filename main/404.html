@@ -17,6 +17,27 @@
     <meta name="apple-mobile-web-app-title" content="hygg" />
     <title>hygg</title>
 
+    <!-- SPA deep-link restore. GitHub Pages has one 404 per site, so a hard
+         load of a client-side route (…/main/settings) is answered by the root
+         404 (tools/pages-404.html), which forwards it to the owning deploy's
+         real index as …/main/?/settings. Undo that encoding here — before the
+         WASM router reads the URL — so the address bar and router see the
+         intended path. A no-op for every ordinary load (no leading "?/"). -->
+    <script>
+      (function (l) {
+        if (l.search[1] === "/") {
+          var route = l.search
+            .slice(1)
+            .split("&")
+            .map(function (s) {
+              return s.replace(/~and~/g, "&");
+            })
+            .join("?");
+          history.replaceState(null, null, l.pathname.slice(0, -1) + route + l.hash);
+        }
+      })(window.location);
+    </script>
+
     <!-- Relative, not root-absolute: the versioned Pages deploys serve this
          bundle from /hygg/v<tag>/, where a leading "/" would escape the deploy.
          These resolve against <base href> (injected per deploy by
@@ -34,8 +55,8 @@
     <link rel="stylesheet" href="/hygg/main/main-53c97afff6cf17f0.css" integrity="sha384-ydcmbZbkwdnVe6pdPbELqJYnyjVRyjs5FT/gkghFXtIEu1M0dtynGVG6tqA2UEBg"/>
     
 <script type="module">
-import init, * as bindings from '/hygg/main/hygg-pwa-f27630edc6cc2001.js';
-const wasm = await init({ module_or_path: '/hygg/main/hygg-pwa-f27630edc6cc2001_bg.wasm' });
+import init, * as bindings from '/hygg/main/hygg-pwa-8ac56f0aa9f81a40.js';
+const wasm = await init({ module_or_path: '/hygg/main/hygg-pwa-8ac56f0aa9f81a40_bg.wasm' });
 
 
 window.wasmBindings = bindings;
@@ -77,6 +98,6 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
         });
       }
     </script>
-  <link rel="modulepreload" href="/hygg/main/hygg-pwa-f27630edc6cc2001.js" crossorigin="anonymous" integrity="sha384-hp6zkoYv1fp753k2uKbhfZ2SKVK5FqQvpykjkTIZV2Q3oySNY4ThtDQnd1Sbw3Y3"><link rel="preload" href="/hygg/main/hygg-pwa-f27630edc6cc2001_bg.wasm" crossorigin="anonymous" integrity="sha384-MxkAfCIrnR6bd2Lf/BU6qAqHoAz3+oWIOEkaH8ubHG9gc8wYqrA2UJdByXwNigaZ" as="fetch" type="application/wasm"></head>
+  <link rel="modulepreload" href="/hygg/main/hygg-pwa-8ac56f0aa9f81a40.js" crossorigin="anonymous" integrity="sha384-hp6zkoYv1fp753k2uKbhfZ2SKVK5FqQvpykjkTIZV2Q3oySNY4ThtDQnd1Sbw3Y3"><link rel="preload" href="/hygg/main/hygg-pwa-8ac56f0aa9f81a40_bg.wasm" crossorigin="anonymous" integrity="sha384-c8c7oktiAyWVKLcCPpnU0c0alc5K9dgcf4vKNr72eKTqYQfleD12+CrIJmSkke6b" as="fetch" type="application/wasm"></head>
   <body></body>
 </html>
