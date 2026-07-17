@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+
+# Holds every commit message to https://www.conventionalcommits.org, because a
+# commit here is not only a note to the next reader — it is an input to the
+# release. tools/cliff.toml parses these messages into the changelog that
+# becomes the tag annotation and the release body, and `git cliff
+# --bumped-version` reads the same messages to decide whether the next tag is a
+# patch, a minor, or a major. A message this hook would reject is a change that
+# lands in the code and then appears in neither: git-cliff's
+# `filter_unconventional` drops it from the notes, and it moves the version by
+# nothing. That is the failure this exists to prevent, and it is silent — which
+# is why it is caught at the moment of writing rather than at the moment of
+# release, when the commit is weeks old and the notes are already wrong.
+#
+# So the type is not decoration, it is the bump. While the major is 0:
+#
+#   fix: / feat: / docs: / ci: / chore:   patch    0.1.25 -> 0.1.26
+#   feat!: / fix!: / BREAKING CHANGE:     minor    0.1.25 -> 0.2.0
+#
+# and once the major reaches 1 the same rules mean the strict thing — feat ->
+# minor, breaking -> major. See [bump] in tools/cliff.toml for why 0.x is the
+# odd one out (the short version: the semver spec says it is).
+#
+# Pick the type that matches what the diff actually does. A feature committed as
+# `chore:` is not a style preference, it is a release that under-reports itself.
+#
+# Installed with the rest of tools/hooks, by pointing git at the directory once:
+#
+#   git config core.hooksPath tools/hooks
+#
+# `git commit --no-verify` skips it. Same escape hatch, and the same caveat, as
+# tools/hooks/pre-push: it is for the message you will amend before it leaves
+# the machine, not a way to land an unparseable commit on main.
+#
+# AGENTS: if you are committing on someone's behalf and this rejects you, fix
+# the message. Do not reach for --no-verify, and do not "fix" a rejection by
+# relabelling a feat as a chore to get past it — the type has to match the diff,
+# because the version is computed from it.
+
+set -Eeuo pipefail
+
+MSG_FILE="$1"
+
+# The message as git will actually record it: comments gone (`# Please enter the
+# commit message…` and the diff `--verbose` appends), leading/trailing blank
+# lines collapsed. Linting the raw buffer instead would trip over the template.
+MSG="$(git stripspace --strip-comments < "$MSG_FILE")"
+
+SUBJECT="$(printf '%s\n' "$MSG" | head -1)"
+
+# An empty message aborts the commit on git's side anyway; say nothing and let
+# it, rather than answering a non-commit with a spec lecture.
+[ -n "$SUBJECT" ] || exit 0
+
+# Messages git writes itself, or that exist to be squashed into a message that
+# was already checked when it was written. Holding these to the spec would mean
+# rejecting `git merge` and `git commit --fixup` for wording neither the author
+# nor the changelog will ever see.
+case "$SUBJECT" in
+  "Merge "* | "Revert \""* | "fixup!"* | "squash!"* | "amend!"*) exit 0 ;;
+esac
+
+# The allowed types are the ones tools/cliff.toml has a parser for, read out of
+# it rather than restated here. Anything else is a type the changelog would
+# silently discard, so the two lists cannot be allowed to drift: adding a type
+# there is what allows it here.
+ROOT="$(git rev-parse --show-toplevel)"
+CLIFF="$ROOT/tools/cliff.toml"
+TYPES="$(sed -n \
+  's/^[[:space:]]*{[[:space:]]*message[[:space:]]*=[[:space:]]*"^\([a-z]*\)".*/\1/p' \
+  "$CLIFF" | sort -u)"
+
+if [ -z "$TYPES" ]; then
+  echo "commit-msg: could not read the commit types from $CLIFF" >&2
+  echo "            (its commit_parsers are what defines them)" >&2
+  exit 1
+fi
+
+# Rejections are collected rather than reported one at a time, so that a message
+# with two problems takes one rewrite instead of two.
+problems=()
+
+# type(scope)!: description — scope and `!` optional, the space after the colon
+# is not. This is the spec's shape; the type is checked against TYPES below.
+if [[ ! "$SUBJECT" =~ ^([a-zA-Z]+)(\(([^()]+)\))?(!)?:[[:space:]](.+)$ ]]; then
+  problems+=("the subject is not '<type>[(scope)][!]: <description>'")
+else
+  type="${BASH_REMATCH[1]}"
+  scope="${BASH_REMATCH[3]}"
+  desc="${BASH_REMATCH[5]}"
+
+  if [ "$type" != "${type,,}" ]; then
+    problems+=("the type '$type' is capitalised; types are lowercase")
+  elif ! printf '%s\n' "$TYPES" | grep -qx "${type,,}"; then
+    problems+=("'$type' is not one of the types this repo releases from")
+  fi
+
+  if [ -n "$scope" ] && [[ ! "$scope" =~ ^[a-z0-9][a-z0-9._/-]*$ ]]; then
+    problems+=("the scope '($scope)' should be lowercase (e.g. '(pwa)', '(cli-text-reader)')")
+  fi
+
+  case "$desc" in
+    *.) problems+=("the description ends with a period") ;;
+  esac
+  # A subject that is only a type is a commit whose changelog line will read as
+  # a blank bullet.
+  [ "${#desc}" -ge 3 ] ||
+    problems+=("the description '$desc' says nothing")
+fi
+
+# The spec's one structural rule below the subject: the body is separated from it
+# by an empty line. Without it, `git log` and git-cliff both read the run-on
+# second line as part of the subject.
+LINE2="$(printf '%s\n' "$MSG" | sed -n 2p)"
+LINES="$(printf '%s\n' "$MSG" | wc -l | tr -d ' ')"
+if [ "$LINES" -gt 1 ] && [ -n "$LINE2" ]; then
+  problems+=("line 2 is not blank; a body is separated from the subject by an empty line")
+fi
+
+# `BREAKING-CHANGE:` is the spec's synonym, and both must be a footer at the
+# start of its own line to be parsed. Written inline in prose it reads exactly
+# the same to a human and means nothing to the tooling — so it would announce a
+# breaking change that the version does not reflect.
+if printf '%s\n' "$MSG" | grep -qiE '(^|[[:space:]])breaking[ -]change' &&
+  ! printf '%s\n' "$MSG" | grep -qE '^BREAKING[ -]CHANGE:[[:space:]]'; then
+  problems+=("'BREAKING CHANGE' is not a footer here; it must start its own line as 'BREAKING CHANGE: <description>' (or use '<type>!:') to count as breaking")
+fi
+
+[ "${#problems[@]}" -eq 0 ] && exit 0
+
+{
+  echo
+  echo "commit-msg: this message should follow the Conventional Commits spec."
+  echo
+  echo "  subject: $SUBJECT"
+  echo
+  for p in "${problems[@]}"; do
+    echo "  - $p"
+  done
+  echo
+  echo "  Shape:  <type>[(scope)][!]: <description>"
+  echo "          [blank line]"
+  echo "          [body]"
+  echo "          [blank line]"
+  echo "          [BREAKING CHANGE: <description>]"
+  echo
+  echo "  Types:  $(printf '%s\n' "$TYPES" | tr '\n' ' ')"
+  echo "          (from tools/cliff.toml, which is what turns them into the"
+  echo "           changelog and the next version number)"
+  echo
+  echo "  e.g.    feat(pwa): move the sync action beside the import button"
+  echo "          fix(server): don't drop the last page of a PDF"
+  echo "          feat(sync)!: require a device token on every request"
+  echo
+  echo "  https://www.conventionalcommits.org/en/v1.0.0/"
+  echo
+  echo "  Your message is kept in $MSG_FILE — 'git commit -e -F \"$MSG_FILE\"'"
+  echo "  reopens it rather than retyping it."
+  echo
+} >&2
+
+exit 1

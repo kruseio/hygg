@@ -1,0 +1,111 @@
+# git-cliff: the changelog, derived from the commits rather than written twice.
+#
+# One template serves two places — the annotation on the tag object, and the
+# body of the GitHub release — because they are the same text. tools/.tag.sh
+# renders this into `git tag -a -m`, and release.yml reads it back out of the
+# tag with `%(contents:body)` rather than generating a second copy that could
+# disagree. That is also why the body below is plain text and not markdown:
+# a tag annotation is shown verbatim, so `###` and `[a](b)` would render as
+# literal punctuation on the tags page. Bare short SHAs cost nothing there and
+# GitHub autolinks them to the commit in the release body, so the same string
+# reads correctly in both.
+#
+# It is also where the *version* comes from: `git cliff --bumped-version` reads
+# the same commits and the [bump] rules below to decide patch / minor / major,
+# which is what tools/.tag.sh tags when invoked with no argument.
+#
+# --config is not optional: git-cliff looks for ./cliff.toml, and finding none
+# falls back to its *built-in* defaults rather than to this file — which answers
+# a different question and does not say so (its default [bump] would call the
+# same commits a minor).
+#
+#   git cliff --config tools/cliff.toml --unreleased       the next notes
+#   git cliff --config tools/cliff.toml --bumped-version   the next version
+#
+# Deps
+# cargo install --locked git-cliff
+
+[changelog]
+# No header or footer: this is one release's notes, not a CHANGELOG.md that
+# accumulates them. The version line is the tag's subject; everything under it
+# is the body release.yml appends to the install notes.
+header = ""
+body = """
+{% if version %}{{ version | trim_start_matches(pat="v") }}{% else %}unreleased{% endif %}
+{% for group, commits in commits | group_by(attribute="group") %}
+{{ group | striptags | trim }}
+{% for commit in commits %}\
+- {% if commit.breaking %}[breaking] {% endif %}\
+{% if commit.scope %}{{ commit.scope }}: {% endif %}\
+{{ commit.message }} ({{ commit.id | truncate(length=7, end="") }})
+{% endfor %}\
+{% endfor %}
+"""
+trim = true
+footer = ""
+
+[git]
+# https://www.conventionalcommits.org — the same spec tools/hooks/commit-msg
+# holds every commit to, so that what is committed is what can be parsed here.
+conventional_commits = true
+# A commit that is not conventional cannot be grouped or given a bump meaning,
+# so it is left out rather than dropped into a misleading pile. The hook is what
+# keeps that set empty going forward; the pre-hook history still has a few.
+filter_unconventional = true
+split_commits = false
+
+# Order is first-match-wins, and the `<!-- N -->` prefixes are sort keys that
+# `striptags` removes before the group is printed: without them Tera's group_by
+# emits groups alphabetically, which buries Features under Bug Fixes.
+commit_parsers = [
+  # The version bump tools/.tag.sh commits is bookkeeping for the release the
+  # notes are attached to — listing "release: 0.1.26" inside 0.1.26's own notes
+  # says nothing to anyone reading them.
+  { message = "^release", skip = true },
+  { message = "^feat", group = "<!-- 0 -->Features" },
+  { message = "^fix", group = "<!-- 1 -->Bug Fixes" },
+  { message = "^perf", group = "<!-- 2 -->Performance" },
+  { message = "^refactor", group = "<!-- 3 -->Refactor" },
+  { message = "^docs", group = "<!-- 4 -->Documentation" },
+  { message = "^style", group = "<!-- 5 -->Styling" },
+  { message = "^test", group = "<!-- 6 -->Testing" },
+  { message = "^build", group = "<!-- 7 -->Build" },
+  { message = "^ci", group = "<!-- 8 -->CI" },
+  { message = "^revert", group = "<!-- 9 -->Revert" },
+  { message = "^chore", group = "<!-- 10 -->Miscellaneous Tasks" },
+]
+# A `feat!:` is still a breaking change even if some parser above would have
+# skipped it: never let a skip rule hide the one fact that drives a major bump.
+protect_breaking_commits = true
+filter_commits = false
+# Bare semver, no `v` — the shape every tag-triggered workflow filters on, and
+# the shape tools/.tag.sh refuses to deviate from.
+tag_pattern = "[0-9]*"
+skip_tags = ""
+ignore_tags = ""
+topo_order = false
+sort_commits = "oldest"
+
+[bump]
+# Both of these default to *true*, and both are set here because the default is
+# not what this project wants while the major is 0: on the default a plain
+# `feat:` takes 0.1.25 to 0.2.0, so a fortnight of ordinary work would arrive at
+# 0.9.0 having promised nothing by it.
+#
+# False does not mean "less semver", it means the spec's own 0.x clause: "Major
+# version zero (0.y.z) is for initial development. Anything MAY change at any
+# time." So while the major is 0:
+#
+#   fix: / feat: / docs: / chore:   -> patch    0.1.25 -> 0.1.26
+#   feat!: or a BREAKING CHANGE:    -> minor    0.1.25 -> 0.2.0
+#
+# which is what this project's releases have been doing by hand all along. These
+# same two lines mean the strict thing the moment the major reaches 1, with no
+# edit here: fix -> patch, feat -> minor (1.2.3 -> 1.3.0), breaking -> major
+# (1.2.3 -> 2.0.0).
+#
+# So 1.0.0 stays a decision rather than an accident — `./tools/.tag.sh 1.0.0`,
+# deliberately, and never a `feat!:` tipping the project into an irreversible
+# crates.io publish of a stability promise nobody made.
+breaking_always_bump_major = false
+features_always_bump_minor = false

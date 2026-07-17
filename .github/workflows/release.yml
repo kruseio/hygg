@@ -19,6 +19,14 @@
 # notes, and the platforms that built are attached.
 #
 # The PWA is not here — it deploys to Pages on the same tag (pages.yml).
+#
+# The notes are not written here either. The changelog is the tag's own
+# annotation — rendered from the conventional-commit history by tools/.tag.sh
+# through tools/cliff.toml, and read back below — so the tags page and the
+# release are the same text by construction rather than by two generators
+# agreeing. What this file adds to it is a link to docs/pages/release.md, which
+# is where the per-artifact caveats that used to be re-pasted into every release
+# now live, and a warning naming any platform that did not build.
 
 name: release
 
@@ -500,6 +508,14 @@ jobs:
           # `gh` authenticates with GH_TOKEN, not with git's credential helper,
           # so nothing here needs the token left behind in .git/config.
           persist-credentials: false
+          # The release notes are read off the tag's annotation below, so what
+          # this job needs is the tag *object* — not just the commit it points
+          # at, which is all a default shallow checkout of a tag ref guarantees.
+          # 0 is the unambiguous way to have it: the alternative is depending on
+          # exactly which refspec actions/checkout used this version, and the
+          # cost of being wrong is a release that quietly falls back to worse
+          # notes. It is one full clone, once per release.
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -529,47 +545,30 @@ jobs:
           ANDROID: ${{ needs.android.result }}
           IOS: ${{ needs.ios.result }}
         run: |
+          set -euo pipefail
           owner="${{ github.repository_owner }}"
           repo="${{ github.event.repository.name }}"
+
+          # This used to restate every caveat about every artifact — signing,
+          # pandoc, the APK's per-build key, the simulator-only iOS build —
+          # inline, on every release. It was an install guide pasted onto a
+          # changelog: the same essay each time, drifting from the docs that
+          # said it properly, and burying the one thing a release is actually
+          # for, which is what changed. It lives in docs/pages/release.md now,
+          # once, and this links to it.
           cat > notes.md <<EOF
-          ## Install
+          Prebuilt downloads are below — or \`cargo install hygg\` for the CLI,
+          and the web app needs no download: https://$owner.github.io/$repo/
 
-          **CLI / TUI** — download the archive for your platform below and put \`hygg\` on your PATH, or:
-          \`\`\`
-          cargo install hygg
-          \`\`\`
-          The macOS archive is a universal binary (Apple silicon + Intel). ODT/DOCX
-          support shells out to [pandoc](https://pandoc.org), which is not bundled.
-
-          **Desktop app** — \`.dmg\` (macOS), \`.deb\` / \`.AppImage\` / \`.rpm\` (Linux),
-          \`.msi\` / \`.exe\` (Windows). These are **unsigned**: macOS Gatekeeper and
-          Windows SmartScreen will warn on first launch.
-
-          **Web / PWA** — no download needed:
-          - latest: https://$owner.github.io/$repo/
-          - this version, pinned: https://$owner.github.io/$repo/${TAG}/
-          - all versions: https://$owner.github.io/$repo/versions.html
-
-          **Server** — self-host the sync server from the image published for this
-          tag (linux/amd64 + linux/arm64):
-          \`\`\`
-          docker run -d -p 3032:3032 -v "\$PWD/hygg-data:/app/data" ghcr.io/$owner/hygg-server:${TAG}
-          \`\`\`
-
-          **Android** — \`hygg-android-${TAG}-debug.apk\` is debug-signed. It sideloads
-          fine, but the signing key differs per build, so uninstall any previous
-          version first rather than upgrading in place.
-
-          **iOS** — simulator build only; it cannot be installed on an iPhone. A
-          signed \`.ipa\` needs an Apple Developer certificate.
-
-          Verify a download against \`SHA256SUMS\`.
+          What the assets are, which one you want, and how to verify them:
+          https://github.com/$owner/$repo/blob/${TAG}/docs/pages/release.md
           EOF
 
-          # The notes above describe the full set of downloads. When a platform
+          # The link above describes the full set of downloads. When a platform
           # did not build, the release goes out without it rather than not at
           # all — so name the gap, instead of leaving someone scrolling for a
-          # file that was never uploaded.
+          # file that was never uploaded. Above the changelog, not below it: it
+          # is the one thing here that is worth interrupting someone for.
           incomplete=""
           [ "$CLI" = success ] || incomplete="$incomplete- CLI archives\n"
           [ "$DESKTOP" = success ] || incomplete="$incomplete- Desktop bundles\n"
@@ -593,12 +592,51 @@ jobs:
             } >> notes.md
           fi
 
+          # The changelog is the tag's own annotation, written by tools/.tag.sh
+          # from the commits (see tools/cliff.toml). Reading it back rather than
+          # regenerating it is what makes the tags page and this release the
+          # same text by construction instead of by coincidence.
+          #
+          # `contents:body` is the annotation minus its subject line, and that
+          # subject is the bare version — already this release's title.
+          changelog="$(git tag -l --format='%(contents:body)' "$TAG")"
+
+          if [ -n "${changelog//[[:space:]]/}" ]; then
+            {
+              echo
+              echo "## Changelog"
+              echo
+              printf '%s\n' "$changelog"
+            } >> notes.md
+            generate_notes=false
+          else
+            # A tag pushed by hand rather than by tools/.tag.sh has no notes on
+            # it. Rather than ship a release with no changelog at all, fall back
+            # to GitHub's own commit-log generator — worse (a flat list of every
+            # commit, unparsed and ungrouped), but not nothing.
+            echo "::warning::$TAG carries no annotation — falling back to --generate-notes."
+            generate_notes=true
+          fi
+          echo "generate_notes=$generate_notes" >> "$GITHUB_ENV"
+
+          echo "--- notes.md ---"
+          cat notes.md
+
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          # --generate-notes only when the step above asked for it. Alongside a
+          # changelog it does not replace it, it appends a second and flatter
+          # copy of the same commits under its own heading — which is how the
+          # notes came to say everything twice.
+          args=()
+          if [ "$generate_notes" = true ]; then
+            args+=(--generate-notes)
+          fi
           gh release create "$TAG" \
             --title "$TAG" \
             --notes-file notes.md \
-            --generate-notes \
+            "${args[@]}" \
             dist/*

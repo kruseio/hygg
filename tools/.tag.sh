@@ -1,8 +1,22 @@
 #!/usr/bin/env bash
 
-# Cut a release tag: bump the workspace version to $1, commit it, tag it, push.
+# Cut a release tag: work out the next version from the commits, bump the
+# workspace to it, commit it, tag it with the changelog, push.
 #
-#   ./tools/.tag.sh 0.1.23
+#   ./tools/.tag.sh          the version the commits ask for — the normal path
+#   ./tools/.tag.sh 1.0.0    a version you are choosing yourself
+#
+# With no argument the version is not a judgement call: `git cliff
+# --bumped-version` reads the conventional-commit types since the last tag and
+# tools/cliff.toml's [bump] rules decide patch / minor / major. That is the
+# other half of tools/hooks/commit-msg — the hook makes every commit carry a
+# bump meaning, and this is what adds them up. An explicit argument overrides
+# it, which is how 1.0.0 happens (deliberately, never as a side effect of a
+# `feat!:`), and it is still held to every check below.
+#
+# The same commits produce the tag's annotation, so `git show 0.1.26` and the
+# GitHub release say the same thing — release.yml reads the notes back off the
+# tag rather than generating a second copy that could disagree.
 #
 # The tag is the trigger for four workflows at once — release.yml builds the
 # artifacts, publish.yml pushes to crates.io, docker.yml pushes the image,
@@ -42,18 +56,33 @@ for arg in "$@"; do
 done
 
 VERSION="${ARGS[0]:-}"
-[ -n "$VERSION" ] ||
-  die "usage: ${0##*/} [-y] <version>   e.g. ${0##*/} 0.1.23"
+[ "${#ARGS[@]}" -le 1 ] ||
+  die "usage: ${0##*/} [-y] [version]   e.g. ${0##*/}, or ${0##*/} 1.0.0"
 
 # Bare semver, no `v`. Not a house style: every tag-triggered workflow filters on
 # "[0-9]+.[0-9]+.[0-9]+", so a `v0.1.23` tag pushes fine and then silently fires
 # nothing at all — which is how every release up to 0.1.22 ended up with no
 # artifacts. Reject here rather than let that happen quietly again.
-case "$VERSION" in
-  v*) die "tags here are bare semver: use ${VERSION#v}, not $VERSION" ;;
-esac
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
-  die "'$VERSION' is not bare semver (X.Y.Z), which is all the workflows match"
+#
+# A function rather than a straight-line check because the version now arrives
+# two ways — the argument, or git-cliff's answer below — and neither is trusted
+# more than the other.
+check_version () {
+  case "$1" in
+    v*) die "tags here are bare semver: use ${1#v}, not $1" ;;
+  esac
+  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+    die "'$1' is not bare semver (X.Y.Z), which is all the workflows match"
+}
+[ -z "$VERSION" ] || check_version "$VERSION"
+
+# The changelog and the version both come from git-cliff, so its absence is a
+# stop rather than something to work around: a hand-written tag message is
+# exactly the drift between the tag and the release that reading one from the
+# other is meant to rule out.
+CLIFF=(git-cliff --config tools/cliff.toml)
+command -v git-cliff >/dev/null ||
+  die "git-cliff is not installed — cargo install --locked git-cliff"
 
 # --- Preconditions ------------------------------------------------------------
 
@@ -70,6 +99,20 @@ branch="$(git rev-parse --abbrev-ref HEAD)"
 # check below are answers about the remote, and a stale local view of it is
 # worth nothing.
 git fetch --quiet --tags origin
+
+# After the fetch, never before: "the next version" is a question about the
+# commits since the *last tag*, and asking it against a stale view of the tags
+# answers for a release that already happened.
+if [ -z "$VERSION" ]; then
+  VERSION="$("${CLIFF[@]}" --bumped-version 2>/dev/null)" ||
+    die "git-cliff could not work out the next version from the commits"
+  # git-cliff echoes the last tag back when nothing since it warrants a bump.
+  # The tag-exists check below would catch that anyway, but not legibly.
+  [ -n "$VERSION" ] ||
+    die "git-cliff returned no version"
+  check_version "$VERSION"
+  echo "the commits since $(git describe --tags --abbrev=0 2>/dev/null || echo "the start") ask for $VERSION"
+fi
 
 git rev-parse --verify --quiet "refs/tags/$VERSION" >/dev/null &&
   die "tag $VERSION already exists locally"
@@ -106,6 +149,28 @@ if curl -sf -o /dev/null \
   echo "      crates that are up and publish only what is missing."
 fi
 
+# --- The notes ----------------------------------------------------------------
+
+# Rendered before the bump commit exists, which reads backwards but is not:
+# cliff.toml skips `release:` commits, so the bump could never appear in its own
+# notes anyway — and doing it here puts the changelog on screen *before* the
+# confirmation rather than after it.
+NOTES="$("${CLIFF[@]}" --unreleased --tag "$VERSION" 2>/dev/null)" ||
+  die "git-cliff could not render the changelog for $VERSION"
+
+# A tag annotation's first line is its subject, and git-cliff pads its render
+# with blank lines: left alone, the subject would be empty and the version would
+# land in the body. `$(...)` has already eaten the trailing newlines; this drops
+# the leading ones.
+NOTES="$(printf '%s\n' "$NOTES" | sed -e '/./,$!d')"
+
+# One line is the version and nothing else — every commit since the last tag got
+# filtered out, because they were all `release:` or none of them parsed. Either
+# way the notes would say nothing, which is worth stopping for rather than
+# publishing.
+[ "$(printf '%s\n' "$NOTES" | wc -l | tr -d ' ')" -gt 1 ] ||
+  die "no commits since the last tag would show up in the changelog — nothing to release"
+
 # --- The bump -----------------------------------------------------------------
 
 if [ "$VERSION" = "$CURRENT" ]; then
@@ -119,6 +184,10 @@ echo
 echo "  tag:     $VERSION"
 echo "  commit:  $(git rev-parse --short HEAD) $(git log -1 --pretty=%s)"
 $bump && echo "  bump:    $CURRENT -> $VERSION"
+echo
+echo "  The tag annotation, and the release notes — the same text:"
+echo
+printf '%s\n' "$NOTES" | sed 's/^/    | /'
 echo
 echo "Pushing this tag builds the release artifacts, publishes to crates.io"
 echo "(immutable), pushes the container image, and deploys the PWA."
@@ -180,7 +249,10 @@ if $bump; then
   echo "pushed main"
 fi
 
-git tag -a "$VERSION" -m "$VERSION"
+# The annotation is not decoration: release.yml reads it back with
+# `%(contents:body)` and it *is* the release notes. An annotated tag (-a) is
+# what makes that possible at all — a lightweight tag has no message to read.
+git tag -a "$VERSION" -m "$NOTES"
 git push --quiet origin "refs/tags/$VERSION"
 echo "pushed tag $VERSION"
 
