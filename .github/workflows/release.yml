@@ -439,8 +439,18 @@ jobs:
         with:
           version: latest
 
+      # xcodegen builds the Xcode project; libimobiledevice is pre-installed
+      # here rather than left to `tauri ios init` to fetch. Left to itself, the
+      # init step finds it missing and shells out to `brew` to install it — but
+      # that call runs under Rosetta 2 (x86_64) while the runner's Homebrew is
+      # the arm64 /opt/homebrew, so brew refuses with "Cannot install under
+      # Rosetta 2 in ARM default prefix" and the whole iOS build dies. Installing
+      # it in the job's own (native) shell satisfies init's presence check, so it
+      # never makes that cross-arch brew call. It is only needed for on-device
+      # deployment, which a simulator build never does, but init gates on it all
+      # the same.
       - name: Install iOS project tooling
-        run: brew install xcodegen
+        run: brew install xcodegen libimobiledevice
 
       # Prebuilt, not compiled: `cargo install tauri-cli` built the CLI from
       # source on every run and cost minutes. Tauri publishes cargo-tauri
