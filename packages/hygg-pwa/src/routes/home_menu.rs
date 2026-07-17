@@ -126,7 +126,8 @@ fn remove_confirm_modal(
   }
 }
 
-/// Sync now — a clockwise "refresh" pair of arrows (home top bar).
+/// Sync now — a clockwise "refresh" pair of arrows (beside Home's import
+/// button).
 pub(super) fn refresh_icon() -> impl IntoView {
   view! {
     <svg viewBox="0 0 24 24" width="22" height="22" fill="none"

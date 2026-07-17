@@ -168,13 +168,12 @@ pub fn Home() -> impl IntoView {
   };
 
   view! {
-    <TopBar title=Signal::derive(String::new) visible=Signal::derive(|| true)>
-      <button class="iconbtn" aria-label="Sync now"
-        on:click=move |_| do_sync(true)>{refresh_icon()}</button>
-    </TopBar>
+    <TopBar title=Signal::derive(String::new) visible=Signal::derive(|| true)/>
     <main class="home">
       {move || stats_view(&library.get(), &progress.get())}
 
+      // Import and "sync now" are the two ways documents enter this library,
+      // so they sit together rather than a bar apart.
       <div class="home__import">
         <input type="file" multiple node_ref=file_ref class="hidden"
           accept=".txt,.text,.md,.markdown,.epub,.pdf,.docx,.doc,.odt,.rtf"
@@ -182,6 +181,8 @@ pub fn Home() -> impl IntoView {
         <button class="btn btn--primary" on:click=move |_| {
           if let Some(i) = file_ref.get() { i.click(); }
         }>"Import document"</button>
+        <button class="iconbtn iconbtn--ring" aria-label="Sync now"
+          title="Sync now" on:click=move |_| do_sync(true)>{refresh_icon()}</button>
         {move || {
           let s = status.get();
           (!s.is_empty()).then(|| view! { <span class="home__status">{s}</span> })

@@ -25,8 +25,8 @@ pub fn TopBar(
   #[prop(optional, into)]
   back_href: Option<String>,
   /// Extra action buttons for the right zone, rendered between the Star
-  /// button and the settings gear (e.g. Home's Sync-now button, the reader's
-  /// read-aloud toggle). `None` on screens with no page-specific actions.
+  /// button and the settings gear (e.g. the reader's read-aloud toggle).
+  /// `None` on screens with no page-specific actions.
   #[prop(optional)]
   children: Option<Children>,
 ) -> impl IntoView {
