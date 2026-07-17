@@ -18,9 +18,12 @@
 //!
 //! Module split (purely to keep each file within the LOC budget):
 //! [`device`] identity/devices, [`books`] documents, [`push`] outbound ops,
-//! [`pull`] inbound rows, [`events`] the SSE stream, [`denial`] refusals.
+//! [`pull`] inbound rows, [`events`] the SSE stream, [`denial`] refusals,
+//! [`commerce`] the paid-deployment plans/checkout (served only by a
+//! commercial build).
 
 mod books;
+mod commerce;
 mod denial;
 mod device;
 mod pull;
@@ -33,10 +36,13 @@ pub use books::{
   BookDto, PutBlobResponse, SetSyncModeRequest, UpsertBookRequest,
   UpsertBookResponse,
 };
+pub use commerce::{
+  CheckoutRequest, CheckoutResponse, CommercePlan, PlansResponse,
+};
 pub use denial::DenialBody;
 pub use device::{
   DeviceDto, MeResponse, RegisterDeviceRequest, RegisterDeviceResponse,
-  RevokeDeviceResponse,
+  RevokeDeviceResponse, SignupRequest, SignupResponse,
 };
 pub use pull::{
   BookmarkDto, HighlightDto, NoteDto, ProgressDto, PullQuery, PullResponse,

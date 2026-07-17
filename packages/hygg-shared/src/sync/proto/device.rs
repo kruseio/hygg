@@ -27,6 +27,38 @@ pub struct RegisterDeviceResponse {
   pub user_id: String,
 }
 
+/// `POST /api/v1/signup` request body: create an account *and* mint its first
+/// device token in one call, so a client (the PWA above all) can go from
+/// "no account" to "connected" without a detour through the web signup form.
+/// The password crosses the wire once, is exchanged for the device token, and
+/// is never stored by the client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignupRequest {
+  pub email: String,
+  pub password: String,
+  /// Shown as the account's display name; defaults to the email when blank.
+  #[serde(default)]
+  pub display_name: String,
+  #[serde(default)]
+  pub device_name: String,
+  #[serde(default)]
+  pub platform: String,
+  /// Stable machine id to bind the first device to, as in
+  /// [`RegisterDeviceRequest::machine_id`].
+  #[serde(default)]
+  pub machine_id: Option<String>,
+}
+
+/// `POST /api/v1/signup` response body: the same fields device registration
+/// returns, since signup mints a device token too. The token is shown once.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignupResponse {
+  pub device_id: String,
+  pub token: String,
+  pub tenant_id: String,
+  pub user_id: String,
+}
+
 /// `GET /api/v1/me` response body: the authenticated principal.
 /// `default_access` is one of `read_write` / `read` / `none`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
