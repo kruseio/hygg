@@ -101,6 +101,12 @@ jobs:
           mkdir -p site/main
           cp -R dist-main/. site/main/
 
+          # Keep the site's single root 404 (the SPA deep-link router) current so
+          # the fix ships on a main push without waiting for a release tag. Same
+          # file pages.yml installs; the shared `pages` concurrency group
+          # serializes the two writers of gh-pages. See tools/pages-404.html.
+          cp packages/hygg-pwa/tools/pages-404.html site/404.html
+
           # Pages runs Jekyll otherwise, which drops files starting with "_".
           touch site/.nojekyll
           # Regenerates versions.{json,html} from the pinned dirs present. It

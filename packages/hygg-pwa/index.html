@@ -16,6 +16,27 @@
     <meta name="apple-mobile-web-app-title" content="hygg" />
     <title>hygg</title>
 
+    <!-- SPA deep-link restore. GitHub Pages has one 404 per site, so a hard
+         load of a client-side route (…/main/settings) is answered by the root
+         404 (tools/pages-404.html), which forwards it to the owning deploy's
+         real index as …/main/?/settings. Undo that encoding here — before the
+         WASM router reads the URL — so the address bar and router see the
+         intended path. A no-op for every ordinary load (no leading "?/"). -->
+    <script>
+      (function (l) {
+        if (l.search[1] === "/") {
+          var route = l.search
+            .slice(1)
+            .split("&")
+            .map(function (s) {
+              return s.replace(/~and~/g, "&");
+            })
+            .join("?");
+          history.replaceState(null, null, l.pathname.slice(0, -1) + route + l.hash);
+        }
+      })(window.location);
+    </script>
+
     <!-- Relative, not root-absolute: the versioned Pages deploys serve this
          bundle from /hygg/v<tag>/, where a leading "/" would escape the deploy.
          These resolve against <base href> (injected per deploy by

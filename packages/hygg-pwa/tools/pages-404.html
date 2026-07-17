@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>hygg</title>
+    <!--
+      The site's single root 404. GitHub Pages serves one 404.html per site (no
+      per-directory 404), and this site hosts several client-side-routed SPA
+      deploys side by side:
+
+        /hygg/            the latest release
+        /hygg/<x.y.z>/    each pinned release
+        /hygg/main/       the main branch
+
+      A sub-route like /hygg/main/settings is not a real file, so a hard load,
+      refresh, or shared deep link lands here. Forward it to the owning deploy's
+      real index with the intended route encoded in the query string; that
+      index's decoder (in index.html) restores it before the router runs. This
+      is the rafgraph/spa-github-pages redirect, generalized to pick the deploy
+      directory: the first path segment is the project-page repo root, and the
+      second — when it is `main` or a version — is the deploy dir. Everything
+      else routes at the repo root (the latest release).
+    -->
+    <script>
+      (function () {
+        var l = window.location;
+        var segs = l.pathname.split("/"); // ["", "hygg", "main", "settings"]
+        var keep = 2; // "" + repo root
+        var chan = segs[2];
+        if (chan === "main" || /^v?\d+\.\d+\.\d+/.test(chan)) keep = 3;
+        var root = segs.slice(0, keep).join("/") + "/";
+        var rest = segs.slice(keep).join("/");
+        l.replace(
+          l.protocol +
+            "//" +
+            l.host +
+            root +
+            "?/" +
+            rest.replace(/&/g, "~and~") +
+            (l.search ? "&" + l.search.slice(1).replace(/&/g, "~and~") : "") +
+            l.hash,
+        );
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>

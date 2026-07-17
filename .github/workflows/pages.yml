@@ -167,6 +167,17 @@ jobs:
           mkdir -p "site/$TAG"
           cp -R dist-pinned/. "site/$TAG/"
 
+          # Install the SPA deep-link router as the site's single root 404 (Pages
+          # serves it for every missing path): it forwards a hard-loaded
+          # sub-route like /hygg/main/settings — and every deploy's sub-routes —
+          # to the owning index, which restores the route. Written after the
+          # copies above so it is not clobbered by dist-latest's own 404.html.
+          # Guarded so redeploying a tag from before this file existed still
+          # succeeds. See packages/hygg-pwa/tools/pages-404.html.
+          if [ -f packages/hygg-pwa/tools/pages-404.html ]; then
+            cp packages/hygg-pwa/tools/pages-404.html site/404.html
+          fi
+
           # Pages runs Jekyll otherwise, which drops files starting with "_".
           touch site/.nojekyll
           python3 packages/hygg-pwa/tools/write_versions_index.py site "$BASE/"
