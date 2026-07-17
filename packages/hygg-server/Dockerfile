@@ -63,14 +63,24 @@ RUN apt-get update \
   && useradd --create-home --uid 10001 hygg
 WORKDIR /app
 COPY --from=builder /build/target/release/hygg-server /usr/local/bin/hygg-server
-RUN mkdir -p /app/data /app/data/blobs /app/data/logs /app/data/models/ocr \
-  && chown -R hygg:hygg /app
+# The data directory is created empty, and stays that way until the server
+# claims it: everything under it (the database, hygg-logs/, models/) is made on
+# demand at runtime. Seeding those subdirectories here would be actively wrong —
+# Docker copies image content into a *named* volume when it is first mounted, so
+# the server would meet a non-empty, unmarked directory on a first boot and
+# refuse it as somebody else's (see src/data_dir.rs).
+RUN mkdir -p /app/data && chown -R hygg:hygg /app
 USER hygg
-ENV DATABASE_URL=sqlite:///app/data/hygg-server.db \
+# HYGG_DATA_DIR stays /app/data — the container side of the mount is this
+# image's interface, and renaming it would strand every existing
+# `-v <host>:/app/data` deployment on an upgrade: their data would sit
+# unmounted while the server started fresh in the container's writable layer.
+# The host side is where a name can collide, and the docs there say hygg-data.
+ENV HYGG_DATA_DIR=/app/data \
+  DATABASE_URL=sqlite:///app/data/hygg-server.db \
   HOST=0.0.0.0 \
   PORT=3032 \
-  BLOB_DIR=/app/data/blobs \
-  LOG_DIR=/app/data/logs \
+  LOG_DIR=/app/data/hygg-logs \
   HYGG_OCR_MODEL_DIR=/app/data/models/ocr \
   RUST_LOG=hygg_server=info,tower_http=info
 EXPOSE 3032

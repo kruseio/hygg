@@ -3,9 +3,9 @@
 Serves real files; falls back to index.html for client-side routes; sets the
 wasm MIME type so the module instantiates.
 
-Access logs are written to the project's ./data/logs/hygg-pwa/ directory (one
-directory per service), rotated daily and retained for 30 days. Override the
-base log directory with HYGG_LOG_DIR."""
+Access logs are written to the project's ./hygg-data/hygg-logs/hygg-pwa/
+directory (one directory per service, beside hygg-server's), rotated daily and
+retained for 30 days. Override the base log directory with HYGG_LOG_DIR."""
 import http.server
 import logging
 import os
@@ -16,9 +16,17 @@ from logging.handlers import TimedRotatingFileHandler
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "dist")
 # Project root is two levels up from packages/hygg-pwa/, so logs land under
-# ./data/logs regardless of the working directory the server is launched from.
+# ./hygg-data/hygg-logs regardless of the working directory the server is
+# launched from. That tree is hygg-server's data directory, which it claims with
+# a .hygg-server marker and guards on startup (packages/hygg-server/src/
+# data_dir.rs) — it recognises this hygg-logs/ directory as hygg's own, so
+# serving the PWA here before the server has ever run is a first start for it,
+# not a directory it refuses. Renaming this out from under that check would
+# resurrect exactly that failure.
 PROJECT_ROOT = os.path.dirname(os.path.dirname(HERE))
-LOG_BASE = os.environ.get("HYGG_LOG_DIR") or os.path.join(PROJECT_ROOT, "data", "logs")
+LOG_BASE = os.environ.get("HYGG_LOG_DIR") or os.path.join(
+    PROJECT_ROOT, "hygg-data", "hygg-logs"
+)
 LOG_DIR = os.path.join(LOG_BASE, "hygg-pwa")
 
 

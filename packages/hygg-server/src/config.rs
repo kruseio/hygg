@@ -5,7 +5,22 @@ use std::env;
 
 #[derive(Clone, Debug)]
 pub struct Config {
-  /// Path to the SQLite database, e.g. `sqlite://data/hygg-server.db`.
+  /// Base directory for hygg's state: the SQLite database, rotating logs, and
+  /// any cached models all default to somewhere beneath it. Claimed with a
+  /// marker file and checked on every start (see [`crate::data_dir`]), so a
+  /// mount pointed at the wrong directory is refused rather than merged into.
+  /// Defaults to `hygg-data`; override with `HYGG_DATA_DIR`.
+  ///
+  /// The server is the principal occupant but not the only one — sibling tools
+  /// log beside it under the same tree — so the check recognises hygg's own
+  /// directories there, not just this process's files.
+  ///
+  /// The name is deliberately specific rather than a generic `data`: it is
+  /// most often a bind mount created in whatever directory the operator ran
+  /// `docker run` from, and it should not collide with one already there.
+  pub data_dir: String,
+  /// Path to the SQLite database, e.g. `sqlite://hygg-data/hygg-server.db`.
+  /// Defaults to `hygg-server.db` under [`Self::data_dir`].
   pub database_url: String,
   /// Address to bind the HTTP server to.
   pub bind_addr: String,
@@ -32,8 +47,8 @@ pub struct Config {
   /// origins.
   pub cors_allow_origins: Vec<String>,
   /// Base directory for rotating log files. The server writes to a per-service
-  /// subdirectory (`<log_dir>/hygg-server`). Defaults to `data/logs` (under
-  /// the project's `./data` tree); override with `LOG_DIR`.
+  /// subdirectory (`<log_dir>/hygg-server`). Defaults to `hygg-logs` under
+  /// [`Self::data_dir`]; override with `LOG_DIR`.
   pub log_dir: String,
   /// Whether to cache and reuse server-side document extraction (`/convert`
   /// results, and a background pre-warm on blob upload). On (default), an
@@ -64,15 +79,27 @@ pub const DEFAULT_HOST: &str = "0.0.0.0";
 /// Default listen port. Chosen to be unlikely to clash with common services.
 /// Override with `PORT`.
 pub const DEFAULT_PORT: &str = "3032";
-/// Default base directory for rotating logs, under the project's `./data` tree.
-/// Override with `LOG_DIR`.
-pub const DEFAULT_LOG_DIR: &str = "data/logs";
+/// Default directory the server keeps its state in, relative to the working
+/// directory. Override with `HYGG_DATA_DIR`.
+pub const DEFAULT_DATA_DIR: &str = "hygg-data";
+
+/// File name of the SQLite database under the data directory.
+pub const DB_FILE_NAME: &str = "hygg-server.db";
+
+/// Log directory under the data directory. Prefixed like everything else the
+/// server owns, so its purpose is obvious in a directory listing.
+pub const LOG_SUBDIR: &str = "hygg-logs";
 
 impl Config {
   pub fn from_env() -> Self {
+    // Resolved first: the database and log locations default to somewhere
+    // under it, so pointing HYGG_DATA_DIR elsewhere moves the whole tree
+    // without having to restate each path.
+    let data_dir = env_nonempty("HYGG_DATA_DIR")
+      .unwrap_or_else(|| DEFAULT_DATA_DIR.to_string());
     Self {
       database_url: env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "sqlite://data/hygg-server.db".to_string()),
+        .unwrap_or_else(|_| format!("sqlite://{data_dir}/{DB_FILE_NAME}")),
       bind_addr: bind_addr_from_env(),
       max_body_bytes: env::var("MAX_BODY_BYTES")
         .ok()
@@ -89,12 +116,13 @@ impl Config {
         .unwrap_or_else(|| "https://pwa.hygg.kruseio.com".to_string()),
       cors_allow_origins: cors_origins_from_env(),
       log_dir: env_nonempty("LOG_DIR")
-        .unwrap_or_else(|| DEFAULT_LOG_DIR.to_string()),
+        .unwrap_or_else(|| format!("{data_dir}/{LOG_SUBDIR}")),
       extraction_cache: env_bool("HYGG_EXTRACTION_CACHE", true),
       convert_concurrency: env_nonempty("HYGG_CONVERT_CONCURRENCY")
         .and_then(|v| v.parse().ok())
         .filter(|&v: &usize| v > 0)
         .unwrap_or(DEFAULT_CONVERT_CONCURRENCY),
+      data_dir,
     }
   }
 }
@@ -157,6 +185,7 @@ mod tests {
   /// tests mutating the same vars.
   fn clear_bind_env() {
     unsafe {
+      env::remove_var("HYGG_DATA_DIR");
       env::remove_var("DATABASE_URL");
       env::remove_var("BIND_ADDR");
       env::remove_var("HOST");
@@ -179,8 +208,9 @@ mod tests {
 
     // Defaults when nothing is set.
     let config = Config::from_env();
-    assert_eq!(config.database_url, "sqlite://data/hygg-server.db");
-    assert_eq!(config.log_dir, "data/logs");
+    assert_eq!(config.data_dir, "hygg-data");
+    assert_eq!(config.database_url, "sqlite://hygg-data/hygg-server.db");
+    assert_eq!(config.log_dir, "hygg-data/hygg-logs");
     assert_eq!(config.bind_addr, "0.0.0.0:3032");
     assert_eq!(config.max_body_bytes, DEFAULT_MAX_BODY_BYTES);
     assert_eq!(config.rp_id, "localhost");
@@ -191,6 +221,28 @@ mod tests {
     assert_eq!(config.cors_allow_origins, vec!["*".to_string()]);
     // Extraction cache is on by default.
     assert!(config.extraction_cache);
+
+    // HYGG_DATA_DIR moves the database and the logs together, so relocating
+    // the tree takes one variable rather than three kept in step by hand.
+    unsafe { env::set_var("HYGG_DATA_DIR", "/srv/hygg") };
+    let config = Config::from_env();
+    assert_eq!(config.database_url, "sqlite:///srv/hygg/hygg-server.db");
+    assert_eq!(config.log_dir, "/srv/hygg/hygg-logs");
+
+    // An explicit path still wins over the derived default — the data dir only
+    // supplies the default, it does not confine anything to itself.
+    unsafe {
+      env::set_var("DATABASE_URL", "sqlite:///elsewhere/db.sqlite");
+      env::set_var("LOG_DIR", "/var/log/hygg");
+    }
+    let config = Config::from_env();
+    assert_eq!(config.database_url, "sqlite:///elsewhere/db.sqlite");
+    assert_eq!(config.log_dir, "/var/log/hygg");
+    unsafe {
+      env::remove_var("HYGG_DATA_DIR");
+      env::remove_var("DATABASE_URL");
+      env::remove_var("LOG_DIR");
+    }
 
     // The kill switch turns it off (and recognises common truthy/falsy forms).
     unsafe { env::set_var("HYGG_EXTRACTION_CACHE", "false") };

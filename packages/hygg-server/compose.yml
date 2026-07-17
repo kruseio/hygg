@@ -1,0 +1,55 @@
+# Production stack. One-command self-host, run from this directory
+# (packages/hygg-server/):
+#
+#   cp .env.example .env      # optional; the defaults work as-is
+#   docker compose up --build -d
+#
+# One service, no database to run alongside it — state is a SQLite file under
+# ./hygg-data, a directory this stack owns (see src/data_dir.rs: the server
+# marks it on first use, and refuses to start on a directory it did not create).
+#
+# The explicit project `name` keeps this stack's containers, network and image
+# namespaced apart from the staging stack (compose.staging.yml), so both can run
+# side by side from this same clone.
+name: hygg-server
+
+services:
+  hygg-server:
+    build:
+      # The context is the workspace root, two levels up: the Dockerfile builds
+      # `-p hygg-server` out of the whole workspace, so it needs the root
+      # Cargo.toml/Cargo.lock and every path dependency — none of which are
+      # under this crate. `dockerfile` is resolved relative to that context,
+      # hence the packages/ prefix.
+      context: ../..
+      dockerfile: packages/hygg-server/Dockerfile
+    image: hygg-server:prod
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Keeps the in-container listen port in lockstep with the published port
+      # below, even when .env doesn't set PORT (the image default is 3032).
+      PORT: ${PORT:-3032}
+      RUST_LOG: hygg_server=info,tower_http=info
+      # Pinned to the mount, and not merely inherited from the image, because
+      # `env_file: .env` above is read *inside the container*: a relative path
+      # in it resolves against /app, so a stray `HYGG_DATA_DIR=hygg-data` there
+      # would silently put the database in /app/hygg-data — the container's
+      # writable layer, discarded by the next `docker rm` — instead of on the
+      # volume below. `environment:` wins over `env_file:`, so this forecloses
+      # that whatever .env says.
+      HYGG_DATA_DIR: /app/data
+      DATABASE_URL: sqlite:///app/data/hygg-server.db
+      LOG_DIR: /app/data/hygg-logs
+    # PORT comes from .env (via env_file above and Compose's own interpolation),
+    # so changing it there moves both the published and in-container port.
+    ports:
+      - "${PORT:-3032}:${PORT:-3032}"
+    volumes:
+      # Bind-mounted rather than a named volume so the database stays a file you
+      # can see, copy and back up with the tools you already have. The host side
+      # is `hygg-data`, not `data`: it is created in whatever directory you run
+      # Compose from, and it should not land on top of one already there.
+      - ./hygg-data:/app/data

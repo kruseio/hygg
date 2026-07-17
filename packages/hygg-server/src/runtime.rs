@@ -11,24 +11,50 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 use crate::config::Config;
+use crate::data_dir::{self, Claim};
 use crate::db::Db;
 use crate::state::AppState;
 
-/// Self-host entry point: load env, initialise logging, open + migrate the
-/// database, run first-run bootstrap, and serve the standalone app (with the
-/// default [`NoopEntitlements`]) until shutdown.
+/// Self-host entry point: claim the data directory, load env, initialise
+/// logging, open + migrate the database, run first-run bootstrap, and serve the
+/// standalone app (with the default [`NoopEntitlements`]) until shutdown.
 ///
 /// [`NoopEntitlements`]: crate::ext::NoopEntitlements
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
   load_dotenv();
   let config = Config::from_env();
+
+  // Before anything writes: initialising logging and opening the database both
+  // create files under the data directory, and the claim can only tell whether
+  // the directory is ours while it is still untouched. An embedder assembling
+  // its own startup owes itself the same call, in the same position.
+  let claim = data_dir::claim(Path::new(&config.data_dir))?;
+
   // Hold the appender guard for the whole process so buffered logs are flushed.
   let _log_guard = init_tracing(&config.log_dir, "hygg-server");
+  report_claim(claim, &config.data_dir);
 
   let db = Db::connect(&config.database_url).await?;
   tracing::info!("connected to database");
   let state = AppState::new(db, config);
   serve_state(state).await
+}
+
+/// Log what [`data_dir::claim`] did, now that there is somewhere to log it.
+/// Only the ordinary restart passes in silence; the rest are each a thing an
+/// operator would want to see confirmed in the first lines of a boot.
+fn report_claim(claim: Claim, data_dir: &str) {
+  match claim {
+    Claim::Owned => {}
+    Claim::Created => tracing::info!("created data directory {data_dir}"),
+    Claim::ClaimedEmpty => {
+      tracing::info!("claimed empty data directory {data_dir}");
+    }
+    Claim::ClaimedExisting => tracing::info!(
+      "claimed existing data directory {data_dir} and marked it as \
+       hygg-server's"
+    ),
+  }
 }
 
 /// Migrate, run first-run bootstrap, bind, and serve the standalone self-host

@@ -216,7 +216,7 @@ extra services.
 Multi-arch (`linux/amd64` + `linux/arm64`, so a Raspberry Pi or Graviton box
 works), no toolchain and no compile:
 ```sh
-docker run -d -p 3032:3032 -v "$PWD/data:/app/data" \
+docker run -d -p 3032:3032 -v "$PWD/hygg-data:/app/data" \
   ghcr.io/kruseio/hygg-server:latest
 ```
 
@@ -233,8 +233,27 @@ Set `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` in `.env` to create an
 admin account on first boot. Without Docker:
 ```sh
 cd packages/hygg-server
-cargo run -p hygg-server   # loads .env from here; data lands in ./data
+cargo run -p hygg-server   # loads .env from here; data lands in ./hygg-data
 ```
+
+A staging instance runs alongside production from the same clone — its own
+database, port (3033) and config, so it cannot touch the production data:
+```sh
+cp .env.staging.example .env.staging
+docker compose -f compose.staging.yml --env-file .env.staging up --build -d
+```
+
+### The data directory
+The server keeps its database and logs in one directory (`hygg-data`, or
+whatever `HYGG_DATA_DIR` names), and claims it on first use with a
+`.hygg-server` marker file. If you point the mount at a directory that is not
+empty and not one of its own, it refuses to start and tells you what it found
+instead of writing into it.
+
+Upgrading from a release that used `data`? Nothing is moved for you: stop the
+server, `mv data hygg-data`, and update the `-v` flag. A mount still pointing at
+the old directory keeps working — the server recognises an existing
+`hygg-server.db` and adopts it.
 
 ### Check it
 ```sh

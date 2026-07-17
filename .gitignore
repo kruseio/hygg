@@ -3,11 +3,22 @@ target
 test-data/local
 progress.json
 TODO.md
+# hygg-server runtime state. `hygg-data` is the current name (specific enough
+# not to collide with a directory that was already there); the prod and staging
+# compose stacks each bind-mount their own. Both are created next to the compose
+# file, or at the repo root when the server is run from there instead
+# (e.g. `cargo run -p hygg-server`).
+packages/hygg-server/hygg-data/
+packages/hygg-server/hygg-data-staging/
+/hygg-data/
+# `data` was the name before it, kept ignored because deployments that predate
+# the rename still point at one and there is no automatic move.
 packages/hygg-server/data/
-# A SQLite DB is also created here if the server is run from the repo root
-# (e.g. `cargo run -p hygg-server`) instead of from packages/hygg-server/.
 /data/
+# Real deployment configs live only on the machine that runs them; the
+# .example templates beside them are what's committed.
 packages/hygg-server/.env
+packages/hygg-server/.env.staging
 test-upload.txt
 AGENTS.md
 .DS_Store

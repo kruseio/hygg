@@ -1,0 +1,45 @@
+# Staging stack — a full second instance (own database, own network, own port)
+# that runs alongside production from this same clone:
+#
+#   cp .env.staging.example .env.staging
+#   docker compose -f compose.staging.yml --env-file .env.staging up --build -d
+#
+# ALWAYS pass `--env-file .env.staging`: without it Compose interpolates from
+# the prod `.env`, and a PORT collision with the prod stack would follow. The
+# distinct project `name` below namespaces every resource away from prod
+# (hygg-server-staging_* container/network, hygg-server:staging image).
+name: hygg-server-staging
+
+services:
+  hygg-server:
+    build:
+      # Same context and Dockerfile as prod — staging exists to run the code as
+      # it will ship, not a variant of it. What differs is around the image.
+      context: ../..
+      dockerfile: packages/hygg-server/Dockerfile
+    image: hygg-server:staging
+    restart: unless-stopped
+    env_file:
+      - path: .env.staging
+        required: false
+    environment:
+      # Keeps the in-container listen port in lockstep with the published port
+      # below, even when .env.staging doesn't set PORT (the image default is
+      # 3032, which would otherwise silently mismatch the 3033 mapping).
+      PORT: ${PORT:-3033}
+      RUST_LOG: hygg_server=info,tower_http=info
+      # Pinned to the mount for the same reason as prod (see compose.yml): a
+      # relative path arriving from .env.staging would resolve against /app and
+      # land the database in the container's writable layer, not on the volume.
+      HYGG_DATA_DIR: /app/data
+      DATABASE_URL: sqlite:///app/data/hygg-server.db
+      LOG_DIR: /app/data/hygg-logs
+    # Defaults to 3033 so a bare bring-up never collides with prod's 3032.
+    ports:
+      - "${PORT:-3033}:${PORT:-3033}"
+    volumes:
+      # Staging's own database and logs, in its own host directory. The whole
+      # point of the separate directory is that a staging run cannot touch the
+      # production database — the container path is the same, the host path is
+      # not.
+      - ./hygg-data-staging:/app/data

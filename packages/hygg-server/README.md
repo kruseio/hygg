@@ -27,9 +27,10 @@ cp .env.example .env           # optional; sensible defaults work as-is
 docker compose up --build -d
 ```
 
-The server listens on `http://localhost:3032`. Data (the SQLite DB and document
-blobs) persists in `./data`. Open <http://localhost:3032/> in a browser for the
-web UI, or check it from the shell:
+The server listens on `http://localhost:3032`. Everything it stores — the SQLite
+database, document blobs (rows in it, not files) and logs — persists in
+`./hygg-data`. Open <http://localhost:3032/> in a browser for the web UI, or
+check it from the shell:
 
 ```sh
 curl http://localhost:3032/health      # {"status":"ok"}
@@ -39,15 +40,66 @@ curl http://localhost:3032/health      # {"status":"ok"}
 > `localhost:3032` to HTTPS, which this server doesn't serve — that shows up as
 > `ERR_CONNECTION_REFUSED`.
 
+### Staging alongside production
+
+`compose.staging.yml` is a full second instance — its own database, network,
+image and port — that runs beside prod from this same clone:
+
+```sh
+cp .env.staging.example .env.staging
+docker compose -f compose.staging.yml --env-file .env.staging up --build -d
+```
+
+It listens on `http://localhost:3033` and stores its data in
+`./hygg-data-staging`, so a staging run cannot reach the production database.
+Always pass `--env-file .env.staging`: without it Compose interpolates from the
+prod `.env` and the two stacks collide on `PORT`.
+
+| | production | staging |
+|---|---|---|
+| compose file | `compose.yml` (default) | `compose.staging.yml` |
+| config | `.env` | `.env.staging` |
+| project | `hygg-server` | `hygg-server-staging` |
+| port | `3032` | `3033` |
+| data | `./hygg-data` | `./hygg-data-staging` |
+
+### The data directory
+
+`hygg-data` is hygg's tree, and the server claims it on first use by writing a
+`.hygg-server` marker file. On every start it checks for that marker, and
+**refuses to boot** on a directory that is non-empty and holds nothing of
+hygg's — printing what it found and how to fix it, rather than writing its tree
+into whatever was there. A bind mount is one string in a shell command; this is
+what stops a typo in it from being your problem.
+
+The server is the tree's principal occupant, not its only one: `hygg-logs/` is
+shared, and sibling tools log beside it there (`packages/hygg-pwa/serve_dist.py`
+writes `hygg-logs/hygg-pwa/`). So a `hygg-server.db` **or** a `hygg-logs/`
+directory both count as hygg's — serving the PWA from a fresh checkout before
+the server has ever run leaves a tree the server then adopts on its first start,
+rather than refusing. Neither name belongs to anything but hygg, so neither can
+be mistaken for a stranger's file.
+
+The name is deliberately specific: the mount is created in whatever directory
+you ran Docker from, and `data` is a name that is often already taken.
+
+> Upgrading from a deployment that used `data`? Nothing moves on its own — stop
+> the server, `mv data hygg-data`, and update your `-v` flag. The server adopts
+> and marks an existing directory that holds a `hygg-server.db`, so a mount left
+> pointing at the old path keeps working too.
+
 ### Prebuilt image
 
 Every release publishes a multi-arch image (`linux/amd64` + `linux/arm64`) to
 GHCR, so a self-host needs no toolchain and no compile:
 
 ```sh
-docker run -d -p 3032:3032 -v "$PWD/data:/app/data" \
+docker run -d -p 3032:3032 -v "$PWD/hygg-data:/app/data" \
   ghcr.io/kruseio/hygg-server:latest
 ```
+
+The mount's host side (`$PWD/hygg-data`) is yours to name and move; `/app/data`
+is the image's own path and should stay as it is.
 
 Tags are `:latest`, `:0.1.21` (pin this) and `:0.1`. To use it from the compose
 file above, replace the `build:` block with
@@ -58,7 +110,7 @@ they are.
 
 ```sh
 cd packages/hygg-server
-cargo run -p hygg-server       # loads .env from here; data lands in ./data
+cargo run -p hygg-server       # loads .env from here; data lands in ./hygg-data
 ```
 
 > **macOS firewall note.** rustc/cargo leave the binary "linker-signed", which
@@ -87,8 +139,9 @@ All settings come from environment variables (autoloaded from `.env`). See
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DATABASE_URL` | `sqlite://data/hygg-server.db` | Path to the SQLite file |
-| `LOG_DIR` | `data/logs` | base dir for rotating logs (`<LOG_DIR>/hygg-server/`, daily, 30-day retention) |
+| `HYGG_DATA_DIR` | `hygg-data` | directory the server owns and stores everything under; `DATABASE_URL` and `LOG_DIR` default beneath it |
+| `DATABASE_URL` | `sqlite://hygg-data/hygg-server.db` | Path to the SQLite file |
+| `LOG_DIR` | `hygg-data/hygg-logs` | base dir for rotating logs (`<LOG_DIR>/hygg-server/`, daily, 30-day retention) |
 | `PORT` | `3032` | listen port (change this to move the server) |
 | `HOST` | `0.0.0.0` | bind interface (`0.0.0.0` = LAN, `127.0.0.1` = local only) |
 | `BIND_ADDR` | — | full `host:port` that overrides `HOST`/`PORT` |

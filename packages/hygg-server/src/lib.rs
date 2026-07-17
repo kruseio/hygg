@@ -8,6 +8,7 @@ pub mod api;
 pub mod auth;
 pub mod bootstrap;
 pub mod config;
+pub mod data_dir;
 pub mod db;
 pub mod entity;
 pub mod error;

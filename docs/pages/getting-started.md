@@ -71,10 +71,12 @@ only.
 Optional. hygg reads fine with no server, and never depends on one. To sync
 documents and reading progress across devices, run your own:
 ```sh
-docker run -d -p 3032:3032 -v "$PWD/data:/app/data" ghcr.io/kruseio/hygg-server:latest
+docker run -d -p 3032:3032 -v "$PWD/hygg-data:/app/data" ghcr.io/kruseio/hygg-server:latest
 ```
 
-Then point a client at `http://localhost:3032`.
+Then point a client at `http://localhost:3032`. The server keeps its database
+and logs in the `hygg-data` directory this creates, and will refuse to start if
+you point that mount at a directory holding anything else.
 
 ## Additional formats via pandoc
 ```sh
