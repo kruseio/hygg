@@ -161,6 +161,14 @@ pub trait Entitlements: Send + Sync {
     Ok(())
   }
 
+  /// Decide whether an account may be created through `POST /api/v1/signup`.
+  /// Open by default — anyone may sign up — so a deployment that wants to close
+  /// registration (invite-only, waitlist, …) answers here. `cx.user_id` is not
+  /// yet meaningful (no account exists), so the decision keys on the tenant.
+  async fn authorize_signup(&self, _cx: EntCtx<'_>) -> Result<(), AppError> {
+    Ok(())
+  }
+
   /// Decide whether a storage-consuming upload may proceed against the owning
   /// pool's budget.
   async fn authorize_upload(&self, _cx: UploadCtx<'_>) -> Result<(), AppError> {

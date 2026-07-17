@@ -20,6 +20,7 @@ use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
   Router::new()
+    .route("/api/v1/signup", post(devices::signup))
     .route("/api/v1/devices/register", post(devices::register))
     .route("/api/v1/devices", get(devices::list_devices))
     .route("/api/v1/devices/{id}", delete(devices::revoke_device))

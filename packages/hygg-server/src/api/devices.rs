@@ -5,10 +5,11 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
 use hygg_shared::sync::proto::{
-  self, RegisterDeviceRequest, RegisterDeviceResponse,
+  self, RegisterDeviceRequest, RegisterDeviceResponse, SignupRequest,
+  SignupResponse,
 };
 
-use crate::auth::password::verify_password;
+use crate::auth::password::{hash_password, verify_password};
 use crate::auth::token::generate_token;
 use crate::auth::{Principal, Role};
 use crate::bootstrap::DEFAULT_TENANT_SLUG;
@@ -71,41 +72,120 @@ async fn register_inner(
     })
     .await?;
 
-  let device_id = repo::devices::insert(
-    pool,
+  let (device_id, token) = mint_device(
+    state,
     &tenant_id,
     &user.id,
     &req.device_name,
     &req.platform,
+    req.machine_id.as_deref(),
   )
   .await?;
-  // Lock the new device to the registering machine, so its token can only be
-  // used from here. Blank/absent binds nothing (first authenticated request
-  // binds it instead).
-  if let Some(machine_id) =
-    req.machine_id.as_deref().map(str::trim).filter(|m| !m.is_empty())
-  {
-    let _ =
-      repo::devices::bind_machine_id(pool, &tenant_id, &device_id, machine_id)
-        .await;
-  }
-  let token = generate_token();
-  repo::tokens::insert(
-    pool,
-    &tenant_id,
-    &device_id,
-    &token.prefix,
-    &token.hash,
-  )
-  .await?;
-  crate::web::check_user_orgs(state, &tenant_id, &user.id).await;
 
   Ok(Json(RegisterDeviceResponse {
     device_id,
-    token: token.full,
+    token,
     tenant_id,
     user_id: user.id,
   }))
+}
+
+/// Create a device for `user_id` and mint its API token (returned once),
+/// binding it to `machine_id` when one is supplied. Shared by device
+/// registration and signup — both end by handing a fresh device token back.
+async fn mint_device(
+  state: &AppState,
+  tenant_id: &str,
+  user_id: &str,
+  device_name: &str,
+  platform: &str,
+  machine_id: Option<&str>,
+) -> AppResult<(String, String)> {
+  let pool = &state.db.conn;
+  let device_id =
+    repo::devices::insert(pool, tenant_id, user_id, device_name, platform)
+      .await?;
+  // Lock the new device to the registering machine, so its token can only be
+  // used from here. Blank/absent binds nothing (first authenticated request
+  // binds it instead).
+  if let Some(machine_id) = machine_id.map(str::trim).filter(|m| !m.is_empty())
+  {
+    let _ =
+      repo::devices::bind_machine_id(pool, tenant_id, &device_id, machine_id)
+        .await;
+  }
+  let token = generate_token();
+  repo::tokens::insert(pool, tenant_id, &device_id, &token.prefix, &token.hash)
+    .await?;
+  crate::web::check_user_orgs(state, tenant_id, user_id).await;
+  Ok((device_id, token.full))
+}
+
+/// `POST /api/v1/signup` — create an account and mint its first device token in
+/// one call, so a client can go from "no account" to "connected" without the
+/// web signup form. Rate-limited per IP like registration; the password is
+/// hashed with Argon2id and never returned. The account-creation gate is
+/// delegated to the entitlements hook, so a deployment can close registration.
+pub async fn signup(
+  State(state): State<AppState>,
+  headers: HeaderMap,
+  Json(req): Json<SignupRequest>,
+) -> AppResult<Json<SignupResponse>> {
+  let ip = client_ip(&headers);
+  if auth_rate_limited(&state, &ip).await {
+    return Err(AppError::TooManyRequests);
+  }
+
+  let pool = &state.db.conn;
+  let email = req.email.trim().to_lowercase();
+  if email.is_empty() {
+    return Err(AppError::BadRequest("Email is required".into()));
+  }
+  if let Some(msg) = crate::web::password_complexity_error(&req.password) {
+    return Err(AppError::BadRequest(msg.into()));
+  }
+  let tenant_id = repo::tenants::find_id_by_slug(pool, DEFAULT_TENANT_SLUG)
+    .await?
+    .ok_or(AppError::Internal)?;
+
+  // Account-creation gate (open by default). Keyed on the tenant — no user
+  // exists yet — so `is_admin` is meaningless here and passed as false.
+  state
+    .entitlements
+    .authorize_signup(crate::ext::EntCtx {
+      tenant_id: &tenant_id,
+      user_id: "",
+      is_admin: false,
+    })
+    .await?;
+
+  let hash = hash_password(&req.password).map_err(|_| AppError::Internal)?;
+  let display_name =
+    if req.display_name.trim().is_empty() { &email } else { &req.display_name };
+  // A unique-index violation on the email surfaces as an insert error; report
+  // it as a conflict rather than a generic failure so the client can say so.
+  let user_id = repo::users::insert(
+    pool,
+    &tenant_id,
+    &email,
+    display_name,
+    Some(&hash),
+    "user",
+  )
+  .await
+  .map_err(|_| AppError::Conflict("Account already exists".into()))?;
+
+  let (device_id, token) = mint_device(
+    &state,
+    &tenant_id,
+    &user_id,
+    &req.device_name,
+    &req.platform,
+    req.machine_id.as_deref(),
+  )
+  .await?;
+
+  Ok(Json(SignupResponse { device_id, token, tenant_id, user_id }))
 }
 
 /// `GET /api/v1/me` — the authenticated principal (requires a valid token).
