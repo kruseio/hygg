@@ -1,0 +1,133 @@
+# Continuously publish the hygg-pwa built from `main` to a fixed preview path.
+#
+#   /hygg/            the latest *release* (owned by pages.yml, on a tag)
+#   /hygg/0.1.25/     each release, frozen  (owned by pages.yml, on a tag)
+#   /hygg/main/       whatever main is right now  (this workflow, on every push)
+#
+# So the root and the pinned dirs only ever move on a tag, and `/main/` tracks
+# the branch. The two workflows share the `pages` concurrency group below, so
+# their read-modify-write of the gh-pages branch is serialized and never
+# interleaves. This one only ever touches `site/main/`; it leaves the root and
+# every version dir exactly as it found them (and pages.yml, in turn, preserves
+# `main/` — see the find filter in its "Assemble site" step).
+#
+# Same gh-pages mechanics as pages.yml: a branch, not actions/deploy-pages,
+# because the latter replaces the whole site each run and would take the
+# releases with it.
+
+name: pages-main
+
+on:
+  push:
+    branches: [main]
+  # Redeploy main on demand without pushing a commit.
+  workflow_dispatch:
+
+permissions:
+  contents: write # pushes the built site to gh-pages
+
+# One writer of gh-pages at a time, shared with pages.yml so a release deploy
+# and a main deploy can never clobber each other's commit.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy pwa (main channel)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Resolve base path
+        id: vars
+        env:
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          echo "base=/$REPO" >> "$GITHUB_OUTPUT"
+
+      # Default ref: the pushed commit (or the chosen branch on dispatch).
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: pages-main
+
+      - uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+
+      # Trunk bakes the public URL into the hashed asset refs, so the build is
+      # not relocatable — it is built directly for its final /main/ home.
+      - name: Build main (served at ${{ steps.vars.outputs.base }}/main/)
+        working-directory: packages/hygg-pwa
+        env:
+          BASE: ${{ steps.vars.outputs.base }}
+        run: |
+          set -euo pipefail
+          url="$BASE/main/"
+          trunk build --release --public-url "$url"
+          python3 tools/prepare_pages_dist.py dist "$url"
+          mv dist ../../dist-main
+
+      # A fresh repo has no gh-pages yet; start it as an orphan so the branch
+      # carries only the site, never the source history.
+      - name: Check out gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch origin gh-pages --depth=1
+            git worktree add site --track -b gh-pages origin/gh-pages
+          else
+            echo "no gh-pages branch yet — creating it"
+            git worktree add --orphan -b gh-pages site
+          fi
+
+      - name: Assemble site (main channel only)
+        env:
+          BASE: ${{ steps.vars.outputs.base }}
+        run: |
+          set -euo pipefail
+
+          # Replace only /main; the root (latest release) and every pinned
+          # version dir are left untouched.
+          rm -rf site/main
+          mkdir -p site/main
+          cp -R dist-main/. site/main/
+
+          # Pages runs Jekyll otherwise, which drops files starting with "_".
+          touch site/.nojekyll
+          # Regenerates versions.{json,html} from the pinned dirs present. It
+          # only counts semver dirs, so `main/` is deliberately not listed.
+          python3 packages/hygg-pwa/tools/write_versions_index.py site "$BASE/"
+
+      - name: Commit and push
+        working-directory: site
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git add -A
+          if git diff --cached --quiet; then
+            echo "site unchanged — nothing to push"
+            exit 0
+          fi
+          git commit -m "pages: deploy main @ ${SHA:0:7}"
+          git push origin gh-pages
+
+      - name: Summary
+        env:
+          BASE: ${{ steps.vars.outputs.base }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          {
+            echo "### PWA main channel deployed"
+            echo
+            echo "- main: https://$OWNER.github.io$BASE/main/"
+          } >> "$GITHUB_STEP_SUMMARY"

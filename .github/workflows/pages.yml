@@ -150,10 +150,13 @@ jobs:
           # left over from that era survives too. Anchored to a full X.Y.Z so a
           # root file like versions.html is not mistaken for a version
           # directory and preserved as stale; posix-extended because findutils'
-          # default regex dialect wants `\?` for an optional atom.
+          # default regex dialect wants `\?` for an optional atom. `main/` is
+          # spared too — it is the continuously-deployed main channel that
+          # pages-main.yml owns, not a stale root file.
           find site -mindepth 1 -maxdepth 1 \
             -regextype posix-extended \
             -not -name '.git' \
+            -not -name 'main' \
             -not -regex 'site/v?[0-9]+\.[0-9]+\.[0-9]+.*' \
             -exec rm -rf {} +
           cp -R dist-latest/. site/
