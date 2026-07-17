@@ -607,6 +607,21 @@ jobs:
           # regenerating it is what makes the tags page and this release the
           # same text by construction instead of by coincidence.
           #
+          # But the annotation is not on the tag as checked out here: actions/
+          # checkout, handed a tag push, force-fetches the *commit* over the tag
+          # ref (`+<sha>:refs/tags/$TAG` in its logs), which replaces the
+          # annotated tag object with a lightweight tag pointing at the commit —
+          # so `%(contents:body)` reads empty and 0.1.26 shipped GitHub's flat
+          # auto-generated notes instead of the changelog. Re-fetch the real
+          # annotated object from origin first. Anonymous fetch: the repo is
+          # public and persist-credentials:false left no token in git config;
+          # made non-fatal so a fetch failure falls through to --generate-notes
+          # below rather than failing the release. A hand-pushed lightweight tag
+          # has nothing annotated to recover and stays empty — the intended
+          # fallback, unchanged.
+          git fetch --force origin "refs/tags/${TAG}:refs/tags/${TAG}" \
+            || echo "::warning::could not re-fetch $TAG's annotation; notes may fall back to --generate-notes"
+          #
           # `contents:body` is the annotation minus its subject line, and that
           # subject is the bare version — already this release's title.
           changelog="$(git tag -l --format='%(contents:body)' "$TAG")"
