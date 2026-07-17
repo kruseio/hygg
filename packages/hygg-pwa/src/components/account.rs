@@ -1,10 +1,12 @@
-//! Settings → Account: connect this browser to a sync server by entering your
-//! **username** and a **device token** (created in the server's Devices page or
-//! via the API) — same model as the CLI's `:auth <username> <token>`. No
-//! password in the PWA. Both are validated against `/me`, which also binds this
-//! browser's machine id to the token and yields the device id + account label.
-//! Optional throughout — the reader works fully offline without ever
-//! connecting.
+//! Settings → Account: connect this browser to a sync server. You can **create
+//! an account** or **sign in** with your email and password — each is exchanged
+//! once for a device token, and only that token is stored (the password is
+//! never persisted) — or paste a **device token** made in the server's Devices
+//! page, the same model as the CLI's `:auth`. Optional throughout — the reader
+//! works fully offline without ever connecting.
+//!
+//! On the official hosted service this section also hosts the subscription flow
+//! ([`SubscribeSection`]); a self-host build never shows any commerce.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -13,6 +15,9 @@ use hygg_shared::sync::proto::MeResponse;
 
 use crate::app::SettingsCtx;
 use crate::sync;
+
+use super::account_connect::ConnectForms;
+use super::subscribe::SubscribeSection;
 
 /// One-line explanation of what an auto-sync scope covers, shown under the
 /// selector.
@@ -30,17 +35,13 @@ fn scope_hint(scope: hygg_shared::sync::AutoSyncPolicy) -> &'static str {
 /// The account line shown once connected: whatever label the server supplied,
 /// verbatim. A server that sends none (the ordinary case) shows nothing rather
 /// than inventing a word for it.
-fn account_label(me: &MeResponse) -> String {
+pub(super) fn account_label(me: &MeResponse) -> String {
   me.label.clone().filter(|l| !l.is_empty()).unwrap_or_default()
 }
 
 #[component]
 pub fn AccountSection() -> impl IntoView {
   let settings = expect_context::<SettingsCtx>();
-  let user_input = RwSignal::new(String::new());
-  let token_input = RwSignal::new(String::new());
-  let status = RwSignal::new(String::new());
-  let busy = RwSignal::new(false);
   let account = RwSignal::new(String::new());
 
   // When already connected, confirm the stored credentials still work and show
@@ -59,48 +60,6 @@ pub fn AccountSection() -> impl IntoView {
     }
   });
 
-  let connect = move |_| {
-    let username = user_input.get().trim().to_string();
-    let token = token_input.get().trim().to_string();
-    if username.is_empty() || token.is_empty() {
-      status.set("Enter your username and device token.".to_string());
-      return;
-    }
-    // Ensure a stable machine id for this browser and build the full
-    // credentials (the token binds to this machine on the server).
-    let mut machine_id = String::new();
-    settings.update(|s| machine_id = s.ensure_machine_id());
-    settings.with(|s| s.save());
-    let server = settings.with(|s| s.server_url.clone());
-    let creds = sync::Creds {
-      server,
-      token: token.clone(),
-      username: username.clone(),
-      machine_id,
-    };
-    busy.set(true);
-    status.set("Connecting\u{2026}".to_string());
-    spawn_local(async move {
-      // Validate username + token and capture the device id + plan from /me.
-      match sync::fetch_me(&creds).await {
-        Ok(me) => {
-          settings.update(|s| {
-            s.username = Some(username.clone());
-            s.api_token = Some(token.clone());
-            s.device_id = Some(me.device_id.clone());
-          });
-          settings.with(|s| s.save());
-          token_input.set(String::new());
-          user_input.set(String::new());
-          account.set(account_label(&me));
-          status.set("Connected.".to_string());
-        }
-        Err(e) => status.set(format!("Invalid username or token: {e}")),
-      }
-      busy.set(false);
-    });
-  };
-
   let disconnect = move |_| {
     settings.update(|s| {
       s.username = None;
@@ -109,7 +68,6 @@ pub fn AccountSection() -> impl IntoView {
     });
     settings.with(|s| s.save());
     account.set(String::new());
-    status.set(String::new());
   };
 
   view! {
@@ -157,28 +115,10 @@ pub fn AccountSection() -> impl IntoView {
               {move || scope_hint(settings.with(|s| s.auto_sync_scope))}
             </p>
           })}
+          <SubscribeSection/>
         }.into_any()
       } else {
-        view! {
-          <input class="setting__text" type="text" placeholder="Username"
-            autocomplete="username" autocapitalize="off" spellcheck="false"
-            prop:value=move || user_input.get()
-            on:input=move |ev| user_input.set(event_target_value(&ev))/>
-          <input class="setting__text" type="text" placeholder="Device token"
-            autocomplete="off" autocapitalize="off" spellcheck="false"
-            prop:value=move || token_input.get()
-            on:input=move |ev| token_input.set(event_target_value(&ev))/>
-          <button class="btn btn--primary" prop:disabled=move || busy.get()
-            on:click=connect>"Connect"</button>
-          <p class="setting__hint">
-            "Create a device token in the server\u{2019}s Devices page (or via the
-             API), then enter your username and paste the token here."
-          </p>
-        }.into_any()
-      }}
-      {move || {
-        let s = status.get();
-        (!s.is_empty()).then(|| view! { <p class="setting__hint">{s}</p> })
+        view! { <ConnectForms account=account/> }.into_any()
       }}
     </section>
   }

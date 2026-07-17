@@ -12,15 +12,22 @@ use gloo_net::http::{Request, RequestBuilder};
 use hygg_shared::sync::headers::{MACHINE_ID_HEADER, USER_HEADER};
 use hygg_shared::sync::proto::{
   MeResponse, OpPayload, ProgressData, ProgressDto, PullResponse, PushRequest,
-  PushResponse, SyncOp,
+  PushResponse, RegisterDeviceRequest, RegisterDeviceResponse, SignupRequest,
+  SignupResponse, SyncOp,
 };
 use uuid::Uuid;
 
 mod books;
+mod commerce;
 pub use books::{
   ConvertErr, ConvertResp, convert, download_blob, fetch_extraction,
   list_books, upload_book, upload_book_meta,
 };
+pub use commerce::{fetch_plans, start_checkout};
+
+/// How this browser names itself to the server when it registers a device.
+const DEVICE_NAME: &str = "hygg PWA";
+const PLATFORM: &str = "web";
 
 type Res<T> = Result<T, String>;
 
@@ -66,6 +73,66 @@ pub async fn fetch_me(creds: &Creds) -> Res<MeResponse> {
     return Err(error_body(resp).await);
   }
   resp.json().await.map_err(|e| e.to_string())
+}
+
+/// POST a JSON body to an *unauthenticated* endpoint (signup / registration,
+/// which exchange credentials for a token) and parse the JSON reply.
+async fn post_json<B, T>(url: &str, body: &B) -> Res<T>
+where
+  B: serde::Serialize,
+  T: serde::de::DeserializeOwned,
+{
+  let resp = Request::post(url)
+    .json(body)
+    .map_err(|e| e.to_string())?
+    .send()
+    .await
+    .map_err(|e| e.to_string())?;
+  if !resp.ok() {
+    return Err(error_body(resp).await);
+  }
+  resp.json().await.map_err(|e| e.to_string())
+}
+
+/// Create an account and receive its first device token in one call
+/// (`POST /api/v1/signup`). The password is sent once to mint the token and is
+/// never stored — only the returned token is kept. `machine_id` binds the new
+/// device to this browser.
+pub async fn signup(
+  server: &str,
+  email: &str,
+  password: &str,
+  machine_id: &str,
+) -> Res<SignupResponse> {
+  let body = SignupRequest {
+    email: email.to_string(),
+    password: password.to_string(),
+    display_name: String::new(),
+    device_name: DEVICE_NAME.to_string(),
+    platform: PLATFORM.to_string(),
+    machine_id: Some(machine_id.to_string()),
+  };
+  post_json(&api(server, "/signup"), &body).await
+}
+
+/// Register a new device for an *existing* account
+/// (`POST /api/v1/devices/register`), exchanging email + password for this
+/// browser's own device token. Same one-time-password, token-only-stored model
+/// as [`signup`].
+pub async fn register_device(
+  server: &str,
+  email: &str,
+  password: &str,
+  machine_id: &str,
+) -> Res<RegisterDeviceResponse> {
+  let body = RegisterDeviceRequest {
+    email: email.to_string(),
+    password: password.to_string(),
+    device_name: DEVICE_NAME.to_string(),
+    platform: PLATFORM.to_string(),
+    machine_id: Some(machine_id.to_string()),
+  };
+  post_json(&api(server, "/devices/register"), &body).await
 }
 
 /// Push the latest reading position for a book (last-write-wins by time).

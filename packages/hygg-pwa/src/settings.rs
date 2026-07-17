@@ -62,6 +62,19 @@ fn default_show_github_stars() -> bool {
   DEFAULT_SHOW_GITHUB_STARS
 }
 
+/// Origins recognised as the official hosted hygg service. The subscription
+/// flows appear only when this build is pointed at one of these; a self-hosted
+/// server never shows any of the commerce surface, so a self-hoster never sees
+/// a plan, a price, or an upsell.
+///
+/// This is a client-side allow-list, not a secret. It only decides whether to
+/// *offer* commerce — the server still gates every paid action. A preshared
+/// key would prove nothing here: the PWA is open and ships as WASM, so anything
+/// baked in is readable by anyone, and TLS already proves the origin is really
+/// ours. So the "handshake" is simply: are we talking to a known official
+/// origin over TLS.
+pub const OFFICIAL_SERVERS: &[&str] = &["https://hygg.kruseio.com"];
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
   /// Text zoom multiplier on top of the width-fitted base size (1.0 = fill the
@@ -129,6 +142,14 @@ impl Settings {
   /// Connected to a server (a device token is present)?
   pub fn is_connected(&self) -> bool {
     self.api_token.is_some()
+  }
+
+  /// Whether this build points at the official hosted service, gating the
+  /// subscription flows. Compares the configured server origin against the
+  /// baked-in [`OFFICIAL_SERVERS`] allow-list, trailing slash insensitive.
+  pub fn is_official_server(&self) -> bool {
+    let url = self.server_url.trim_end_matches('/');
+    OFFICIAL_SERVERS.iter().any(|s| s.trim_end_matches('/') == url)
   }
 
   /// Ensure a stable per-browser machine id exists (generating one on first

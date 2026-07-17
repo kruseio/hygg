@@ -78,6 +78,9 @@ features = [
   "HtmlInputElement",
   "Node",
   "DomRect",
+  # Navigate to the checkout handoff URL when a subscription starts (same-tab,
+  # so no pop-up blocker fires after the async ticket call).
+  "Location",
   # Live server push: subscribe to the SSE `changed` stream so a peer's progress
   # or library change lands instantly (see src/sse.rs).
   "EventSource",
