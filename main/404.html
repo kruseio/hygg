@@ -55,8 +55,8 @@
     <link rel="stylesheet" href="/hygg/main/main-53c97afff6cf17f0.css" integrity="sha384-ydcmbZbkwdnVe6pdPbELqJYnyjVRyjs5FT/gkghFXtIEu1M0dtynGVG6tqA2UEBg"/>
     
 <script type="module">
-import init, * as bindings from '/hygg/main/hygg-pwa-570a389a4396b07.js';
-const wasm = await init({ module_or_path: '/hygg/main/hygg-pwa-570a389a4396b07_bg.wasm' });
+import init, * as bindings from '/hygg/main/hygg-pwa-aa5170bd104d2f9f.js';
+const wasm = await init({ module_or_path: '/hygg/main/hygg-pwa-aa5170bd104d2f9f_bg.wasm' });
 
 
 window.wasmBindings = bindings;
@@ -98,6 +98,6 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
         });
       }
     </script>
-  <link rel="modulepreload" href="/hygg/main/hygg-pwa-570a389a4396b07.js" crossorigin="anonymous" integrity="sha384-hp6zkoYv1fp753k2uKbhfZ2SKVK5FqQvpykjkTIZV2Q3oySNY4ThtDQnd1Sbw3Y3"><link rel="preload" href="/hygg/main/hygg-pwa-570a389a4396b07_bg.wasm" crossorigin="anonymous" integrity="sha384-jO/iaBKfZxuDFDoQobg/cq1PUxLOiajSuB+Dzcu68x3U2wTsoxNm/CdFq/aNQ6Mq" as="fetch" type="application/wasm"></head>
+  <link rel="modulepreload" href="/hygg/main/hygg-pwa-aa5170bd104d2f9f.js" crossorigin="anonymous" integrity="sha384-YRBfRBMB3VrOPRKHVDqvJv/XatkIgZuxklDBM9bYvycfY3/SqUACTQJoPHp5anus"><link rel="preload" href="/hygg/main/hygg-pwa-aa5170bd104d2f9f_bg.wasm" crossorigin="anonymous" integrity="sha384-489NYzpSVB10vkp6k1z/WZoYu6LAz/YCngzlzyNpvwJuPBaY+nOn8UHMruX07sqf" as="fetch" type="application/wasm"></head>
   <body></body>
 </html>
