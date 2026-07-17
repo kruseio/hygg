@@ -157,10 +157,13 @@ jobs:
 
       # Labels only — the tags are applied to the manifest, not to these
       # per-arch digests. org.opencontainers.image.source is what links the GHCR
-      # package back to this repository. licenses/description are overridden:
-      # the action's defaults derive them from the repository (whose detected
-      # license is the reader's AGPL-3.0), which had the GHCR package page
-      # advertising AGPL for a crate that ships under Elastic-2.0.
+      # package back to this repository. licenses/description are set explicitly
+      # rather than left to the action's repository-derived defaults: description
+      # so the page summary is the server's, licenses so the image metadata reads
+      # Elastic-2.0 (the crate's license) rather than the repo's AGPL-3.0. Only
+      # description reaches the package page — the page's license badge is the
+      # linked repo's detected license and cannot be overridden here (see the
+      # merge job's note).
       - name: Image labels
         id: meta
         uses: docker/metadata-action@v5
@@ -263,11 +266,13 @@ jobs:
       # or without a `v`, so the bare tags this repository uses need nothing
       # special here. `latest=auto` leaves a pre-release (1.0.0-rc1) off :latest,
       # which is the point of tagging one.
-      # `annotations` (index level) is what GHCR actually reads for a
-      # multi-arch image's description and license on the package page — the
-      # per-arch labels above only cover single-platform pulls. Same override
-      # rationale as the build job: without it the page shows the repository's
-      # AGPL-3.0 instead of the server's Elastic-2.0.
+      # Index-level `annotations` are how GHCR reads a multi-arch image's
+      # *description* for the package page — it reads the index, not the per-arch
+      # labels above. The license/documentation annotations are carried for
+      # metadata correctness only: GHCR takes the page's license badge from the
+      # linked repository (the reader's AGPL-3.0) no matter what is set here, and
+      # renders no README for a container package. Neither has a per-package
+      # override; the badge tracks the monorepo's root license.
       - name: Image tags
         id: meta
         uses: docker/metadata-action@v5

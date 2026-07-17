@@ -33,13 +33,17 @@ COPY . .
 RUN cargo build --release -p hygg-server
 
 FROM debian:bookworm-slim AS runtime
-# OCI labels for anything that builds this image outside CI (docker compose,
-# plain `docker build`). The GHCR workflow applies the same set through
-# docker/metadata-action — with an explicit `licenses` override there, because
-# the action's default derives the license from the *repository* (AGPL-3.0,
-# the reader's license) while hygg-server ships under Elastic-2.0 (see
-# packages/hygg-server/LICENSE); the auto label is what made the GHCR package
-# page advertise AGPL. `description` is what GHCR shows on the package page.
+# OCI image metadata, for anything that builds this image outside CI (docker
+# compose, plain `docker build`); the GHCR workflow sets the same set through
+# docker/metadata-action. `licenses` is Elastic-2.0 because that is what
+# hygg-server ships under (see packages/hygg-server/LICENSE) — the correct value
+# for `docker inspect`, license scanners and registries that read it.
+#
+# It does NOT change the license shown on the GHCR *package page*, though:
+# GitHub sources that badge from the linked repository's detected license — the
+# reader's AGPL-3.0 at the repo root — with no per-package override. Of these
+# labels only `description` reaches the GHCR page (as the short summary); GHCR
+# renders no README for a container package, so `documentation` is a link only.
 LABEL org.opencontainers.image.title="hygg-server" \
   org.opencontainers.image.description="Self-hostable, multi-tenant sync server for the hygg reader. Sync documents, reading progress, bookmarks, highlights and notes across devices. Single Rust binary backed by SQLite." \
   org.opencontainers.image.licenses="Elastic-2.0" \
