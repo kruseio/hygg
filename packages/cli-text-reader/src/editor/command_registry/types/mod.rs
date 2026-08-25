@@ -21,6 +21,7 @@ pub(crate) enum RegisteredCommand {
   Back,
   Credits,
   Cursor,
+  Encryption(EncryptionCommand),
   Help,
   Highlight,
   Home,
@@ -64,6 +65,21 @@ pub(crate) enum AutoSyncAction {
   Master(bool),
   Scope(AutoSyncPolicy),
   OptIn(bool),
+}
+
+/// `:encryption` variants — the end-to-end encryption setup wizard.
+/// `Show` reports the state and next step; `Setup` generates a new account key
+/// and turns encryption on; `Use` adopts an existing account key on this
+/// client (the new-device path); `Convert` re-uploads existing documents
+/// encrypted; `Forget` clears this client's key without touching the account.
+#[derive(Debug, PartialEq)]
+pub(crate) enum EncryptionCommand {
+  Show,
+  Setup,
+  Use(String),
+  Convert,
+  Disable,
+  Forget,
 }
 
 /// `:syncmode` variants. `Show` reports the current mode; `SetLocal` clamps

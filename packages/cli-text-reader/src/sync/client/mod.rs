@@ -6,12 +6,14 @@
 
 use std::time::Duration;
 
+use hygg_shared::crypto::{self, EncryptionKey};
 use hygg_shared::sync::proto;
 
 use super::annotations::{ServerBookmark, ServerHighlight, ServerNote};
 use super::inbound::ServerProgress;
-use crate::config::ServerConfig;
+use crate::config::{ServerConfig, load_encryption_config};
 
+mod encryption;
 mod requests;
 
 /// Everything returned by a single `GET /api/v1/sync/pull` (all entity kinds
@@ -97,6 +99,11 @@ pub struct SyncClient {
   token: String,
   username: String,
   machine_id: String,
+  /// The account content key when encryption is set up on this client;
+  /// document bytes and note bodies are sealed/opened with it at the request
+  /// boundary so the rest of the reader stays unaware of encryption. `None`
+  /// leaves every payload in the clear (the historical behavior).
+  key: Option<EncryptionKey>,
 }
 
 impl SyncClient {
@@ -112,10 +119,61 @@ impl SyncClient {
       token,
       username,
       machine_id: super::machine::machine_id(),
+      key: load_encryption_config().resolve_key(),
     })
   }
 
   fn bearer(&self) -> String {
     format!("Bearer {}", self.token)
+  }
+
+  /// Encrypt outbound document bytes when a key is present; pass them through
+  /// unchanged otherwise. Uploading plaintext to an encryption-enabled account
+  /// is refused server-side, which is the backstop for a misconfigured client.
+  pub(super) fn seal_blob(&self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+    match &self.key {
+      Some(key) => crypto::encrypt(key, bytes).map_err(|e| e.to_string()),
+      None => Ok(bytes.to_vec()),
+    }
+  }
+
+  /// Decrypt a downloaded blob when it is a sealed envelope. A plaintext blob
+  /// (encryption off, or a not-yet-converted document) is returned as-is, so a
+  /// library mid-conversion reads correctly either way. An envelope with no key
+  /// available is a hard error — the bytes are unreadable without it.
+  pub(super) fn open_blob(&self, bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    if !crypto::is_envelope(&bytes) {
+      return Ok(bytes);
+    }
+    match &self.key {
+      Some(key) => crypto::decrypt(key, &bytes).map_err(|e| e.to_string()),
+      None => Err(
+        "this document is encrypted but no encryption key is set up on this \
+         client"
+          .to_string(),
+      ),
+    }
+  }
+
+  /// Seal a note body for upload (no-op without a key, and empty stays empty).
+  pub(super) fn seal_note_body(&self, body: &str) -> Result<String, String> {
+    match &self.key {
+      Some(key) => crypto::encrypt_string(key, body).map_err(|e| e.to_string()),
+      None => Ok(body.to_string()),
+    }
+  }
+
+  /// Open a note body from a pull. A body without the encrypted marker returns
+  /// unchanged; a sealed body with no key falls back to a placeholder rather
+  /// than failing the whole pull.
+  pub(super) fn open_note_body(&self, body: &str) -> String {
+    if !crypto::is_encrypted_string(body) {
+      return body.to_string();
+    }
+    match &self.key {
+      Some(key) => crypto::decrypt_string(key, body)
+        .unwrap_or_else(|_| "[encrypted note — wrong key]".to_string()),
+      None => "[encrypted note — key not set up]".to_string(),
+    }
   }
 }

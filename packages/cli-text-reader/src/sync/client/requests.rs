@@ -23,7 +23,7 @@ fn upload_error(err: ureq::Error) -> UploadError {
 impl SyncClient {
   /// Register (or refresh) a document's metadata record without its bytes. Used
   /// on its own for metadata-only sync, and as the first step of a full upload.
-  fn upsert_meta(
+  pub(super) fn upsert_meta(
     &self,
     content_hash: &str,
     title: &str,
@@ -61,7 +61,12 @@ impl SyncClient {
     format: &str,
     bytes: &[u8],
   ) -> Result<(), UploadError> {
+    // Size metadata reflects the plaintext (stable across encryption on/off);
+    // the payload on the wire is the sealed envelope when a key is set.
     self.upsert_meta(content_hash, title, format, bytes.len() as i64)?;
+    let payload = self
+      .seal_blob(bytes)
+      .map_err(|message| UploadError { permanent: true, message })?;
     let blob_url =
       format!("{}/api/v1/books/{content_hash}/blob", self.base_url);
     self
@@ -71,7 +76,7 @@ impl SyncClient {
       .header(USER_HEADER, &self.username)
       .header(MACHINE_ID_HEADER, &self.machine_id)
       .header("Content-Type", "application/octet-stream")
-      .send(bytes)
+      .send(&payload)
       .map_err(upload_error)?;
     Ok(())
   }
@@ -125,8 +130,14 @@ impl SyncClient {
     Ok(books.into_iter().map(RemoteBook::from).collect())
   }
 
-  /// Download a book's document bytes by its `content_hash`.
-  pub fn download_book(&self, content_hash: &str) -> Result<Vec<u8>, String> {
+  /// Download a book's stored bytes *exactly as the server holds them* — the
+  /// sealed envelope when encrypted, plaintext otherwise. Used by the
+  /// conversion path, which must see whether a document is already encrypted
+  /// before deciding to re-upload it.
+  pub fn download_book_raw(
+    &self,
+    content_hash: &str,
+  ) -> Result<Vec<u8>, String> {
     let url = format!("{}/api/v1/books/{content_hash}/blob", self.base_url);
     let mut response = self
       .agent
@@ -144,14 +155,30 @@ impl SyncClient {
       .map_err(|e| e.to_string())
   }
 
+  /// Download a book's document bytes by its `content_hash`, decrypting an
+  /// encrypted blob when this client holds the key.
+  pub fn download_book(&self, content_hash: &str) -> Result<Vec<u8>, String> {
+    let bytes = self.download_book_raw(content_hash)?;
+    self.open_blob(bytes)
+  }
+
   /// Push a batch of typed ops (progress and/or annotations) in one request —
   /// the anti-spam guarantee is one push per engine cycle.
   pub fn push(&self, ops: &[proto::SyncOp]) -> Result<(), String> {
     if ops.is_empty() {
       return Ok(());
     }
+    // Seal note bodies before they leave the device. Every other op kind
+    // carries only positions/counts, which stay in the clear (the highlighted
+    // text itself lives inside the encrypted blob, never on the wire).
+    let mut ops = ops.to_vec();
+    for op in &mut ops {
+      if let proto::OpPayload::Note(data) = &mut op.payload {
+        data.body = self.seal_note_body(&data.body)?;
+      }
+    }
     let url = format!("{}/api/v1/sync/push", self.base_url);
-    let request = proto::PushRequest { device_id: None, ops: ops.to_vec() };
+    let request = proto::PushRequest { device_id: None, ops };
     self
       .agent
       .post(&url)
@@ -190,7 +217,14 @@ impl SyncClient {
       progress: response.progress.into_iter().map(Into::into).collect(),
       bookmarks: response.bookmarks.into_iter().map(Into::into).collect(),
       highlights: response.highlights.into_iter().map(Into::into).collect(),
-      notes: response.notes.into_iter().map(Into::into).collect(),
+      notes: response
+        .notes
+        .into_iter()
+        .map(|mut n| {
+          n.body = self.open_note_body(&n.body);
+          n.into()
+        })
+        .collect(),
     })
   }
 }

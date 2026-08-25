@@ -5,8 +5,14 @@ use hygg_shared::sync::AutoSyncPolicy;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+mod encryption;
 mod env_io;
 use env_io::write_env_preserving;
+
+pub use encryption::{
+  ENCRYPTION_KEY_ENV, EncryptionConfig, load_encryption_config,
+  save_encryption_config,
+};
 
 #[derive(Default)]
 pub struct AppConfig {

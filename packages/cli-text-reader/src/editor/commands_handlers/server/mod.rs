@@ -9,6 +9,8 @@ use super::super::core::{Editor, EditorMode, SnapshotReason};
 use crate::config::{ServerConfig, load_server_config, save_server_config};
 
 mod autosync;
+mod encryption;
+mod encryption_setup;
 mod syncmode;
 
 impl Editor {
@@ -81,6 +83,13 @@ impl Editor {
     config.api_token = Some(token);
     let _ = save_server_config(&config);
     self.apply_sync_config(&config);
+    // Reconcile encryption state with the account marker: if this fresh device
+    // needs the wizard, route the user straight into it rather than letting
+    // sync fail silently against the server's envelope enforcement.
+    if let Some(lines) = encryption::first_connect_nudge() {
+      self.finish_server_command(lines);
+      return Ok(false);
+    }
     self.finish_server_command(vec![
       "  Authenticated. Sync starts automatically.".to_string(),
       "  This device is now locked to this machine.".to_string(),

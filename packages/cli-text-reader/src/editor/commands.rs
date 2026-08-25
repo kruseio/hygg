@@ -192,6 +192,9 @@ impl Editor {
       RegisteredCommand::SyncMode(action) => {
         self.handle_sync_mode_command(action)
       }
+      RegisteredCommand::Encryption(action) => {
+        self.handle_encryption_command(action)
+      }
       RegisteredCommand::ServerProgress => {
         self.handle_server_progress_command()
       }

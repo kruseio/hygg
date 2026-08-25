@@ -5,7 +5,8 @@
 use hygg_shared::sync::{AutoSyncPolicy, SyncMode};
 
 use super::{
-  AutoSyncAction, RegisteredCommand, SyncModeCommand, TutorialCommand,
+  AutoSyncAction, EncryptionCommand, RegisteredCommand, SyncModeCommand,
+  TutorialCommand,
 };
 use crate::editor::speech::SpeakAction;
 
@@ -39,6 +40,8 @@ const SPEED_ARGS: &[&str] = &["{n}"];
 const TUTORIAL_ARGS: &[&str] = &["on", "off", "{n}"];
 const SYNCMODE_ARGS: &[&str] =
   &["full", "metadata", "off", "inherit", "server"];
+const ENCRYPTION_ARGS: &[&str] =
+  &["setup", "use", "convert", "disable", "forget", "{key}"];
 
 pub(crate) const COMMANDS: &[CommandSpec] = &[
   CommandSpec { name: "about", arguments: &[] },
@@ -53,6 +56,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
   CommandSpec { name: "credits", arguments: &[] },
   CommandSpec { name: "disconnect", arguments: &[] },
   CommandSpec { name: "cursor", arguments: &[] },
+  CommandSpec { name: "encryption", arguments: ENCRYPTION_ARGS },
   CommandSpec { name: "exit", arguments: &[] },
   CommandSpec { name: "h", arguments: &[] },
   CommandSpec { name: "help", arguments: &[] },
@@ -149,6 +153,24 @@ pub(crate) fn classify_command(input: &str) -> RegisteredCommand {
         Err(()) => RegisteredCommand::Unknown,
       },
     },
+    ("encryption", []) => {
+      RegisteredCommand::Encryption(EncryptionCommand::Show)
+    }
+    ("encryption", ["setup"]) => {
+      RegisteredCommand::Encryption(EncryptionCommand::Setup)
+    }
+    ("encryption", ["use", key]) => {
+      RegisteredCommand::Encryption(EncryptionCommand::Use((*key).to_string()))
+    }
+    ("encryption", ["convert"]) => {
+      RegisteredCommand::Encryption(EncryptionCommand::Convert)
+    }
+    ("encryption", ["disable"]) => {
+      RegisteredCommand::Encryption(EncryptionCommand::Disable)
+    }
+    ("encryption", ["forget"]) => {
+      RegisteredCommand::Encryption(EncryptionCommand::Forget)
+    }
     ("notutorial", []) => RegisteredCommand::NoTutorial,
     ("tutorial", []) => RegisteredCommand::Tutorial(TutorialCommand::Default),
     ("tutorial", ["on"]) => {
@@ -213,5 +235,30 @@ mod tests {
   #[test]
   fn unknown_autosync_argument_is_unknown() {
     assert_eq!(classify_command("autosync wat"), RegisteredCommand::Unknown);
+  }
+
+  #[test]
+  fn encryption_command_variants_classify() {
+    use EncryptionCommand::*;
+    assert_eq!(
+      classify_command("encryption"),
+      RegisteredCommand::Encryption(Show)
+    );
+    assert_eq!(
+      classify_command("encryption setup"),
+      RegisteredCommand::Encryption(Setup)
+    );
+    assert_eq!(
+      classify_command("encryption use AbC123=="),
+      RegisteredCommand::Encryption(Use("AbC123==".to_string()))
+    );
+    assert_eq!(
+      classify_command("encryption convert"),
+      RegisteredCommand::Encryption(Convert)
+    );
+    assert_eq!(
+      classify_command("encryption forget"),
+      RegisteredCommand::Encryption(Forget)
+    );
   }
 }

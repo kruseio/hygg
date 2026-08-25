@@ -37,6 +37,14 @@ pub(crate) fn command_help_lines() -> Vec<String> {
     "    :local-progress        Keep local position and overwrite server"
       .to_string(),
     "    :disconnect            Disconnect from the sync server".to_string(),
+    "    :encryption            End-to-end encryption status + setup wizard"
+      .to_string(),
+    "    :encryption setup      Turn on encryption (generates your key)"
+      .to_string(),
+    "    :encryption use <key>  Set up this device with the account key"
+      .to_string(),
+    "    :encryption convert    Encrypt documents uploaded before you enabled it"
+      .to_string(),
     "    :z                     Toggle line highlighter".to_string(),
     "    :p                     Toggle progress display".to_string(),
     "    :ocr on, :ocr off      Toggle PDF OCR for this PDF and future launches"
