@@ -57,6 +57,16 @@ pub async fn convert(
   if body.is_empty() {
     return Err(AppError::BadRequest("empty upload".to_string()));
   }
+  // An encrypted envelope carries no extractable text — the server has no key.
+  // Refuse clearly rather than run OCR/pandoc over ciphertext and cache noise;
+  // encrypted documents are extracted on the client.
+  if hygg_shared::crypto::is_envelope(&body) {
+    return Err(AppError::BadRequest(
+      "cannot extract an encrypted document server-side; extract it on a \
+       client that holds the key"
+        .to_string(),
+    ));
+  }
   let use_cache = state.config.extraction_cache;
   let content_hash = content_sha256(&body);
   let col = q.col as i64;

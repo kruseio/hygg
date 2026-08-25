@@ -10,6 +10,7 @@ pub mod books;
 pub mod dashboard;
 pub mod devices;
 pub mod directories;
+pub mod encryption;
 pub mod extractions;
 pub mod groups;
 pub mod highlights;

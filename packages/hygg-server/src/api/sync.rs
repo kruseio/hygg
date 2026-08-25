@@ -119,6 +119,16 @@ async fn apply_op(
       if data.id.is_empty() {
         return Ok(false);
       }
+      // Encryption enforcement for note text: a non-empty body must be a sealed
+      // string once the account requires encryption. Drop a plaintext body
+      // rather than store readable note text (an empty body is a tombstone/no
+      // text, so it is always allowed through).
+      if !data.body.is_empty()
+        && !hygg_shared::crypto::is_encrypted_string(&data.body)
+        && repo::encryption::is_enabled(pool, tenant, user).await?
+      {
+        return Ok(false);
+      }
       let input = note_input(principal, op, data);
       repo::notes::upsert(pool, tenant, user, &input).await?;
       Ok(true)

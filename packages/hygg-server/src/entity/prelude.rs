@@ -13,6 +13,7 @@ pub use super::devices::Entity as Devices;
 pub use super::directories::Entity as Directories;
 pub use super::document_permissions::Entity as DocumentPermissions;
 pub use super::document_shares::Entity as DocumentShares;
+pub use super::encryption_markers::Entity as EncryptionMarkers;
 pub use super::highlights::Entity as Highlights;
 pub use super::notes::Entity as Notes;
 pub use super::notifications::Entity as Notifications;

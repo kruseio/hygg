@@ -23,6 +23,7 @@ pub mod devices;
 pub mod directories;
 pub mod document_permissions;
 pub mod document_shares;
+pub mod encryption_markers;
 pub mod highlights;
 pub mod notes;
 pub mod notifications;

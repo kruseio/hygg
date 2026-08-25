@@ -24,6 +24,7 @@ const TABLES: &[&str] = &[
   "directories",
   "document_permissions",
   "document_shares",
+  "encryption_markers",
   "highlights",
   "notes",
   "notifications",

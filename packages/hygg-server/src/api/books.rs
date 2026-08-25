@@ -6,10 +6,8 @@
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
-use axum::http::header;
 use axum::response::{IntoResponse, Response};
-use hygg_shared::sync::proto;
-use sha2::{Digest, Sha256};
+use hygg_shared::sync::{content_sha256, proto};
 
 use crate::error::{AppError, AppResult};
 use crate::middleware::entitlement::SyncPrincipal;
@@ -170,6 +168,16 @@ pub async fn put_blob(
       "document sync mode is '{mode}'; blob upload is disabled"
     )));
   }
+  // Encryption enforcement: once the account turns it on, only sealed
+  // envelopes may be stored — an unconfigured client cannot push readable
+  // bytes, which is what makes "every client must be enabled" real.
+  let encrypted = crate::api::encryption::enforce_blob_encrypted(
+    &state.db.conn,
+    &principal.tenant_id,
+    &principal.user_id,
+    &body,
+  )
+  .await?;
   let book_id = repo::books::find_id_by_hash(
     &state.db.conn,
     &principal.tenant_id,
@@ -177,7 +185,7 @@ pub async fn put_blob(
   )
   .await?
   .ok_or(AppError::NotFound)?;
-  let sha256 = sha256_hex(&body);
+  let sha256 = content_sha256(&body);
   repo::blobs::put(
     &state.db.conn,
     &principal.tenant_id,
@@ -198,9 +206,9 @@ pub async fn put_blob(
     crate::web::check_org(&state, &principal.tenant_id, &org).await;
   }
   crate::web::check_server_storage(&state, &principal.tenant_id).await;
-  // Warm the canonical-extraction cache in the background so later imports and
-  // thin clients reuse the extraction instead of re-running OCR/pandoc.
-  if state.config.extraction_cache {
+  // Warm the extraction cache so imports/thin clients reuse it instead of
+  // re-running OCR/pandoc. Skipped for ciphertext: no key server-side, no text.
+  if state.config.extraction_cache && !encrypted {
     crate::api::convert::spawn_prewarm_extraction(
       &state,
       &principal.tenant_id,
@@ -244,10 +252,9 @@ pub async fn get_blob(
   let bytes = repo::blobs::get(&state.db.conn, &principal.tenant_id, &book_id)
     .await?
     .ok_or(AppError::NotFound)?;
-  Ok(
-    ([(header::CONTENT_TYPE, "application/octet-stream")], bytes)
-      .into_response(),
-  )
+  // Served as a download, never rendered inline: the server is a sync backend,
+  // not a reader. See [`crate::api::download`].
+  Ok(crate::api::download::document_download(bytes))
 }
 
 /// `PUT /api/v1/books/{content_hash}/sync-mode` — set the account-wide sync
@@ -288,8 +295,4 @@ pub async fn set_book_sync_mode(
     return Err(AppError::NotFound);
   }
   Ok(Json(proto::SetSyncModeRequest { sync_mode: req.sync_mode }))
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-  Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
 }

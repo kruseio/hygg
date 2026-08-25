@@ -15,6 +15,7 @@ use sea_orm_migration::prelude::*;
 
 pub mod annotations;
 pub mod credentials;
+pub mod encryption;
 pub mod identity;
 pub mod library;
 pub mod misc;
@@ -45,6 +46,7 @@ impl MigrationTrait for Baseline {
     library::up(m).await?;
     annotations::up(m).await?;
     reading::up(m).await?;
+    encryption::up(m).await?;
     misc::up(m).await?;
     Ok(())
   }

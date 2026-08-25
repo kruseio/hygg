@@ -40,6 +40,17 @@ pub(crate) async fn account_page(
     "/account/sessions",
     false,
   );
+  // Per-user end-to-end encryption control.
+  let enc_marker =
+    repo::encryption::get(&state.db.conn, &user.tenant_id, &user.user_id)
+      .await
+      .ok()
+      .flatten();
+  let encryption_panel = encryption_panel(
+    &user,
+    enc_marker.as_ref().map(|m| m.enabled != 0).unwrap_or(false),
+    enc_marker.as_ref().map(|m| !m.salt.is_empty()).unwrap_or(false),
+  );
   let password_status =
     if user.password_enabled { "enabled" } else { "disabled" };
   let password_status_title = if user.password_enabled {
@@ -100,6 +111,7 @@ pub(crate) async fn account_page(
           </form>
         </div>
       </section>
+      {encryption_panel}
       {passkeys_content}
       {sessions_content}"#,
       icon("circle-user"),

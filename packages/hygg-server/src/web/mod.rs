@@ -34,6 +34,7 @@ use crate::state::{
 use crate::util::now_millis;
 
 mod account;
+mod account_encryption;
 mod account_sessions;
 mod admin_dashboard;
 mod admin_dashboard_panels;
@@ -83,6 +84,7 @@ mod signup;
 mod style;
 
 pub(crate) use account::*;
+pub(crate) use account_encryption::*;
 pub(crate) use account_sessions::*;
 pub(crate) use admin_dashboard::*;
 pub(crate) use admin_dashboard_panels::*;
@@ -159,6 +161,7 @@ pub fn router() -> Router<AppState> {
     .route("/logout", post(logout_post))
     .route("/account", get(account_page))
     .route("/account/password", post(account_password_post))
+    .route("/account/encryption", post(account_encryption_post))
     .route("/account/passkeys", get(account_passkeys_page))
     .route("/account/sessions", get(account_sessions_page))
     .route(

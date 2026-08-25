@@ -3,6 +3,8 @@
 pub mod books;
 pub mod convert;
 pub mod devices;
+mod download;
+pub mod encryption;
 pub mod events;
 pub mod export;
 mod export_inputs;
@@ -40,6 +42,12 @@ pub fn router() -> Router<AppState> {
     .route(
       "/api/v1/books/{content_hash}/extraction",
       get(extraction::get_extraction),
+    )
+    .route(
+      "/api/v1/encryption",
+      get(encryption::get_encryption)
+        .put(encryption::put_encryption)
+        .delete(encryption::delete_encryption),
     )
     .route("/api/v1/convert", post(convert::convert))
     .route("/api/v1/export", get(export::export))
