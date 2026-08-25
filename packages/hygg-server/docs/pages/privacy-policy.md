@@ -1,0 +1,1 @@
+../../../../docs/pages/privacy-policy.md

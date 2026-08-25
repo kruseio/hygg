@@ -25,7 +25,7 @@ Minimalistic Vim-like TUI document reader.
 - **Powerful search** - Find anything instantly, highlight important passages, add bookmarks
 - **Never lose your place** - Automatic progress saving
 - **Extensible workflows** - Execute commands directly from copied text
-- **Respects your privacy** - Run locally without server, or selfhost the sync server
+- **Respects your privacy** - Run locally without server, selfhost the sync server, or turn on [end-to-end encryption](https://github.com/kruseio/hygg/blob/main/docs/pages/encryption.md) so the server only ever holds ciphertext
 
 ## Quick start guide
 ```sh

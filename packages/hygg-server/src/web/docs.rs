@@ -67,6 +67,21 @@ const DOC_SOURCES: &[DocSource] = &[
     markdown: include_str!("../../docs/pages/reference.md"),
   },
   DocSource {
+    slug: "encryption",
+    title: "Encryption",
+    markdown: include_str!("../../docs/pages/encryption.md"),
+  },
+  DocSource {
+    slug: "privacy-policy",
+    title: "Privacy Policy",
+    markdown: include_str!("../../docs/pages/privacy-policy.md"),
+  },
+  DocSource {
+    slug: "data-security",
+    title: "Data Security",
+    markdown: include_str!("../../docs/pages/data-security.md"),
+  },
+  DocSource {
     slug: "development",
     title: "Development",
     markdown: include_str!("../../docs/pages/development.md"),
