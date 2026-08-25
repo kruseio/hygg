@@ -7,7 +7,7 @@ use leptos_router::components::A;
 
 use crate::app::{SettingsCtx, link};
 use crate::build_info as bi;
-use crate::components::{AccountSection, TopBar};
+use crate::components::{AccountSection, EncryptionSection, TopBar};
 use crate::settings::{ImageMode, Theme};
 
 #[component]
@@ -138,6 +138,8 @@ pub fn SettingsView() -> impl IntoView {
         </section>
 
         <AccountSection/>
+
+        <EncryptionSection/>
 
         <section class="setting">
           <label>"GitHub stars"</label>

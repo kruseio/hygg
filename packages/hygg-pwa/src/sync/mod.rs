@@ -19,11 +19,15 @@ use uuid::Uuid;
 
 mod books;
 mod commerce;
+mod encryption;
 pub use books::{
   ConvertErr, ConvertResp, convert, download_blob, fetch_extraction,
   list_books, upload_book, upload_book_meta,
 };
 pub use commerce::{fetch_plans, start_checkout};
+pub use encryption::{
+  convert_library, disable_encryption, enable_encryption, get_encryption,
+};
 
 /// How this browser names itself to the server when it registers a device.
 const DEVICE_NAME: &str = "hygg PWA";
@@ -33,13 +37,18 @@ type Res<T> = Result<T, String>;
 
 /// Everything a request needs to authenticate: the server plus the three-part
 /// credential the API now requires — the bearer token, the account username,
-/// and this browser's machine id (which the token is bound to).
+/// and this browser's machine id (which the token is bound to). Also carries
+/// the account content key when encryption is set up, so the blob paths can
+/// seal/open document bytes at the request boundary.
 #[derive(Clone, Debug)]
 pub struct Creds {
   pub server: String,
   pub token: String,
   pub username: String,
   pub machine_id: String,
+  /// The derived content key when this browser is set up for encryption;
+  /// `None` leaves uploads/downloads in the clear (encryption off).
+  pub key: Option<hygg_shared::crypto::EncryptionKey>,
 }
 
 fn api(server: &str, path: &str) -> String {

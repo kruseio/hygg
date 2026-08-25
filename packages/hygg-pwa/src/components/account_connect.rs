@@ -121,8 +121,15 @@ fn start_token_connect(
     return;
   }
   let (machine_id, server) = machine_and_server(settings);
-  let creds =
-    sync::Creds { server, token, username: username.clone(), machine_id };
+  // Connection validation only calls `/me`; the content key isn't needed here
+  // (and isn't set up yet on a first connect anyway).
+  let creds = sync::Creds {
+    server,
+    token,
+    username: username.clone(),
+    machine_id,
+    key: None,
+  };
   busy.set(true);
   status.set("Connecting\u{2026}".to_string());
   spawn_local(async move {

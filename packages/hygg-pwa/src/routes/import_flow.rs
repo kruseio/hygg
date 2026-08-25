@@ -63,6 +63,18 @@ pub async fn do_import(
     });
   };
 
+  // Server-side extraction would have to receive the plaintext bytes, which
+  // would defeat end-to-end encryption. When a key is set up, refuse rather
+  // than leak: this format needs a client that can extract it locally.
+  if creds.key.is_some() {
+    return ImportResult::Message(
+      "This document needs local extraction (e.g. scanned-PDF OCR), which \
+       this browser can't do — and with encryption on it can't be sent to \
+       the server. Import it with the hygg desktop or CLI client."
+        .to_string(),
+    );
+  }
+
   match sync::convert(&creds, &name, &bytes, col).await {
     Ok(resp) => {
       let book =

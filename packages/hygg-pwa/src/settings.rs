@@ -124,6 +124,22 @@ pub struct Settings {
   /// shortcut) in the top bar, left of the settings gear.
   #[serde(default = "default_show_github_stars")]
   pub show_github_stars: bool,
+  /// Whether this browser is set up for end-to-end encryption (mirrors the
+  /// account's server marker; set by the wizard).
+  #[serde(default)]
+  pub encryption_enabled: bool,
+  /// The account secret. A browser has no environment variable, so — unlike
+  /// the CLI's `HYGG_ENCRYPTION_KEY` — the key necessarily lives in
+  /// `localStorage` here; the docs call this tradeoff out. `None` until set
+  /// up.
+  #[serde(default)]
+  pub encryption_key: Option<String>,
+  /// base64 of the account KDF salt (non-secret), cached from the marker.
+  #[serde(default)]
+  pub encryption_salt: Option<String>,
+  /// base64 of the verifier (non-secret), cached from the marker.
+  #[serde(default)]
+  pub encryption_verifier: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -170,7 +186,30 @@ impl Settings {
       token: self.api_token.clone().filter(|s| !s.is_empty())?,
       username: self.username.clone().filter(|s| !s.is_empty())?,
       machine_id: self.machine_id.clone().filter(|s| !s.is_empty())?,
+      key: self.encryption_key(),
     })
+  }
+
+  /// Derive and verify the content key, or `None` when this browser is not
+  /// fully set up (disabled, missing secret/salt, or a secret that fails the
+  /// verifier — i.e. the wrong key). That `None` is what routes the user into
+  /// the encryption wizard.
+  pub fn encryption_key(&self) -> Option<hygg_shared::crypto::EncryptionKey> {
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD;
+    if !self.encryption_enabled {
+      return None;
+    }
+    let secret = self.encryption_key.as_ref()?;
+    let salt = STANDARD.decode(self.encryption_salt.as_ref()?).ok()?;
+    let key = hygg_shared::crypto::derive_key(secret.as_bytes(), &salt).ok()?;
+    if let Some(v) = &self.encryption_verifier {
+      let verifier = STANDARD.decode(v).ok()?;
+      if !hygg_shared::crypto::check_verifier(&key, &verifier) {
+        return None;
+      }
+    }
+    Some(key)
   }
 
   /// Master-gated credentials for any *data sync* path (background or "Sync
@@ -207,6 +246,10 @@ impl Default for Settings {
       legacy_auto_sync: None,
       tts_rate: 1.0,
       show_github_stars: DEFAULT_SHOW_GITHUB_STARS,
+      encryption_enabled: false,
+      encryption_key: None,
+      encryption_salt: None,
+      encryption_verifier: None,
     }
   }
 }

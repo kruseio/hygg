@@ -71,8 +71,16 @@ pub async fn upload_book(
   format: &str,
   bytes: &[u8],
 ) -> Res<()> {
+  // Size metadata reflects the plaintext (stable across encryption on/off);
+  // the payload is the sealed envelope when a key is set up on this browser.
   upsert_meta(creds, book_id, title, format, bytes.len() as i64).await?;
-  let blob = Uint8Array::from(bytes);
+  let payload = match &creds.key {
+    Some(key) => {
+      hygg_shared::crypto::encrypt(key, bytes).map_err(|e| e.to_string())?
+    }
+    None => bytes.to_vec(),
+  };
+  let blob = Uint8Array::from(payload.as_slice());
   let resp = authed(
     Request::put(&api(&creds.server, &format!("/books/{book_id}/blob"))),
     creds,
@@ -110,7 +118,22 @@ pub async fn download_blob(creds: &Creds, book_id: &str) -> Res<Vec<u8>> {
   if !resp.ok() {
     return Err(error_body(resp).await);
   }
-  resp.binary().await.map_err(|e| e.to_string())
+  let bytes = resp.binary().await.map_err(|e| e.to_string())?;
+  // Decrypt a sealed blob when this browser holds the key; a plaintext blob
+  // (encryption off, or a document not yet converted) passes through. An
+  // envelope with no key is unreadable here.
+  if hygg_shared::crypto::is_envelope(&bytes) {
+    return match &creds.key {
+      Some(key) => {
+        hygg_shared::crypto::decrypt(key, &bytes).map_err(|e| e.to_string())
+      }
+      None => Err(
+        "this document is encrypted but no key is set up in this browser"
+          .to_string(),
+      ),
+    };
+  }
+  Ok(bytes)
 }
 
 /// Server-side conversion response for a format the browser can't handle.
