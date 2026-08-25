@@ -24,5 +24,26 @@ sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# End-to-end document encryption (`crypto`), shared verbatim by every client and
+# by the server's envelope-enforcement check. All pure-Rust so the module builds
+# for both the native clients/server and the wasm32 PWA:
+#   - XChaCha20-Poly1305 AEAD for the sealed envelope (blobs + note bodies);
+#   - Argon2id to stretch the account passphrase into the 256-bit content key;
+#   - base64 to carry an envelope inside a JSON string field;
+#   - zeroize to wipe key material from memory on drop.
+chacha20poly1305 = "0.10"
+argon2 = "0.5"
+base64 = "0.22"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+# Randomness for nonces, salts, and generated keys. On wasm32 the `js` feature
+# (added target-scoped below) routes it through the browser's crypto.
+getrandom = "0.2"
+
+# In the browser, getrandom has no OS to read from — the `js` feature backs it
+# with `crypto.getRandomValues`. Scoped to wasm so the native builds keep the
+# OS backend.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
 [dev-dependencies]
 tempfile = "3"

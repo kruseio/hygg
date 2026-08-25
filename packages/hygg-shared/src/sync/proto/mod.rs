@@ -26,6 +26,7 @@ mod books;
 mod commerce;
 mod denial;
 mod device;
+mod encryption;
 mod pull;
 mod push;
 
@@ -44,6 +45,7 @@ pub use device::{
   DeviceDto, MeResponse, RegisterDeviceRequest, RegisterDeviceResponse,
   RevokeDeviceResponse, SignupRequest, SignupResponse,
 };
+pub use encryption::{EnableEncryptionRequest, EncryptionState};
 pub use pull::{
   BookmarkDto, HighlightDto, NoteDto, ProgressDto, PullQuery, PullResponse,
 };

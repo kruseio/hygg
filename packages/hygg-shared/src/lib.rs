@@ -4,6 +4,7 @@
 //! including cross-platform path handling and common error types.
 
 pub mod anchor;
+pub mod crypto;
 pub mod export;
 pub mod sync;
 
