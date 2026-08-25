@@ -27,8 +27,10 @@ on:
   # reason: these Tauri builds are the slowest gate a pull request waits on, so a
   # cold cache costs the most here. Staggered an hour after ci.yml rather than
   # racing it for runners.
-  schedule:
-    - cron: "23 5 * * 1" # Mondays, 05:23 UTC
+  # Disabled: the weekly run described above is turned off. Uncomment the two
+  # lines below to restore it.
+  # schedule:
+  #   - cron: "23 5 * * 1" # Mondays, 05:23 UTC
   workflow_dispatch:
 
 jobs:

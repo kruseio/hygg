@@ -51,8 +51,10 @@ on:
   # It doubles as a canary that main still builds when no PR has touched it, and
   # now also the one place cargo audit's advisory scan is read as news rather
   # than noise (see the audit job).
-  schedule:
-    - cron: "23 4 * * 1" # Mondays, 04:23 UTC
+  # Disabled: the weekly run described above is turned off. Uncomment the two
+  # lines below to restore it.
+  # schedule:
+  #   - cron: "23 4 * * 1" # Mondays, 04:23 UTC
   workflow_dispatch:
 
 # One live run per ref. A pull request now fans out to ten jobs, so a second push

@@ -34,8 +34,10 @@ on:
   # below turns it into precisely a cache warm: amd64 only, no GHCR login, no
   # push, no manifest merge. Only the amd64 scope is warmed, which is the one PRs
   # read; arm64 is built on tags alone.
-  schedule:
-    - cron: "23 6 * * 1" # Mondays, 06:23 UTC
+  # Disabled: the weekly run described above is turned off. Uncomment the two
+  # lines below to restore it.
+  # schedule:
+  #   - cron: "23 6 * * 1" # Mondays, 06:23 UTC
   workflow_dispatch:
 
 env:
