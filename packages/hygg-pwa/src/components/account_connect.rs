@@ -166,7 +166,7 @@ pub fn ConnectForms(account: RwSignal<String>) -> impl IntoView {
   };
 
   view! {
-    <div class="setting__row">
+    <div class="setting__row setting__row--tabs">
       {tab(Mode::Create, "Create account")}
       {tab(Mode::SignIn, "Sign in")}
     </div>
