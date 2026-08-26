@@ -110,6 +110,10 @@ TOOLCHAIN="$STABLE"
 # database, and the binary that reads them is the same binary whichever cargo
 # shim invoked it — so a pin here would change no output, while costing ci.yml's
 # audit job a toolchain install it currently does without.
+#
+# What it reports is inventoried in docs/pages/known-issues.md: every advisory
+# this tree carries knowingly, why it cannot be patched from here, and what
+# would clear it. Read that page before chasing one; update it when one moves.
 ci_audit () {
   cargo audit
 }
