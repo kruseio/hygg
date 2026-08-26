@@ -64,13 +64,11 @@ publish hygg-shared
 publish cli-justify
 publish cli-image-to-ascii
 publish redirect-stderr
-publish hygg-cff-parser
 
 # One layer up.
 publish cli-epub-to-text # hygg-shared
-publish hygg-pdf-extract # hygg-cff-parser
 
-# cli-image-to-ascii, cli-justify, hygg-pdf-extract, hygg-shared, redirect-stderr
+# cli-image-to-ascii, cli-justify, hygg-shared, redirect-stderr
 publish cli-pdf-to-text
 
 # cli-justify, cli-pdf-to-text, hygg-shared

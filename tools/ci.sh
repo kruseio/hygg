@@ -38,21 +38,9 @@
 set -Eeuo pipefail
 
 # Every leg below assumes the workspace root as cwd (cargo member selection, the
-# fork-manifest checkout, the relative hygg-pwa paths), so anchor there rather
-# than trusting the caller's directory.
+# relative hygg-pwa paths), so anchor there rather than trusting the caller's
+# directory.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-
-# hygg-cff-parser and hygg-pdf-extract are verbatim forks of upstream crates,
-# kept unmodified so they can be re-synced from upstream with a one-line
-# manifest change. They still build (and are type-checked) as dependencies of
-# cli-pdf-to-text, but are excluded from the mutating / linting tooling here and
-# in ci-mutable.sh:
-#   - --exclude works for the cargo built-ins (check/fix/clippy/test) + udeps
-#   - cargo fmt has no --exclude, so it skips them via rustfmt.toml's `ignore`
-#   - cargo upgrade has no per-member exclude (its --exclude filters by
-#     dependency name), so ci-mutable.sh restores the fork manifests right after
-#     it runs
-FORKS=(--exclude hygg-cff-parser --exclude hygg-pdf-extract)
 
 # hygg-pwa's real artifact is a wasm32-unknown-unknown bundle: the Leptos/web-sys
 # stack is cfg(target_arch = "wasm32")-gated, so its *host* build is only a thin
@@ -64,7 +52,7 @@ FORKS=(--exclude hygg-cff-parser --exclude hygg-pdf-extract)
 # (its `generate_context!` needs it built first), so it's excluded from the
 # generic host `--workspace` legs below and covered by its own `ci_tauri` leg
 # (which builds the bundle first) — same pattern as hygg-pwa / `ci_wasm`.
-HOST_ONLY=("${FORKS[@]}" --exclude hygg-pwa --exclude hygg-tauri)
+HOST_ONLY=(--exclude hygg-pwa --exclude hygg-tauri)
 
 # Set by the dispatcher at the bottom. Every invocation of *this* file is gating
 # a tree someone proposed — a pull request, or a push about to become one — so
@@ -88,9 +76,10 @@ LOCKED=""
 #
 # Only two legs below name NIGHTLY, and neither is a preference; they provably
 # cannot run any other way:
-#   - fmt: rustfmt.toml's `ignore` and `wrap_comments` are nightly-only options.
-#     Stable rustfmt drops both with a warning and then reformats the vendored
-#     forks, which is the single thing `ignore` exists to prevent.
+#   - fmt: rustfmt.toml's `wrap_comments` is a nightly-only option. Stable
+#     rustfmt drops it with a warning and then leaves every over-long comment
+#     in the tree unwrapped, so the check would pass on a tree the pinned
+#     rustfmt rewrites.
 #   - udeps: cargo-udeps passes -Z flags, which stable rustc rejects outright.
 # Pinning them buys the same thing pinning STABLE does: rustfmt and clippy both
 # rewrite their own rules over time, and neither should do it under a release.

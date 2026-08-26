@@ -60,16 +60,10 @@ TOOLCHAIN="$NIGHTLY"
 
 # --- The steps that write -----------------------------------------------------
 
-# Dependency refresh. The fork manifests are restored immediately after, because
-# `cargo upgrade` has no per-member exclude and hygg-cff-parser /
-# hygg-pdf-extract are meant to stay byte-identical to upstream (see FORKS in
-# ci.sh). The legs that follow re-resolve the lock against the restored
-# manifests, which is what reconciles the two before anything is committed.
+# Dependency refresh.
 ci_deps () {
   cargo $TOOLCHAIN update --verbose
   cargo $TOOLCHAIN upgrade --verbose
-  git checkout -- packages/hygg-cff-parser/Cargo.toml \
-                  packages/hygg-pdf-extract/Cargo.toml
 }
 
 # ci.sh's fmt leg --check's the tree; this writes it. Same pinned rustfmt (see

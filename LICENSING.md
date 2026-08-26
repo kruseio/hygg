@@ -31,13 +31,6 @@ inside the published package:
 | Crate file | Relationship to the root text |
 |---|---|
 | [`packages/hygg-server/LICENSE`](packages/hygg-server/LICENSE) | Identical to [`LICENSE-ELASTIC`](LICENSE-ELASTIC); referenced by that crate's `license-file` key. |
-| [`packages/hygg-cff-parser/LICENSE-APACHE`](packages/hygg-cff-parser/LICENSE-APACHE) | Identical to [`LICENSE-APACHE`](LICENSE-APACHE). |
-| [`packages/hygg-cff-parser/LICENSE-MIT`](packages/hygg-cff-parser/LICENSE-MIT) | **Deliberately different** — the upstream MIT text, © 2018 Yevhenii Reizner. |
-| [`packages/hygg-pdf-extract/LICENSE`](packages/hygg-pdf-extract/LICENSE) | **Deliberately different** — the upstream MIT text, © 2014 Jeff Muizelaar and the pdf-extract contributors, plus kruseio's copyright on the fork modifications. |
-
-The forks' copies name their upstream copyright holders rather than kruseio;
-that is the point of a fork retaining its original license, so keep those
-notices intact.
 
 ## Crates
 
@@ -56,8 +49,6 @@ Every crate in the workspace, and what covers it:
 | [`hygg-pwa`](packages/hygg-pwa) | Binary / WASM | no (`publish = false`) | **AGPL-3.0-only** | The same reader product as a Rust/WASM Leptos PWA. Served over a network, so AGPL is the point. |
 | [`hygg-tauri`](packages/hygg-tauri) | Binary | no (`publish = false`) | **AGPL-3.0-only** | Native Tauri v2 desktop/mobile shell over the `hygg-pwa` UI — same product, same license. |
 | [`hygg-server`](packages/hygg-server) | Library / Binary | crates.io | **Elastic License 2.0** | The sync server — source-available. Self-host and modify freely; do not offer it to third parties as a managed service. ELv2 is **not** an OSI "open source" license. |
-| [`hygg-cff-parser`](packages/hygg-cff-parser) | Library | crates.io | **MIT OR Apache-2.0** | Thin fork of `cff-parser` — retains the upstream dual license. |
-| [`hygg-pdf-extract`](packages/hygg-pdf-extract) | Library | crates.io | **MIT** | Thin fork of `pdf-extract` — retains the upstream license. |
 
 The two `publish = false` clients (`hygg-pwa`, `hygg-tauri`) are
 not on crates.io, but they ship to users as built binaries and hosted apps —

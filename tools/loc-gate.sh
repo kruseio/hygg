@@ -3,12 +3,10 @@
 # LOC gate — fails when any *authored* source file grows past a line budget,
 # to keep modules small and reviewable.
 #
-# "Authored" excludes:
-#   - the vendored upstream forks hygg-cff-parser / hygg-pdf-extract, kept
-#     verbatim for easy re-sync (the same crates are skipped by tools/ci.sh's
-#     FORKS list and rustfmt.toml's `ignore` — keep all three in sync); and
-#   - any file carrying an `@generated` marker in its first few lines (an escape
-#     hatch for future codegen — there is none in the authored crates today).
+# "Authored" excludes any file carrying an `@generated` marker in its first few
+# lines — an escape hatch for future codegen; there is none in the authored
+# crates today. (It also used to exclude two vendored upstream forks, which were
+# retired once upstream shipped the fix they carried.)
 #
 # build output never reaches the check: the file list comes from `git ls-files`
 # (tracked + untracked-but-not-gitignored), so target/ is implicitly excluded.
@@ -24,27 +22,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 LIMIT="${LOC_LIMIT:-300}"
 
-# Verbatim upstream forks, excluded from the gate. Keep in sync with the FORKS
-# list in tools/ci.sh and the `ignore` list in rustfmt.toml.
-EXCLUDED_PREFIXES=(
-  "packages/hygg-cff-parser/"
-  "packages/hygg-pdf-extract/"
-)
-
-is_excluded () {
-  local f="$1" p
-  for p in "${EXCLUDED_PREFIXES[@]}"; do
-    case "$f" in "$p"*) return 0 ;; esac
-  done
-  return 1
-}
-
 offenders=()
 checked=0
 
 while IFS= read -r -d '' f; do
   [ -f "$f" ] || continue
-  if is_excluded "$f"; then continue; fi
   # Escape hatch: skip genuinely generated files.
   if head -n 5 -- "$f" | grep -q '@generated'; then continue; fi
   checked=$((checked + 1))
@@ -65,4 +47,4 @@ if [ "${#offenders[@]}" -gt 0 ]; then
   exit 1
 fi
 
-echo "LOC gate: OK — all ${checked} authored .rs files <= ${LIMIT} lines (forks excluded)."
+echo "LOC gate: OK — all ${checked} authored .rs files <= ${LIMIT} lines."

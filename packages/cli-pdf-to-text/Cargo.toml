@@ -81,8 +81,15 @@ dirs = { version = "6", optional = true }
 # them off wasm to keep that build lean and buildable.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 redirect-stderr = { version = "0.1", path = "../redirect-stderr" }
-# Our thin fork of pdf-extract 0.10, wired to the patched hygg-cff-parser
-# (Adobe Expert-encoded-CFF panic fix). Still imported as `pdf_extract`.
-pdf-extract = { package = "hygg-pdf-extract", version = "0.1", path = "../hygg-pdf-extract" }
-lopdf = "0.44"
+# Upstream pdf-extract. This was a pair of in-tree forks (hygg-pdf-extract on
+# hygg-cff-parser) until 0.12 shipped: the forks existed only to stop
+# cff-parser's `panic!()` on Adobe Expert-encoded CFF fonts crashing extraction
+# of Adobe-generated PDFs, and 0.12 depends on cff-parser 0.2, which implements
+# that encoding properly instead of panicking on it.
+pdf-extract = "0.12"
+# Held to pdf-extract's own lopdf requirement so the workspace links one lopdf
+# rather than two. `pdf_extract::Document` is a re-export of `lopdf::Document`;
+# nothing here passes one across that boundary today, but a version mismatch
+# would quietly make the two spellings different types the moment something did.
+lopdf = "0.42"
 rayon = "1"
