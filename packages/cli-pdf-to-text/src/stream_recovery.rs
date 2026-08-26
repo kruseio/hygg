@@ -101,7 +101,11 @@ pub(crate) fn extract_ascii_pdf_text_chunks(
   let mut chunks = Vec::new();
 
   for (_, page_id) in doc.get_pages() {
-    let content_data = doc.get_page_content(page_id)?;
+    // lopdf 0.44 returns the page content directly rather than a Result: a
+    // page it cannot assemble now yields an empty buffer, which decodes to zero
+    // operations and contributes no chunks. That suits this damaged-PDF
+    // recovery path better than the old behaviour of aborting the whole file.
+    let content_data = doc.get_page_content(page_id);
     let content = Content::decode(&content_data)?;
 
     for op in content.operations {

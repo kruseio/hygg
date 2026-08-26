@@ -1,15 +1,35 @@
 ## hygg-pdf-extract
 
 A thin fork of [`pdf-extract`](https://crates.io/crates/pdf-extract) `0.10.0`
-(by Jeff Muizelaar). The **only** change is its `cff-parser` dependency, which
+(by Jeff Muizelaar). The primary change is its `cff-parser` dependency, which
 is redirected to [`hygg-cff-parser`](../hygg-cff-parser) — a patched
-`cff-parser` that does not `panic!()` on Adobe Expert-encoded CFF fonts. The
-source is otherwise verbatim, so it can be re-synced from upstream with a
-one-line manifest change.
+`cff-parser` that does not `panic!()` on Adobe Expert-encoded CFF fonts.
 
 Published under the `hygg-` namespace so the fix reaches `cargo install hygg`
-(a `[patch]` cannot be published). Once upstream `pdf-extract` moves to
-`cff-parser 0.2` (which fixes the panic), this fork can be deleted.
+(a `[patch]` cannot be published).
+
+### Deviations from upstream 0.10.0
+
+Kept to the two below so the fork stays cheap to re-sync. Anything else
+belongs upstream, not here.
+
+1. `cff-parser` → `hygg-cff-parser` (the reason the fork exists, above).
+2. `lopdf` moved from `0.38` to `0.44`. Upstream 0.10.0 pins `0.38`, which is
+   affected by RUSTSEC-2026-0187 (stack overflow on deeply nested PDF
+   objects, CVSS 7.5) and has no patched 0.38.x. The bump costs one line of
+   source: `Document::get_page_content` returns `Vec<u8>` rather than
+   `Result<Vec<u8>>` from 0.39 on, so `output_doc_inner` no longer
+   `.unwrap()`s it. This also unifies the workspace on a single `lopdf`,
+   since `cli-pdf-to-text` already used 0.43 alongside this crate.
+
+### Retiring this fork
+
+Upstream `pdf-extract 0.12.0` depends on `cff-parser 0.2` (which fixes the
+panic) and `lopdf 0.42`, so it clears both deviations above — the condition
+this fork was created to wait for. Replacing `hygg-pdf-extract` and
+`hygg-cff-parser` with a plain `pdf-extract = "0.12"` dependency is therefore
+the intended end state; it is left as a deliberate follow-up because both
+crates are published members of the release train.
 
 ---
 

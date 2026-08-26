@@ -51,16 +51,18 @@ getopts = "0.2"
 # pdf_oxide ships explicit wasm32 support (its own getrandom/web-sys target
 # deps), so the streaming path is the one that compiles for the browser PWA.
 #
-# Pinned to =0.3.64: every release from 0.3.71 through 0.3.74 hangs
-# indefinitely extracting pdfreference1.7old.pdf — pathological deep
-# recursion in pdf_oxide's structure-tree parser
+# Pinned to =0.3.70: every release from 0.3.71 onwards (re-verified against
+# 0.3.77) hangs indefinitely extracting pdfreference1.7old.pdf — pathological
+# deep recursion in pdf_oxide's structure-tree parser
 # (parse_struct_elem/parse_k_children re-parsing objects without memoization).
-# 0.3.64 is the last release before the regression and passes the full
-# stream test suite. The `=` pin is deliberate so `cargo update` / CI's
-# `cargo upgrade` can't silently re-introduce the hang; widen it once
-# upstream fixes the blowup. Repro: cli-pdf-to-text stream test
-# `toc_section_labels_stay_separate`.
-pdf_oxide = { version = "=0.3.64", default-features = false }
+# 0.3.70 is the last release before the regression and passes the full stream
+# test suite. It is also the earliest release to require quick-xml 0.41, which
+# is what takes this tree off the vulnerable quick-xml 0.40 (RUSTSEC-2026-0194
+# / RUSTSEC-2026-0195) — so the pin cannot be lowered either. The `=` pin is
+# deliberate so `cargo update` / CI's `cargo upgrade` can't silently
+# re-introduce the hang; widen it once upstream fixes the blowup. Repro:
+# cli-pdf-to-text stream test `toc_section_labels_stay_separate`.
+pdf_oxide = { version = "=0.3.70", default-features = false }
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 
 # --- OCR model fetch (feature = "ocr") ---
@@ -82,5 +84,5 @@ redirect-stderr = { version = "0.1", path = "../redirect-stderr" }
 # Our thin fork of pdf-extract 0.10, wired to the patched hygg-cff-parser
 # (Adobe Expert-encoded-CFF panic fix). Still imported as `pdf_extract`.
 pdf-extract = { package = "hygg-pdf-extract", version = "0.1", path = "../hygg-pdf-extract" }
-lopdf = "0.43"
+lopdf = "0.44"
 rayon = "1"

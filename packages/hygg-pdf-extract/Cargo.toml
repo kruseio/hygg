@@ -32,7 +32,7 @@ cff-parser = { package = "hygg-cff-parser", version = "0.1", path = "../hygg-cff
 encoding_rs = "0.8.34"
 euclid = "0.20.5"
 log = "0.4.22"
-lopdf = { version = "0.38", default-features = false }
+lopdf = { version = "0.44", default-features = false }
 postscript = "0.14"
 type1-encoding-parser = "0.1.0"
 unicode-normalization = "0.1.19"
