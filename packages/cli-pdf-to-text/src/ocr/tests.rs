@@ -28,6 +28,33 @@ fn bundled_ocr_engine_loads_fetched_models() {
   super::bundled_ocr_engine().expect("OCR model assets should initialize");
 }
 
+// Guards the fix for a cold-cache race: three OCR tests reaching an empty cache
+// as threads of one `cargo test` process each began a download, and because
+// every one of them wrote to the same `dest.with_extension("part")`, the first
+// to finish renamed that file away and the rest failed their own rename with
+// "No such file or directory (os error 2)". The private temp name is also what
+// keeps the SHA-256 check meaningful — the digest covers the received stream,
+// so a shared `.part` another writer could truncate would let a short file be
+// renamed into the cache as verified.
+#[test]
+#[cfg(feature = "ocr")]
+fn part_paths_do_not_collide_between_writers() {
+  let dest = std::path::Path::new("/tmp/hygg-ocr-test/det.onnx");
+  let first = super::files::part_path(dest);
+  let second = super::files::part_path(dest);
+
+  assert_ne!(
+    first, second,
+    "two writers must not share a download-in-progress path"
+  );
+  assert_ne!(first, dest, "the temp must never be the destination itself");
+  assert_eq!(
+    first.parent(),
+    dest.parent(),
+    "the temp must stay beside its destination so the rename is same-filesystem"
+  );
+}
+
 #[test]
 #[cfg(feature = "ocr")]
 fn hybrid_merge_prefers_native_duplicate_text() {

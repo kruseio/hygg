@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use ndarray::Array3;
@@ -130,6 +131,37 @@ fn download_one(
   Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
+/// Serializes the cold-cache fetch in `ensure_models`, so that several readers
+/// reaching an empty cache at once download the model and the voices table
+/// between them rather than each fetching their own copy of both.
+///
+/// It orders threads within one process, and nothing beyond that — two separate
+/// `hygg` processes can still fetch the same artifact at once. That is left
+/// correct-but-redundant rather than reaching for a file-locking dependency;
+/// what makes it *correct* is the private temp name below, not this lock.
+static FETCH_LOCK: Mutex<()> = Mutex::new(());
+
+/// Distinguishes concurrent `.part` files within one process, as the pid does
+/// across processes.
+static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// A download-in-progress path private to this writer.
+///
+/// The obvious `dest.with_extension("part")` is shared, and two writers on one
+/// `.part` corrupt each other in a way the SHA-256 check cannot catch: the
+/// digest is computed over the received *stream*, never re-read from the file,
+/// so a racer calling `File::create` on our `.part` between our last write and
+/// our rename would truncate it and we would still rename it into the cache as
+/// "verified" — where ONNX Runtime loads it unchecked. It also stops the two
+/// writers colliding on the rename, which fails with ENOENT for whoever loses.
+fn part_path(dest: &Path) -> PathBuf {
+  dest.with_extension(format!(
+    "part.{}.{}",
+    std::process::id(),
+    TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+  ))
+}
+
 /// Fetch `artifact` into `dest`, trying each source in turn and refusing any
 /// download whose size or SHA-256 does not match. Only a verified file is moved
 /// into place; ONNX Runtime later loads whatever lands there, so a mismatched
@@ -142,7 +174,7 @@ fn fetch_verified(
   if let Some(parent) = dest.parent() {
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
   }
-  let tmp = dest.with_extension("part");
+  let tmp = part_path(dest);
 
   let result = match download_one(artifact.url, &tmp, artifact.len, cancel) {
     Ok(digest) if digest == artifact.sha256 => {
@@ -166,6 +198,17 @@ pub(crate) fn ensure_models(
   cancel: &AtomicBool,
 ) -> Result<(PathBuf, PathBuf), String> {
   let (model, voices) = (model_path(), voices_path());
+  // The warm-cache path, which is every call after the first: no lock, no
+  // syscall beyond the two stats.
+  if model.exists() && voices.exists() {
+    return Ok((model, voices));
+  }
+  // The guarded value is `()`, so a downloader that panicked left nothing
+  // invalid behind. Recover from the poison instead of failing every later
+  // fetch in this process because one of them panicked.
+  let _guard = FETCH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+  // Re-check each artifact under the lock: whoever we queued behind may have
+  // just fetched it.
   if !model.exists() {
     fetch_verified(&MODEL, &model, cancel)?;
   }

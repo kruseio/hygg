@@ -10,6 +10,8 @@
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use sha2::{Digest, Sha256};
@@ -120,6 +122,40 @@ fn download_one(
   Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
+/// Serializes the cold-cache fetch in `ensure_one`. Callers arrive together far
+/// more often than the "first use" framing suggests: `cargo test` runs the OCR
+/// tests as threads in one process, and every one of them finds the same empty
+/// cache. Without this each thread downloads all three artifacts itself.
+///
+/// It orders threads within one process, and nothing beyond that — two separate
+/// `hygg` processes can still fetch the same artifact at once. That is left
+/// correct-but-redundant rather than reaching for a file-locking dependency;
+/// what makes it *correct* is the private temp name below, not this lock.
+static FETCH_LOCK: Mutex<()> = Mutex::new(());
+
+/// Distinguishes concurrent `.part` files within one process, as the pid does
+/// across processes.
+static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// A download-in-progress path private to this writer.
+///
+/// The obvious `dest.with_extension("part")` is shared, and two writers on one
+/// `.part` corrupt each other in a way the SHA-256 check cannot catch: the
+/// digest is computed over the received *stream*, never re-read from the file,
+/// so a racer calling `File::create` on our `.part` between our last write and
+/// our rename would truncate it and we would still rename it into the cache as
+/// "verified". The same collision is what made the rename itself fail with
+/// ENOENT once the other writer got there first. A private temp plus the atomic
+/// rename means every file that reaches `dest` is one this call downloaded and
+/// hashed end to end.
+pub(super) fn part_path(dest: &Path) -> PathBuf {
+  dest.with_extension(format!(
+    "part.{}.{}",
+    std::process::id(),
+    TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+  ))
+}
+
 /// Fetch `artifact` into `dest`, refusing any download whose size or SHA-256
 /// does not match. Only a verified file is moved into place; the tract runtime
 /// later loads whatever lands there, so a mismatched or truncated download must
@@ -128,7 +164,7 @@ fn fetch_verified(artifact: &Artifact, dest: &Path) -> Result<(), String> {
   if let Some(parent) = dest.parent() {
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
   }
-  let tmp = dest.with_extension("part");
+  let tmp = part_path(dest);
 
   let result = match download_one(artifact.url, &tmp, artifact.len) {
     Ok(digest) if digest == artifact.sha256 => {
@@ -146,9 +182,21 @@ fn fetch_verified(artifact: &Artifact, dest: &Path) -> Result<(), String> {
 
 fn ensure_one(artifact: &Artifact) -> Result<PathBuf, String> {
   let path = model_dir().join(artifact.file_name);
-  if !path.exists() {
-    fetch_verified(artifact, &path)?;
+  // The warm-cache path, which is every call after the first: no lock, no
+  // syscall beyond the stat.
+  if path.exists() {
+    return Ok(path);
   }
+  // The guarded value is `()`, so a downloader that panicked left nothing
+  // invalid behind. Recover from the poison instead of failing every later
+  // fetch in this process because one of them panicked.
+  let _guard = FETCH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+  // Re-check under the lock: whoever we queued behind may have been fetching
+  // this very artifact, in which case it is on disk now and we are done.
+  if path.exists() {
+    return Ok(path);
+  }
+  fetch_verified(artifact, &path)?;
   Ok(path)
 }
 
