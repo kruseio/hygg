@@ -638,6 +638,9 @@ body {
   flex: 1;
   accent-color: var(--accent);
 }
+.setting__row--tabs {
+  margin-bottom: 8px;
+}
 .setting__value {
   color: var(--muted);
   min-width: 72px;
