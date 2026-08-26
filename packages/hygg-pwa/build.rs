@@ -29,7 +29,15 @@ fn emit_git_info() {
   if let Some(v) = git(&["rev-parse", "HEAD"]) {
     println!("cargo:rustc-env=HYGG_GIT_SHA_FULL={v}");
   }
-  if let Some(v) = git(&["log", "-1", "--format=%cI"]) {
+  // `format-local` renders the committer date in the zone `git` runs under,
+  // which is pinned to UTC (see `git`), so the baked timestamp is a
+  // `Z`-suffixed UTC value regardless of the build machine's timezone.
+  if let Some(v) = git(&[
+    "log",
+    "-1",
+    "--date=format-local:%Y-%m-%dT%H:%M:%SZ",
+    "--format=%cd",
+  ]) {
     println!("cargo:rustc-env=HYGG_GIT_DATE={v}");
   }
   // `logs/HEAD` changes on every commit, `HEAD` on branch switch — watching
@@ -46,6 +54,9 @@ fn emit_git_info() {
 fn git(args: &[&str]) -> Option<String> {
   let out = Command::new("git")
     .args(args)
+    // Pin the timezone so `--date=format-local` renders commit dates in UTC,
+    // keeping the baked timestamp independent of the build machine's zone.
+    .env("TZ", "UTC0")
     .current_dir(env!("CARGO_MANIFEST_DIR"))
     .output()
     .ok()?;

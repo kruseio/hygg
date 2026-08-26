@@ -165,7 +165,11 @@ pub fn SettingsView() -> impl IntoView {
             <A href=link("/credits") attr:class="btn">"Credits"</A>
           </div>
           <p class="setting__hint">
-            {format!("Version {} \u{00b7} {}", bi::VERSION, bi::GIT_SHA)}
+            {
+              let hint = format!("Version {} \u{00b7} {}", bi::VERSION, bi::GIT_SHA);
+              let ts = bi::commit_timestamp();
+              if ts.is_empty() { hint } else { format!("{hint} \u{00b7} {ts}") }
+            }
           </p>
         </section>
       </main>
