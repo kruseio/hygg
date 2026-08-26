@@ -80,8 +80,8 @@ pub fn Credits() -> impl IntoView {
       <section class="panel credits__support">
         <h3>"Support the project"</h3>
         <p class="muted">
-          "hygg is free and open source. If it makes your reading calmer, you \
-           can chip in for a coffee."
+          "If you enjoy hygg and want to fuel future development, buy me a \
+           coffee and watch it get turned into code."
         </p>
         <a class="btn btn--primary coffee" href=SUPPORT_URL target="_blank"
           rel="noopener">
