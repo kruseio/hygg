@@ -16,7 +16,7 @@ code reaches a release without passing automated checks **and** a human review.
 Two reader features use neural models, and both run locally:
 
 - **Text-to-speech.** The optional `tts` feature narrates with the open
-  [Kokoro](pages/tts.md) voice model through an on-device ONNX runtime. The
+  [Kokoro](tts.md) voice model through an on-device ONNX runtime. The
   text you narrate is turned into audio on your machine; it is never sent to a
   service. The model weights and voices are downloaded **once** on first use,
   from this project's own GitHub release, over a pinned `sha256` that is
@@ -52,8 +52,8 @@ responsible for the result:
   produced it. A human is accountable for what ships.
 - **Every change passes the gate.** The same checks a contributor runs locally
   guard the tree: formatting, `clippy` with warnings denied, the full test
-  suite, and the source-size limit (see [Development](pages/development.md) and
-  [Contributing](../CONTRIBUTING.md)). AI-assisted or hand-written, code earns
+  suite, and the source-size limit (see [Development](development.md) and
+  [Contributing](../../CONTRIBUTING.md)). AI-assisted or hand-written, code earns
   its place the same way — by building, passing the tests, and surviving
   review.
 - **Behaviour is verified, not assumed.** Features are exercised end to end and

@@ -101,7 +101,7 @@ docker run -d -p 3032:3032 -v "$PWD/hygg-data:/app/data" \
 The mount's host side (`$PWD/hygg-data`) is yours to name and move; `/app/data`
 is the image's own path and should stay as it is.
 
-Tags are `:latest`, `:0.1.21` (pin this) and `:0.1`. To use it from the compose
+Tags are `:latest`, `:0.1.26` (pin this) and `:0.1`. To use it from the compose
 file above, replace the `build:` block with
 `image: ghcr.io/kruseio/hygg-server:latest` — the volume and environment stay as
 they are.

@@ -102,12 +102,12 @@ latest release at `/hygg/`, and a frozen copy at `/hygg/v<tag>/` that stays put 
 a link to it keeps working. Running the bundle from a sub-path takes three things,
 none of which Trunk does on its own:
 
-- **`--public-url /hygg/v0.1.21/`** so Trunk's hashed asset URLs point into the
+- **`--public-url /hygg/v0.1.26/`** so Trunk's hashed asset URLs point into the
   deploy. This is baked in at build time, which is why each path needs its own
   build rather than one relocatable bundle.
 - **`tools/prepare_pages_dist.py`** injects `<base href>` (Trunk does not) and
   copies `index.html` to `404.html`, which is how a static host serves deep links
-  like `/hygg/v0.1.21/settings`. Every relative ref — manifest, icons, `sw.js` —
+  like `/hygg/v0.1.26/settings`. Every relative ref — manifest, icons, `sw.js` —
   and the router's own idea of its root resolve against that base.
 - **`app::link()`** for every in-app href. `<Router base>` is *not* enough on its
   own: leptos_router passes any href starting with `/` straight through, and
@@ -117,7 +117,7 @@ none of which Trunk does on its own:
 
 `sw.js` keys its cache to `registration.scope` for the same reason: several
 deploys share one origin, and CacheStorage is per-origin, so an unqualified cache
-name would have `/hygg/` and `/hygg/v0.1.21/` evicting each other's entries.
+name would have `/hygg/` and `/hygg/v0.1.26/` evicting each other's entries.
 
 A build with no `--public-url` (the Tauri shell, `trunk serve`) gets no `<base>`,
 `link()` prefixes nothing, and everything behaves exactly as it did before.

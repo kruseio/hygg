@@ -26,7 +26,7 @@ hygg doc.pdf
 
 ### A specific version
 ```sh
-cargo install --locked --version 0.1.21 hygg
+cargo install --locked --version 0.1.26 hygg
 ```
 
 ### A specific git branch
@@ -100,7 +100,7 @@ Nothing to install — the browser is the client:
 | | |
 |---|---|
 | Latest | https://kruseio.github.io/hygg/ |
-| Pinned to a version | https://kruseio.github.io/hygg/v0.1.21/ |
+| Pinned to a version | https://kruseio.github.io/hygg/v0.1.26/ |
 | Every version | https://kruseio.github.io/hygg/versions.html |
 
 A pinned link keeps working after later releases, which is the point of it.
@@ -130,7 +130,7 @@ from any static host. One requirement: an SPA fallback that serves `index.html`
 for unknown paths, otherwise deep links like `/read/:id` 404.
 
 Serving from a sub-path (rather than the root of an origin) needs the bundle
-built for that path — `trunk build --release --public-url /hygg/v0.1.21/` — plus
+built for that path — `trunk build --release --public-url /hygg/v0.1.26/` — plus
 `packages/hygg-pwa/tools/prepare_pages_dist.py`, which injects the `<base href>` Trunk
 does not and copies `index.html` to `404.html`. This is what
 `.github/workflows/pages.yml` does for each tag; `packages/hygg-pwa/README.md` explains
@@ -220,7 +220,7 @@ docker run -d -p 3032:3032 -v "$PWD/hygg-data:/app/data" \
   ghcr.io/kruseio/hygg-server:latest
 ```
 
-Tags are `:latest`, `:0.1.21` (pin this one) and `:0.1`.
+Tags are `:latest`, `:0.1.26` (pin this one) and `:0.1`.
 
 ### From source
 ```sh

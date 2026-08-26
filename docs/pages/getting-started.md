@@ -30,7 +30,7 @@ fish_add_path ~/.cargo/bin
 ### Advanced install options
 Install a specific version
 ```sh
-cargo install --locked --version 0.1.18 hygg
+cargo install --locked --version 0.1.26 hygg
 ```
 
 Install a specific git branch
