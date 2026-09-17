@@ -138,3 +138,55 @@ pub(crate) fn should_start_new_pdf_paragraph(
 
   true
 }
+
+#[cfg(test)]
+mod tests {
+  use super::{
+    looks_like_table_or_figure_caption, should_start_new_pdf_paragraph,
+  };
+
+  #[test]
+  fn captions_need_a_known_label_number_and_title() {
+    for rejected in [
+      "",
+      "Options 2. 中文",
+      "Table",
+      "Table . 中文",
+      "Table ２. 中文",
+      "Table 2a 中文",
+      "Table 2.",
+    ] {
+      assert!(!looks_like_table_or_figure_caption(rejected), "{rejected}");
+    }
+    for accepted in [
+      "Table 2. 中文 options",
+      "Figure 3.1: diagram",
+      "Plate 14 image",
+      "Diagram 1) flow",
+    ] {
+      assert!(looks_like_table_or_figure_caption(accepted), "{accepted}");
+    }
+  }
+
+  #[test]
+  fn literal_string_examples_split_even_at_the_same_indent() {
+    assert!(should_start_new_pdf_paragraph("  ", "( one )", "  ( two )"));
+    assert!(should_start_new_pdf_paragraph("  ", "ordinary", "  ( two )"));
+    assert!(should_start_new_pdf_paragraph("  ", "ordinary", "  )"));
+    assert!(should_start_new_pdf_paragraph("  ", "continued\\", "  text"));
+    assert!(!should_start_new_pdf_paragraph("  ", "ordinary", "  text"));
+  }
+
+  #[test]
+  fn changed_indent_distinguishes_continuations_from_new_paragraphs() {
+    assert!(should_start_new_pdf_paragraph("", "unfinished", "Table 2. 中文"));
+    assert!(should_start_new_pdf_paragraph("", "unfinished", "   "));
+    assert!(!should_start_new_pdf_paragraph("", "unfinished", "  lowercase"));
+    assert!(!should_start_new_pdf_paragraph("", "unfinished", "  ( example )"));
+    assert!(!should_start_new_pdf_paragraph("", "unfinished", "  ABC"));
+    assert!(!should_start_new_pdf_paragraph("", "unfinished", "  Heading"));
+    assert!(should_start_new_pdf_paragraph("", "unfinished", "    Heading"));
+    assert!(should_start_new_pdf_paragraph("", "Done:", "  Heading"));
+    assert!(should_start_new_pdf_paragraph("    ", "Done.", "  Heading"));
+  }
+}

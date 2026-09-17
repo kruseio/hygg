@@ -80,6 +80,21 @@ fn exact_width_keeps_a_wide_grapheme_on_the_current_line() {
 }
 
 #[test]
+fn public_wrappers_handle_blank_lines_and_boundary_whitespace() {
+  assert_eq!(wrap_preserve_whitespace("a\n\nb", 4), ["a", "", "b"]);
+  assert_eq!(wrap_preserve_whitespace("          ", 4), [""]);
+  assert_eq!(wrap_preserve_whitespace("     中文abc", 10), ["   中文abc"]);
+  assert_eq!(wrap_preserve_whitespace("abc ", 3), ["abc"]);
+  assert_eq!(
+    wrap_preserve_whitespace("abc          ", 5).concat().trim(),
+    "abc"
+  );
+
+  assert_eq!(justify("a b c d", 6), ["a  b c", "d", ""]);
+  assert_eq!(justify(" \n\nx", 10), ["", "x", ""]);
+}
+
+#[test]
 fn indentation_counts_toward_display_width() {
   let lines = wrap_preserve_whitespace("    中文日本語한국어", 8);
   assert!(lines.iter().all(|line| line.width() <= 8), "{lines:?}");

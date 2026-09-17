@@ -86,9 +86,8 @@ pub(crate) fn split_trailing_numeric_token_with_min_gap(
     return (s, None);
   }
 
-  let Some(number_start) = s.rfind(last_token) else {
-    return (s, None);
-  };
+  // `last_token` came from `s`, so this search always succeeds.
+  let number_start = s.rfind(last_token).expect("last token is in source");
   let before_number = &s[..number_start];
   let gap_before_number =
     before_number.chars().rev().take_while(|ch| ch.is_whitespace()).count();
@@ -102,8 +101,8 @@ pub(crate) fn split_trailing_numeric_token_with_min_gap(
 #[cfg(test)]
 mod tests {
   use super::{
-    drop_one_leading_whitespace, leading_whitespace_width,
-    split_at_last_whitespace_before,
+    drop_one_leading_whitespace, is_ascii_numeric, leading_whitespace_width,
+    split_at_last_whitespace_before, split_trailing_numeric_token_with_min_gap,
   };
 
   #[test]
@@ -133,5 +132,26 @@ mod tests {
     assert_eq!(leading_whitespace_width("\t 中文"), 9);
     assert_eq!(leading_whitespace_width("  中文"), 2);
     assert_eq!(leading_whitespace_width("中文  "), 0);
+  }
+
+  #[test]
+  fn trailing_page_number_requires_an_ascii_number_and_a_wide_gap() {
+    assert!(!is_ascii_numeric(""));
+    assert!(!is_ascii_numeric("１２"));
+    assert!(is_ascii_numeric("12"));
+
+    assert_eq!(split_trailing_numeric_token_with_min_gap("", 2), ("", None));
+    assert_eq!(
+      split_trailing_numeric_token_with_min_gap("中文  十二", 2),
+      ("中文  十二", None)
+    );
+    assert_eq!(
+      split_trailing_numeric_token_with_min_gap("中文 12", 2),
+      ("中文 12", None)
+    );
+    assert_eq!(
+      split_trailing_numeric_token_with_min_gap("中文   12", 2),
+      ("中文", Some("12"))
+    );
   }
 }

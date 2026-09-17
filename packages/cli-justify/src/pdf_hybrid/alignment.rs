@@ -244,3 +244,6 @@ fn update_numeric_toc_layout(
     }
   }
 }
+
+#[cfg(test)]
+mod tests;

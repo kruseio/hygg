@@ -8,7 +8,7 @@ pub(crate) fn justify_line(line: &[&str], line_width: usize) -> String {
   }
 
   let spaces = line_width - word_len;
-  let line_len_div = if line.len() > 1 { line.len() - 1 } else { 1 };
+  let line_len_div = line.len() - 1;
   let each_space = spaces / line_len_div;
   let extra_space = spaces % line_len_div;
 
@@ -77,7 +77,7 @@ pub fn justify(text: &str, line_width: usize) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-  use super::justify;
+  use super::{justify, justify_line};
   use crate::text_utils::display_width;
 
   #[test]
@@ -113,18 +113,10 @@ mod tests {
 
   #[test]
   fn normal_justification_produces_full_lines() {
-    let input_text = "This is a test of the justification system. It should properly justify lines that need to be wrapped.";
-    let result = justify(input_text, 20);
-    assert!(!result.is_empty());
-
-    let mut found_justified = false;
-    for (i, line) in result.iter().enumerate() {
-      if !line.is_empty() && i < result.len() - 2 && display_width(line) == 20 {
-        found_justified = true;
-        break;
-      }
-    }
-    assert!(found_justified, "Should have at least one justified line");
+    assert_eq!(justify("a b c d", 6), ["a  b c", "d", ""]);
+    assert_eq!(justify_line(&["word"], 3), "word");
+    assert_eq!(justify_line(&["abc", "def"], 5), "abc def");
+    assert_eq!(justify(" \n\nx", 10), ["", "x", ""]);
   }
 
   #[test]

@@ -47,27 +47,12 @@ pub(crate) fn wrap_line_preserving_whitespace(
       line_width.saturating_sub(continuation_indent_chars)
     };
 
-    if available == 0 {
-      let (w1, w2) = split_at_width(remainder, 1);
-      out.push(if is_first {
-        w1.to_string()
-      } else {
-        format!("{continuation_indent}{w1}")
-      });
-      remainder = w2.unwrap_or("");
-      if remainder.is_empty() {
-        break;
-      }
-      is_first = false;
-      continue;
-    }
-
+    // The continuation indent is at most `line_width - 8`, so `available`
+    // stays positive and the splitter can always consume a grapheme.
     if display_width(remainder) <= available {
-      out.push(if is_first {
-        remainder.to_string()
-      } else {
-        format!("{continuation_indent}{remainder}")
-      });
+      // The first iteration cannot reach this point: its full line exceeded
+      // `line_width` in the early check above.
+      out.push(format!("{continuation_indent}{remainder}"));
       break;
     }
 
@@ -190,5 +175,20 @@ mod tests {
       leading >= 70,
       "expected right-positioned label instead of collapsed continuation indent, got: {out:?}"
     );
+  }
+
+  #[test]
+  fn whitespace_only_and_blank_lines_are_preserved() {
+    assert_eq!(wrap_preserve_whitespace("          ", 4), [""]);
+    assert_eq!(wrap_preserve_whitespace("a\n\nb", 4), ["a", "", "b"]);
+  }
+
+  #[test]
+  fn leading_and_trailing_spaces_do_not_stall_wrapping() {
+    let lines = wrap_preserve_whitespace("     中文中文中文", 4);
+    assert_eq!(lines.concat().replace(' ', ""), "中文中文中文");
+
+    let lines = wrap_preserve_whitespace("abc          ", 5);
+    assert_eq!(lines.concat().replace(' ', ""), "abc");
   }
 }

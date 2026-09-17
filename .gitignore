@@ -1,6 +1,6 @@
 target
 */target
-/mutants.out/
+/mutants.out*/
 test-data/local
 progress.json
 TODO.md
