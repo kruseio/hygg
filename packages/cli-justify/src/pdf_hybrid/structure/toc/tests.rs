@@ -3,6 +3,7 @@ use super::{
   parse_aligned_toc_row_start, parse_dot_leader_toc_row,
   parse_plain_aligned_toc_row, split_on_first_wide_gap,
 };
+use proptest::prelude::*;
 
 #[test]
 fn wide_gap_requires_text_on_both_sides() {
@@ -114,5 +115,25 @@ fn compact_layout_normalizes_only_labelled_rows() {
     "LONGCAPTION 12345  title",
   ] {
     assert_eq!(normalize_preserved_compact_layout_line(unchanged), unchanged);
+  }
+}
+
+proptest! {
+  #![proptest_config(ProptestConfig::with_cases(64))]
+
+  #[test]
+  fn compact_layout_preserves_content_across_multibyte_spaces(
+    label in prop::sample::select(vec!["FIGURE", "TABLE", "Plate", "Ａ", "中文"]),
+    gap in prop::sample::select(vec![" ", "\t", "\u{00a0}", "\u{2003}", "\u{3000}"]),
+    title in prop::sample::select(vec!["中文 title", "ＡＢ chart", "école", "👩‍💻"]),
+    indent in 0usize..5,
+    number in 1u16..1000,
+    title_gap in 2usize..7,
+  ) {
+    let input = format!("{}{label}{gap}{number}{}{title}", " ".repeat(indent), " ".repeat(title_gap));
+    let normalized = normalize_preserved_compact_layout_line(&input);
+    let non_whitespace = |text: &str| text.chars().filter(|ch| !ch.is_whitespace()).collect::<String>();
+    prop_assert_eq!(non_whitespace(&normalized), non_whitespace(&input));
+    prop_assert_eq!(normalize_preserved_compact_layout_line(&normalized), normalized);
   }
 }

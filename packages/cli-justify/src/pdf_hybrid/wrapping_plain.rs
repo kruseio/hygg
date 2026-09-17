@@ -86,6 +86,8 @@ pub(super) fn split_last_word(line: &str) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
   use super::{apply_prefixes, split_last_word, wrap_plain_with_prefix};
+  use crate::text_utils::display_width;
+  use proptest::prelude::*;
 
   #[test]
   fn prefixes_apply_to_the_first_and_continuation_lines() {
@@ -121,5 +123,36 @@ mod tests {
     assert_eq!(split_last_word("one"), None);
     assert_eq!(split_last_word(" one"), None);
     assert_eq!(split_last_word("one "), None);
+  }
+
+  proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    #[test]
+    fn prefixed_wrapping_keeps_every_unicode_character_within_the_budget(
+      words in prop::collection::vec(
+        prop::collection::vec(
+          prop::sample::select(vec!["a", "中", "Ａ", "e\u{301}", "👩‍💻", "\u{200b}", "\u{202e}"]),
+          1..7,
+        ).prop_map(|parts| parts.concat()),
+        0..15,
+      ),
+      first_prefix in prop::sample::select(vec!["", "• ", "中 ", "Ａ "]),
+      continuation_prefix in prop::sample::select(vec!["", "  ", "↳ ", "    "]),
+      width in 8usize..33,
+    ) {
+      let text = words.join(" ");
+      let output = wrap_plain_with_prefix(&text, width, first_prefix, continuation_prefix);
+      prop_assert!(!output.is_empty());
+      let mut recovered = String::new();
+      for (index, line) in output.iter().enumerate() {
+        let prefix = if index == 0 { first_prefix } else { continuation_prefix };
+        let content = line.strip_prefix(prefix).expect("wrapper keeps requested prefix");
+        recovered.extend(content.chars().filter(|ch| !ch.is_whitespace()));
+        prop_assert!(display_width(line) <= width, "{text:?} -> {output:?}, width {width}");
+      }
+      let expected: String = text.chars().filter(|ch| !ch.is_whitespace()).collect();
+      prop_assert_eq!(recovered, expected);
+    }
   }
 }

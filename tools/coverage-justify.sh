@@ -38,7 +38,7 @@ for path in sorted(changed):
     if (
         not path.startswith("packages/cli-justify/src/")
         or not path.endswith(".rs")
-        or path.endswith("/tests.rs")
+        or path.endswith(("/tests.rs", "/properties.rs"))
     ):
         continue
     match = next((item for item in files if item["filename"].endswith("/" + path)), None)
