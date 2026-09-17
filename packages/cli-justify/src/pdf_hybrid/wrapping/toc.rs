@@ -22,8 +22,6 @@ pub(crate) fn wrap_aligned_toc_row(
 
   let page_suffix = format!("   {}", row.page_number);
   let first_limit = line_width.saturating_sub(display_width(&first_prefix));
-  let continuation_limit =
-    line_width.saturating_sub(display_width(&continuation_prefix));
 
   while let Some(last_line) = wrapped.last() {
     let last_idx = wrapped.len() - 1;
@@ -33,11 +31,9 @@ pub(crate) fn wrap_aligned_toc_row(
     } else {
       continuation_prefix.len()
     };
-    let usable_width =
-      if last_idx == 0 { first_limit } else { continuation_limit };
     let last_text = &last_line[prefix_len..];
     let required = display_width(last_text) + display_width(&page_suffix);
-    if required <= usable_width {
+    if required <= first_limit {
       break;
     }
 

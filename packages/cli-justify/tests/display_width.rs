@@ -74,6 +74,12 @@ fn mixed_graphemes_wrap_without_loss_or_splitting() {
 }
 
 #[test]
+fn exact_width_keeps_a_wide_grapheme_on_the_current_line() {
+  assert_eq!(wrap_preserve_whitespace("a中文", 3), ["a中", "文"]);
+  assert_eq!(justify("a中文", 3), ["a中", "文", ""]);
+}
+
+#[test]
 fn indentation_counts_toward_display_width() {
   let lines = wrap_preserve_whitespace("    中文日本語한국어", 8);
   assert!(lines.iter().all(|line| line.width() <= 8), "{lines:?}");
@@ -87,6 +93,26 @@ fn tabs_do_not_disappear_from_the_width_budget() {
   let lines = wrap_preserve_whitespace("\t中文", 8);
   assert!(lines.iter().all(|line| !line.contains('\t') && line.width() <= 8));
   assert_eq!(lines.concat().trim(), "中文");
+}
+
+#[test]
+fn excessive_unicode_indent_is_clamped_without_splitting_the_text() {
+  let body = "中文 abc ".repeat(7);
+  let input = format!("{}{}", " ".repeat(25), body);
+  let expected = format!("{}{}", " ".repeat(80 - body.width()), body);
+  assert_eq!(wrap_preserve_whitespace(&input, 80), [expected]);
+}
+
+#[test]
+fn ordinary_indents_still_wrap_at_the_boundary() {
+  let body = format!("{}中文 ab", "中文 abc ".repeat(8));
+  assert_eq!(body.width(), 79);
+  for indent in [3, 20] {
+    let input = format!("{}{}", " ".repeat(indent), body);
+    let lines = wrap_preserve_whitespace(&input, 80);
+    assert!(lines.len() > 1, "indent {indent}: {lines:?}");
+    assert!(lines[0].starts_with(&" ".repeat(indent)));
+  }
 }
 
 #[test]
@@ -120,4 +146,10 @@ fn pdf_toc_handles_unicode_prefix_and_cjk_title() {
     text.chars().filter(|ch| !ch.is_whitespace()).collect::<String>()
   };
   assert_eq!(without_spacing(&wrapped.concat()), without_spacing(cjk_title));
+
+  let row = "Chapter 1   中文 title   12";
+  assert_eq!(
+    justify_pdf_hybrid(row, 24),
+    ["Chapter 1   中文", "            title   12"]
+  );
 }

@@ -17,11 +17,17 @@ pub(crate) fn split_at_width(s: &str, columns: usize) -> (&str, Option<&str>) {
 }
 
 pub(crate) fn display_width(s: &str) -> usize {
-  // unicode-width treats tabs as zero-width control characters. A tab can
-  // advance up to eight columns at the usual terminal tab stops, so count
-  // that upper bound when the starting column is unknown.
-  UnicodeWidthStr::width(s)
-    + s.bytes().filter(|byte| *byte == b'\t').count() * 8
+  // A tab can advance up to eight columns at the usual terminal tab stops.
+  // Measure the spans separately so unicode-width's own tab width is not
+  // counted in addition to that conservative estimate.
+  let mut width = 0;
+  for (index, span) in s.split('\t').enumerate() {
+    if index > 0 {
+      width += 8;
+    }
+    width += UnicodeWidthStr::width(span);
+  }
+  width
 }
 
 pub(crate) fn is_ascii_numeric(s: &str) -> bool {
@@ -91,4 +97,41 @@ pub(crate) fn split_trailing_numeric_token_with_min_gap(
   }
 
   (before_number.trim_end(), Some(last_token))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{
+    drop_one_leading_whitespace, leading_whitespace_width,
+    split_at_last_whitespace_before,
+  };
+
+  #[test]
+  fn whitespace_split_uses_columns_but_returns_a_byte_offset() {
+    let text = "中文 abc def";
+    assert_eq!(split_at_last_whitespace_before(text, 4), None);
+    assert_eq!(split_at_last_whitespace_before(text, 5), Some(6));
+    assert_eq!(split_at_last_whitespace_before(text, 9), Some(10));
+    assert_eq!(
+      &text[..split_at_last_whitespace_before(text, 9).unwrap()],
+      "中文 abc"
+    );
+
+    assert_eq!(split_at_last_whitespace_before("\tab", 7), None);
+    assert_eq!(split_at_last_whitespace_before("\tab", 8), Some(0));
+  }
+
+  #[test]
+  fn leading_ascii_whitespace_is_removed_one_character_at_a_time() {
+    assert_eq!(drop_one_leading_whitespace("  中文"), " 中文");
+    assert_eq!(drop_one_leading_whitespace("\t中文"), "中文");
+    assert_eq!(drop_one_leading_whitespace("中文"), "中文");
+  }
+
+  #[test]
+  fn leading_whitespace_width_counts_tabs_conservatively() {
+    assert_eq!(leading_whitespace_width("\t 中文"), 9);
+    assert_eq!(leading_whitespace_width("  中文"), 2);
+    assert_eq!(leading_whitespace_width("中文  "), 0);
+  }
 }
