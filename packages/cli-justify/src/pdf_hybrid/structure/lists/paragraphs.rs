@@ -1,4 +1,4 @@
-use crate::text_utils::{char_len, leading_whitespace};
+use crate::text_utils::{display_width, leading_whitespace};
 
 /// Recognises labelled figure / table / plate captions like
 ///   * `Table 2. Common options to git log`
@@ -82,8 +82,8 @@ pub(crate) fn should_start_new_pdf_paragraph(
     return false;
   }
 
-  let current_indent_width = char_len(current_indent);
-  let next_indent_width = char_len(next_indent);
+  let current_indent_width = display_width(current_indent);
+  let next_indent_width = display_width(next_indent);
   if next_indent_width > current_indent_width {
     let prev = previous_line.trim_end();
     // A trailing colon ends the previous thought just like a period: the

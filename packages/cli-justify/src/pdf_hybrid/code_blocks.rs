@@ -1,4 +1,4 @@
-use crate::text_utils::{char_len, leading_whitespace};
+use crate::text_utils::{display_width, leading_whitespace};
 
 use super::structure::looks_like_command_prompt_line;
 
@@ -60,7 +60,7 @@ pub(super) fn reindent_code_block_line(
   }
 
   let line_indent = leading_whitespace(line);
-  let line_indent_width = char_len(line_indent);
+  let line_indent_width = display_width(line_indent);
 
   if source_base_indent.is_none() || target_base_indent.is_none() {
     *source_base_indent = Some(line_indent_width);

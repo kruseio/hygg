@@ -990,6 +990,8 @@ name = "cli-justify"
 version = "0.1.26"
 dependencies = [
  "getopts",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]

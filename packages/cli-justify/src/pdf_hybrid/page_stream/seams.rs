@@ -3,7 +3,7 @@ use crate::pdf_hybrid::structure::{
   looks_like_git_log_graph_line, looks_like_table_or_figure_caption,
   parse_list_marker,
 };
-use crate::text_utils::char_len;
+use crate::text_utils::display_width;
 
 /// Number of blank lines to insert between two adjacent PDF page outputs
 /// in the streaming reader.
@@ -56,7 +56,7 @@ fn prior_is_sibling_list_item(
   indent: &str,
   marker: &str,
 ) -> bool {
-  let continuation_indent_width = char_len(indent) + char_len(marker);
+  let continuation_indent_width = display_width(indent) + display_width(marker);
   let scan_floor = this_lines.len().saturating_sub(MAX_SEAM_LOOKBACK_LINES);
   for idx in (scan_floor..this_lines.len()).rev() {
     let line = &this_lines[idx];

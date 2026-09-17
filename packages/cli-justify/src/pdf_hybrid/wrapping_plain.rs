@@ -1,4 +1,4 @@
-use crate::text_utils::{char_len, split_at_char};
+use crate::text_utils::{display_width, split_at_width};
 
 pub(super) fn apply_prefixes(
   lines: Vec<String>,
@@ -26,9 +26,9 @@ pub(super) fn wrap_plain_with_prefix(
     return vec![first_prefix.to_string()];
   }
 
-  let first_width = line_width.saturating_sub(char_len(first_prefix));
+  let first_width = line_width.saturating_sub(display_width(first_prefix));
   let continuation_width =
-    line_width.saturating_sub(char_len(continuation_prefix));
+    line_width.saturating_sub(display_width(continuation_prefix));
   if first_width == 0 || continuation_width == 0 {
     return vec![format!("{first_prefix}{text}")];
   }
@@ -38,8 +38,8 @@ pub(super) fn wrap_plain_with_prefix(
   let mut current_width_limit = first_width;
 
   for mut word in text.split_whitespace() {
-    while char_len(word) > current_width_limit && current_line.is_empty() {
-      let (chunk, rest) = split_at_char(word, current_width_limit);
+    while display_width(word) > current_width_limit && current_line.is_empty() {
+      let (chunk, rest) = split_at_width(word, current_width_limit);
       text_lines.push(chunk.to_string());
       word = rest.unwrap_or("");
       current_width_limit = continuation_width;
@@ -51,13 +51,13 @@ pub(super) fn wrap_plain_with_prefix(
       continue;
     }
 
-    let word_len = char_len(word);
+    let word_len = display_width(word);
     if current_line.is_empty() {
       current_line.push_str(word);
       continue;
     }
 
-    let candidate_len = char_len(&current_line) + 1 + word_len;
+    let candidate_len = display_width(&current_line) + 1 + word_len;
     if candidate_len <= current_width_limit {
       current_line.push(' ');
       current_line.push_str(word);

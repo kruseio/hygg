@@ -1,4 +1,4 @@
-use crate::text_utils::{char_len, leading_whitespace};
+use crate::text_utils::{display_width, leading_whitespace};
 
 pub(crate) fn code_line_continues(trimmed: &str) -> bool {
   trimmed.ends_with('\\')
@@ -17,7 +17,7 @@ pub(crate) fn looks_like_code_continuation_line(
     return false;
   }
 
-  let line_indent_width = char_len(leading_whitespace(line));
+  let line_indent_width = display_width(leading_whitespace(line));
   line_indent_width > base_indent_width
     || trimmed.starts_with("&&")
     || trimmed.starts_with("||")

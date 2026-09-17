@@ -1,7 +1,7 @@
-use crate::text_utils::{char_len, split_at_char};
+use crate::text_utils::{display_width, split_at_width};
 
 pub(crate) fn justify_line(line: &[&str], line_width: usize) -> String {
-  let word_len: usize = line.iter().map(|s| char_len(s)).sum();
+  let word_len: usize = line.iter().map(|s| display_width(s)).sum();
 
   if word_len >= line_width || line.len() <= 1 {
     return line.join(" ");
@@ -28,12 +28,8 @@ pub(crate) fn justify_line(line: &[&str], line_width: usize) -> String {
 }
 
 pub fn justify(text: &str, line_width: usize) -> Vec<String> {
-  // A width of zero spins forever: the hard-split loop below asks
-  // `split_at_char(word, 0)` to peel off a zero-length prefix, gets back an
-  // empty string and the word untouched, and pushes empties without end until
-  // the process is out of memory. The width reaches here straight from the CLI
-  // `--col` flag, so `--col 0` is a one-word hang. One column is the narrowest
-  // width that can make progress.
+  // One column is the narrowest useful layout; oversized graphemes are
+  // preserved intact by the splitter rather than dropped or split apart.
   let line_width = line_width.max(1);
   let paragraphs: Vec<&str> = text.split("\n\n").collect();
   let mut lines: Vec<String> = Vec::new();
@@ -43,7 +39,7 @@ pub fn justify(text: &str, line_width: usize) -> Vec<String> {
     let mut words = vec![];
 
     for mut word in raw_words {
-      while let (w1, Some(w2)) = split_at_char(word, line_width) {
+      while let (w1, Some(w2)) = split_at_width(word, line_width) {
         words.push(w1);
         word = w2;
       }
@@ -55,7 +51,7 @@ pub fn justify(text: &str, line_width: usize) -> Vec<String> {
     let mut len = 0;
 
     for word in words {
-      let word_len = char_len(word);
+      let word_len = display_width(word);
       let space_len = if line.is_empty() { 0 } else { 1 };
       let new_len = len + space_len + word_len;
 
@@ -82,7 +78,7 @@ pub fn justify(text: &str, line_width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
   use super::justify;
-  use crate::text_utils::char_len;
+  use crate::text_utils::display_width;
 
   #[test]
   fn handles_long_words() {
@@ -123,7 +119,7 @@ mod tests {
 
     let mut found_justified = false;
     for (i, line) in result.iter().enumerate() {
-      if !line.is_empty() && i < result.len() - 2 && char_len(line) == 20 {
+      if !line.is_empty() && i < result.len() - 2 && display_width(line) == 20 {
         found_justified = true;
         break;
       }
@@ -167,7 +163,7 @@ mod tests {
         .iter()
         .filter(|line| !line.is_empty())
         .take(result.len().saturating_sub(2))
-        .all(|line| char_len(line) <= 24),
+        .all(|line| display_width(line) <= 24),
       "expected all non-final wrapped lines to fit char width, got: {result:?}"
     );
   }

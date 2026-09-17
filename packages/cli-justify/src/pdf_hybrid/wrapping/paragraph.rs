@@ -1,5 +1,5 @@
 use crate::justify;
-use crate::text_utils::char_len;
+use crate::text_utils::display_width;
 
 use crate::pdf_hybrid::engine::PendingPdfBlock;
 use crate::pdf_hybrid::wrapping::hyphenation::append_pdf_paragraph_fragment;
@@ -60,16 +60,16 @@ fn wrap_paragraph_with_prefix(
     return Vec::new();
   }
 
-  let first_width = line_width.saturating_sub(char_len(first_prefix));
+  let first_width = line_width.saturating_sub(display_width(first_prefix));
   let continuation_width =
-    line_width.saturating_sub(char_len(continuation_prefix));
+    line_width.saturating_sub(display_width(continuation_prefix));
   let usable_width = first_width.min(continuation_width);
   if usable_width == 0 {
     return vec![format!("{first_prefix}{paragraph}")];
   }
 
   let left_align_deeply_indented_block =
-    char_len(first_prefix).max(char_len(continuation_prefix)) >= 12;
+    display_width(first_prefix).max(display_width(continuation_prefix)) >= 12;
   if left_align_deeply_indented_block {
     return wrap_plain_with_prefix(
       paragraph,
@@ -96,7 +96,7 @@ fn capped_paragraph_indent_width(
     return None;
   }
 
-  if char_len(indent) > MAX_PARAGRAPH_INDENT_CHARS {
+  if display_width(indent) > MAX_PARAGRAPH_INDENT_CHARS {
     return Some(MAX_PARAGRAPH_INDENT_CHARS);
   }
 
@@ -143,7 +143,7 @@ pub(crate) fn flush_pending_pdf_block(
     PendingPdfBlock::ListItem { indent, marker, lines } => {
       let paragraph = collapse_pdf_paragraph_lines(lines);
       let continuation_prefix =
-        format!("{indent}{}", " ".repeat(char_len(&marker)));
+        format!("{indent}{}", " ".repeat(display_width(&marker)));
       let first_prefix = format!("{indent}{marker}");
       out.extend(wrap_paragraph_with_prefix(
         &paragraph,

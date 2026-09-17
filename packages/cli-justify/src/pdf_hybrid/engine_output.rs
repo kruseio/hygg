@@ -1,4 +1,4 @@
-use crate::text_utils::{char_len, leading_whitespace};
+use crate::text_utils::{display_width, leading_whitespace};
 use crate::wrap::wrap_line_preserving_whitespace;
 
 use super::code_blocks::{
@@ -52,8 +52,8 @@ impl FormatterEngine {
     }
 
     let line_indent = leading_whitespace(line);
-    let session_indent_width = char_len(session_indent);
-    let line_indent_width = char_len(line_indent);
+    let session_indent_width = display_width(session_indent);
+    let line_indent_width = display_width(line_indent);
 
     if line_indent_width < session_indent_width {
       self.shell_session_indent = None;
@@ -171,7 +171,7 @@ impl FormatterEngine {
 
     self.code_continuation_indent_width =
       if is_code_line && code_line_continues(line.trim()) {
-        Some(char_len(leading_whitespace(line)))
+        Some(display_width(leading_whitespace(line)))
       } else {
         None
       };

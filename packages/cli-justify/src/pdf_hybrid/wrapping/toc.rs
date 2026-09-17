@@ -1,4 +1,4 @@
-use crate::text_utils::char_len;
+use crate::text_utils::display_width;
 
 use crate::pdf_hybrid::alignment::TocAlignmentState;
 use crate::pdf_hybrid::engine::PendingAlignedTocRow;
@@ -12,7 +12,7 @@ pub(crate) fn wrap_aligned_toc_row(
   line_width: usize,
 ) -> Vec<String> {
   let first_prefix = format!("{}{}", row.indent, row.entry_prefix);
-  let continuation_prefix = " ".repeat(char_len(&first_prefix));
+  let continuation_prefix = " ".repeat(display_width(&first_prefix));
   let mut wrapped = wrap_plain_with_prefix(
     &row.title,
     line_width,
@@ -21,21 +21,21 @@ pub(crate) fn wrap_aligned_toc_row(
   );
 
   let page_suffix = format!("   {}", row.page_number);
-  let first_limit = line_width.saturating_sub(char_len(&first_prefix));
+  let first_limit = line_width.saturating_sub(display_width(&first_prefix));
   let continuation_limit =
-    line_width.saturating_sub(char_len(&continuation_prefix));
+    line_width.saturating_sub(display_width(&continuation_prefix));
 
   while let Some(last_line) = wrapped.last() {
     let last_idx = wrapped.len() - 1;
     let prefix_len = if last_idx == 0 {
-      char_len(&first_prefix)
+      display_width(&first_prefix)
     } else {
-      char_len(&continuation_prefix)
+      display_width(&continuation_prefix)
     };
     let usable_width =
       if last_idx == 0 { first_limit } else { continuation_limit };
     let last_text = &last_line[prefix_len..];
-    let required = char_len(last_text) + char_len(&page_suffix);
+    let required = display_width(last_text) + display_width(&page_suffix);
     if required <= usable_width {
       break;
     }
@@ -79,7 +79,7 @@ pub(crate) fn flush_pending_aligned_toc_row(
   alignment_state.normalize_row(&mut row);
 
   let first_prefix = format!("{}{}", row.indent, row.entry_prefix);
-  let continuation_prefix = " ".repeat(char_len(&first_prefix));
+  let continuation_prefix = " ".repeat(display_width(&first_prefix));
   out.extend(wrap_plain_with_prefix(
     &row.title,
     line_width,

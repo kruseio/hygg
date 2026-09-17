@@ -1,6 +1,6 @@
 use crate::text_utils::{
-  char_len, is_ascii_numeric, leading_whitespace, leading_whitespace_width,
-  split_trailing_numeric_token_with_min_gap,
+  display_width, is_ascii_numeric, leading_whitespace,
+  leading_whitespace_width, split_trailing_numeric_token_with_min_gap,
 };
 
 use super::looks_like_toc_entry;
@@ -208,7 +208,7 @@ pub(crate) fn parse_plain_aligned_toc_row(line: &str) -> Option<AlignedTocRow> {
 
 pub(crate) fn normalize_preserved_compact_layout_line(line: &str) -> String {
   let indent = leading_whitespace(line);
-  let indent_width = char_len(indent);
+  let indent_width = display_width(indent);
   if indent_width > 3 {
     return line.to_string();
   }
@@ -266,7 +266,7 @@ pub(crate) fn normalize_preserved_compact_layout_line(line: &str) -> String {
   }
 
   let marker = format!("{label} {number}");
-  let marker_width = char_len(&marker);
+  let marker_width = display_width(&marker);
   let target_title_column = 14usize;
   let target_gap_width =
     target_title_column.saturating_sub(indent_width + marker_width + 1);

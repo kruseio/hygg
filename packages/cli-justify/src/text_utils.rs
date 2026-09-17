@@ -1,16 +1,23 @@
-pub(crate) fn split_at_char(s: &str, n: usize) -> (&str, Option<&str>) {
-  for (char_index, (i, _)) in s.char_indices().enumerate() {
-    if char_index == n {
-      let (w1, w2) = s.split_at(i);
-      return (w1, Some(w2));
-    }
-  }
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
+// Split only at grapheme boundaries. If one grapheme exceeds the budget,
+// emit it intact so even a one-column CJK layout always makes progress.
+pub(crate) fn split_at_width(s: &str, columns: usize) -> (&str, Option<&str>) {
+  let mut width = 0;
+  for (byte_idx, grapheme) in s.grapheme_indices(true) {
+    let next_width = width + display_width(grapheme);
+    if next_width > columns && byte_idx > 0 {
+      let (left, right) = s.split_at(byte_idx);
+      return (left, Some(right));
+    }
+    width = next_width;
+  }
   (s, None)
 }
 
-pub(crate) fn char_len(s: &str) -> usize {
-  s.chars().count()
+pub(crate) fn display_width(s: &str) -> usize {
+  UnicodeWidthStr::width(s)
 }
 
 pub(crate) fn is_ascii_numeric(s: &str) -> bool {
@@ -19,14 +26,16 @@ pub(crate) fn is_ascii_numeric(s: &str) -> bool {
 
 pub(crate) fn split_at_last_whitespace_before(
   s: &str,
-  max_chars: usize,
+  max_columns: usize,
 ) -> Option<usize> {
   let mut last_ws_byte_idx: Option<usize> = None;
-  for (char_index, (byte_idx, ch)) in s.char_indices().enumerate() {
-    if char_index >= max_chars {
+  let mut width = 0;
+  for (byte_idx, grapheme) in s.grapheme_indices(true) {
+    width += display_width(grapheme);
+    if width > max_columns {
       break;
     }
-    if ch == ' ' || ch == '\t' {
+    if grapheme == " " || grapheme == "\t" {
       last_ws_byte_idx = Some(byte_idx);
     }
   }
@@ -53,7 +62,7 @@ pub(crate) fn leading_whitespace(s: &str) -> &str {
 }
 
 pub(crate) fn leading_whitespace_width(s: &str) -> usize {
-  char_len(leading_whitespace(s))
+  display_width(leading_whitespace(s))
 }
 
 pub(crate) fn split_trailing_numeric_token_with_min_gap(

@@ -1,6 +1,6 @@
 use crate::text_utils::{
-  char_len, drop_one_leading_whitespace, leading_whitespace, split_at_char,
-  split_at_last_whitespace_before,
+  display_width, drop_one_leading_whitespace, leading_whitespace,
+  split_at_last_whitespace_before, split_at_width,
 };
 
 pub(crate) fn wrap_line_preserving_whitespace(
@@ -11,7 +11,7 @@ pub(crate) fn wrap_line_preserving_whitespace(
     return vec![String::new()];
   }
 
-  if char_len(line) <= line_width {
+  if display_width(line) <= line_width {
     return vec![line.to_string()];
   }
   if line.trim_matches([' ', '\t']).is_empty() {
@@ -19,9 +19,11 @@ pub(crate) fn wrap_line_preserving_whitespace(
   }
 
   let trimmed_start = line.trim_start_matches([' ', '\t']);
-  let original_indent_chars = char_len(line) - char_len(trimmed_start);
-  if !trimmed_start.is_empty() && char_len(trimmed_start) <= line_width {
-    let clamped_indent = line_width.saturating_sub(char_len(trimmed_start));
+  let original_indent_chars =
+    display_width(line) - display_width(trimmed_start);
+  if !trimmed_start.is_empty() && display_width(trimmed_start) <= line_width {
+    let clamped_indent =
+      line_width.saturating_sub(display_width(trimmed_start));
     // Only collapse the leading whitespace when the original indent looks
     // truly excessive (e.g. an over-indented TOC label) and clamping is
     // strictly less than the original. Otherwise preserve the indent and
@@ -32,7 +34,7 @@ pub(crate) fn wrap_line_preserving_whitespace(
   }
 
   let indent = leading_whitespace(line).to_string();
-  let indent_chars = char_len(&indent);
+  let indent_chars = display_width(&indent);
   let max_continuation_indent =
     line_width.saturating_sub(8).min(32).min(indent_chars);
   let continuation_indent = " ".repeat(max_continuation_indent);
@@ -50,7 +52,7 @@ pub(crate) fn wrap_line_preserving_whitespace(
     };
 
     if available == 0 {
-      let (w1, w2) = split_at_char(remainder, 1);
+      let (w1, w2) = split_at_width(remainder, 1);
       out.push(if is_first {
         w1.to_string()
       } else {
@@ -64,7 +66,7 @@ pub(crate) fn wrap_line_preserving_whitespace(
       continue;
     }
 
-    if char_len(remainder) <= available {
+    if display_width(remainder) <= available {
       out.push(if is_first {
         remainder.to_string()
       } else {
@@ -75,7 +77,7 @@ pub(crate) fn wrap_line_preserving_whitespace(
 
     let split_byte_idx = split_at_last_whitespace_before(remainder, available)
       .unwrap_or_else(|| {
-        let (w1, _) = split_at_char(remainder, available);
+        let (w1, _) = split_at_width(remainder, available);
         w1.len()
       });
 
@@ -85,10 +87,10 @@ pub(crate) fn wrap_line_preserving_whitespace(
       if is_first {
         let trimmed_remainder = remainder.trim_start_matches([' ', '\t']);
         if !trimmed_remainder.is_empty()
-          && char_len(trimmed_remainder) <= line_width
+          && display_width(trimmed_remainder) <= line_width
         {
           let right_aligned_indent =
-            line_width.saturating_sub(char_len(trimmed_remainder));
+            line_width.saturating_sub(display_width(trimmed_remainder));
           out.push(format!(
             "{}{}",
             " ".repeat(right_aligned_indent),
@@ -139,7 +141,7 @@ pub fn wrap_preserve_whitespace(text: &str, line_width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
   use super::wrap_preserve_whitespace;
-  use crate::text_utils::char_len;
+  use crate::text_utils::display_width;
 
   #[test]
   fn preserves_indentation_and_spacing() {
@@ -169,7 +171,7 @@ mod tests {
       out
         .iter()
         .filter(|line| !line.is_empty())
-        .all(|line| char_len(line) <= 80),
+        .all(|line| display_width(line) <= 80),
       "expected wrapped lines to respect width, got: {out:?}"
     );
   }
@@ -181,7 +183,7 @@ mod tests {
 
     assert_eq!(out.len(), 1, "expected single wrapped line, got: {out:?}");
     assert_eq!(
-      char_len(&out[0]),
+      display_width(&out[0]),
       80,
       "expected width-clamped output, got: {out:?}"
     );
