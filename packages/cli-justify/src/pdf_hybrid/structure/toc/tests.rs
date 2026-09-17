@@ -118,6 +118,37 @@ fn compact_layout_normalizes_only_labelled_rows() {
   }
 }
 
+#[test]
+fn toc_layout_boundaries_use_columns_and_character_counts_correctly() {
+  let deepest_pending = format!("{}Chapter 1   中文 title", " ".repeat(8));
+  assert!(parse_aligned_toc_row_start(&deepest_pending).is_some());
+
+  let longest_prefix = format!("Chapter {}   title   12", "1".repeat(16));
+  assert!(parse_aligned_toc_row_start(&longest_prefix).is_some());
+
+  assert_eq!(
+    normalize_preserved_compact_layout_line("   TAB 1  title"),
+    "   TAB 1     title"
+  );
+  assert_eq!(
+    normalize_preserved_compact_layout_line("    TAB 1  title"),
+    "    TAB 1  title"
+  );
+  assert_eq!(
+    normalize_preserved_compact_layout_line("FIGUREABC 1    title"),
+    "FIGUREABC 1  title"
+  );
+
+  // U+0345 is alphabetic but zero-width: twelve characters can still fit
+  // in the compact title column, unlike twelve ordinary-width letters.
+  let label = format!("A{}", "\u{0345}".repeat(11));
+  assert_eq!(label.chars().count(), 12);
+  let source = format!("{label} 1  title");
+  let normalized = normalize_preserved_compact_layout_line(&source);
+  assert_ne!(normalized, source);
+  assert!(normalized.ends_with("title"));
+}
+
 proptest! {
   #![proptest_config(ProptestConfig::with_cases(64))]
 
