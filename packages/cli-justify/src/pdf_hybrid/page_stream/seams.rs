@@ -93,6 +93,9 @@ fn line_starts_sibling_list_item(
   indent: &str,
   marker: &str,
 ) -> bool {
+  if marker.is_empty() {
+    return false;
+  }
   if line.starts_with(&format!("{indent}{marker}")) {
     return true;
   }
@@ -118,3 +121,6 @@ fn line_starts_sibling_list_item(
   }
   matches!(after_digits.next(), Some(' '))
 }
+
+#[cfg(test)]
+mod tests;

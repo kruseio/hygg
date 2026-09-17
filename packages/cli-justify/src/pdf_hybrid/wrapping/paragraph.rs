@@ -80,8 +80,7 @@ fn wrap_paragraph_with_prefix(
   }
 
   let mut wrapped = justify(paragraph, usable_width);
-  // `justify` always appends an empty paragraph separator.
-  wrapped.pop();
+  wrapped.pop(); // `justify` always appends an empty paragraph separator.
 
   apply_prefixes(wrapped, first_prefix, continuation_prefix)
 }

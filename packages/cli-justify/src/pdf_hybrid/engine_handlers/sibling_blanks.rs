@@ -16,6 +16,9 @@ fn line_starts_sibling_list_item(
   indent: &str,
   marker: &str,
 ) -> bool {
+  if marker.is_empty() {
+    return false;
+  }
   if line.starts_with(&format!("{indent}{marker}")) {
     return true;
   }
@@ -117,3 +120,6 @@ pub(crate) fn out_ends_in_caption_context(out: &mut Vec<String>) -> bool {
   }
   false
 }
+
+#[cfg(test)]
+mod tests;

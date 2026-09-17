@@ -273,3 +273,6 @@ fn looks_like_table_header(trimmed: &str) -> bool {
       .is_some_and(|last| matches!(*last, "Description" | "Notes" | "Grade"))
     && !trimmed.ends_with(['.', '!', '?'])
 }
+
+#[cfg(test)]
+mod tests;

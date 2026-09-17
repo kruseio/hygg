@@ -5,9 +5,7 @@ pub(crate) fn is_title_case_label_word(word: &str) -> bool {
   }
 
   let mut chars = token.chars();
-  let Some(first) = chars.next() else {
-    return false;
-  };
+  let first = chars.next().expect("nonempty title-case token");
   first.is_uppercase()
     && chars.all(|ch| ch.is_lowercase() || matches!(ch, '\'' | '-' | '’'))
 }
@@ -20,7 +18,11 @@ pub(crate) fn is_counter_token(token: &str) -> bool {
 
   token.chars().all(|ch| ch.is_ascii_digit() || matches!(ch, '.' | '-'))
     || token.len() == 1
-      && token.chars().next().is_some_and(|ch| ch.is_ascii_uppercase())
+      && token
+        .chars()
+        .next()
+        .expect("one-byte counter token")
+        .is_ascii_uppercase()
     || token
       .chars()
       .all(|ch| matches!(ch, 'I' | 'V' | 'X' | 'L' | 'C' | 'D' | 'M'))
@@ -56,10 +58,7 @@ pub(crate) fn classify_toc_entry_prefix(prefix: &str) -> Option<TocPrefixKind> {
     return None;
   }
 
-  if words.len() >= 2
-    && is_toc_label_keyword(words[0])
-    && is_counter_token(words[1])
-  {
+  if is_toc_label_keyword(words[0]) && is_counter_token(words[1]) {
     return Some(TocPrefixKind::Keyworded);
   }
 
@@ -164,18 +163,6 @@ pub(crate) fn merge_counter_into_prefix_if_needed(
   Some((format!("{entry_prefix}{counter} "), rest))
 }
 
-pub(crate) fn looks_like_caption_prefix(prefix: &str) -> bool {
-  let mut words = prefix.split_whitespace();
-  let Some(label) = words.next() else {
-    return false;
-  };
-  let Some(number) = words.next() else {
-    return false;
-  };
-
-  label.chars().all(|ch| ch.is_ascii_uppercase()) && is_counter_token(number)
-}
-
 pub(crate) fn looks_like_toc_section_marker(token: &str) -> bool {
   let Some((left, right)) = token.split_once('.') else {
     return false;
@@ -186,3 +173,6 @@ pub(crate) fn looks_like_toc_section_marker(token: &str) -> bool {
 
   token.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '.')
 }
+
+#[cfg(test)]
+mod tests;

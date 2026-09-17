@@ -197,3 +197,6 @@ pub(crate) fn is_list_continuation_line(
   leading_ws >= list_indent_width
     && trimmed.chars().next().is_some_and(|ch| ch.is_lowercase())
 }
+
+#[cfg(test)]
+mod tests;

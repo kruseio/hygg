@@ -177,3 +177,6 @@ impl FormatterEngine {
       };
   }
 }
+
+#[cfg(test)]
+mod tests;

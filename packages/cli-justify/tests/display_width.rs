@@ -92,6 +92,9 @@ fn public_wrappers_handle_blank_lines_and_boundary_whitespace() {
 
   assert_eq!(justify("a b c d", 6), ["a  b c", "d", ""]);
   assert_eq!(justify(" \n\nx", 10), ["", "x", ""]);
+
+  let heredoc = justify_pdf_hybrid("cat <<EOF\n  中文 sample\nEOF", 40);
+  assert!(heredoc.iter().any(|line| line.contains("中文 sample")));
 }
 
 #[test]
@@ -166,5 +169,23 @@ fn pdf_toc_handles_unicode_prefix_and_cjk_title() {
   assert_eq!(
     justify_pdf_hybrid(row, 24),
     ["Chapter 1   中文", "            title   12"]
+  );
+}
+
+#[test]
+fn unfinished_toc_row_does_not_absorb_following_prose() {
+  let lines =
+    justify_pdf_hybrid("Chapter 1   中文 title\nOrdinary prose follows.", 80);
+  assert!(lines.iter().any(|line| line.contains("中文 title")), "{lines:?}");
+  assert!(
+    lines.iter().any(|line| line.contains("Ordinary prose follows.")),
+    "{lines:?}"
+  );
+  assert!(
+    lines
+      .iter()
+      .all(|line| !(line.contains("中文 title")
+        && line.contains("Ordinary prose"))),
+    "{lines:?}"
   );
 }

@@ -15,6 +15,7 @@ fi
 
 report=target/llvm-cov/justify-summary.json
 mkdir -p target/llvm-cov
+cargo +nightly-2026-03-05 llvm-cov clean --workspace
 cargo +nightly-2026-03-05 llvm-cov --branch -q -p cli-justify \
   --json --summary-only --output-path "$report" --locked -j1 \
   -- --test-threads=1
@@ -25,15 +26,25 @@ import subprocess
 import sys
 
 files = json.load(open(sys.argv[1], encoding="utf-8"))["data"][0]["files"]
-changed = subprocess.check_output(
-    ["git", "diff", "--name-only", "origin/main...HEAD"], text=True
-).splitlines()
-for path in changed:
-    if not path.startswith("packages/cli-justify/src/") or not path.endswith(".rs"):
+changed = set()
+for command in (
+    ["git", "diff", "--name-only", "origin/main...HEAD"],
+    ["git", "diff", "--name-only", "HEAD"],
+    ["git", "ls-files", "--others", "--exclude-standard"],
+):
+    changed.update(subprocess.check_output(command, text=True).splitlines())
+incomplete = []
+for path in sorted(changed):
+    if (
+        not path.startswith("packages/cli-justify/src/")
+        or not path.endswith(".rs")
+        or path.endswith("/tests.rs")
+    ):
         continue
     match = next((item for item in files if item["filename"].endswith("/" + path)), None)
     if match is None:
         print(f"{path}: no coverage data")
+        incomplete.append(path)
         continue
     summary = match["summary"]
     lines = summary["lines"]
@@ -43,4 +54,9 @@ for path in changed:
         f"lines {lines['covered']}/{lines['count']}, "
         f"branches {branches['covered']}/{branches['count']}"
     )
+    if lines["covered"] != lines["count"] or branches["covered"] != branches["count"]:
+        incomplete.append(path)
+if incomplete:
+    print(f"Coverage below 100% in {len(incomplete)} changed source file(s)", file=sys.stderr)
+    sys.exit(1)
 PY

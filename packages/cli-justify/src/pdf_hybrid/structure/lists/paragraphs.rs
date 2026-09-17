@@ -174,6 +174,7 @@ mod tests {
     assert!(should_start_new_pdf_paragraph("  ", "ordinary", "  ( two )"));
     assert!(should_start_new_pdf_paragraph("  ", "ordinary", "  )"));
     assert!(should_start_new_pdf_paragraph("  ", "continued\\", "  text"));
+    assert!(!should_start_new_pdf_paragraph("  ", "( one )", "  ordinary"));
     assert!(!should_start_new_pdf_paragraph("  ", "ordinary", "  text"));
   }
 
@@ -181,6 +182,7 @@ mod tests {
   fn changed_indent_distinguishes_continuations_from_new_paragraphs() {
     assert!(should_start_new_pdf_paragraph("", "unfinished", "Table 2. 中文"));
     assert!(should_start_new_pdf_paragraph("", "unfinished", "   "));
+    assert!(should_start_new_pdf_paragraph("", "", "  Heading"));
     assert!(!should_start_new_pdf_paragraph("", "unfinished", "  lowercase"));
     assert!(!should_start_new_pdf_paragraph("", "unfinished", "  ( example )"));
     assert!(!should_start_new_pdf_paragraph("", "unfinished", "  ABC"));
