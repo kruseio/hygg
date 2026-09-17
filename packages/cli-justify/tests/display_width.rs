@@ -1,4 +1,5 @@
 use cli_justify::{justify, justify_pdf_hybrid, wrap_preserve_whitespace};
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 #[test]
@@ -38,8 +39,38 @@ fn wrapping_keeps_graphemes_intact() {
 fn narrow_columns_preserve_oversized_graphemes_and_terminate() {
   for width in [0, 1] {
     assert_eq!(justify("中文", width), ["中", "文", ""]);
+    assert_eq!(wrap_preserve_whitespace("中文", width), ["中", "文"]);
   }
-  assert_eq!(wrap_preserve_whitespace("中文", 1), ["中", "文"]);
+}
+
+#[test]
+fn mixed_graphemes_wrap_without_loss_or_splitting() {
+  for text in ["a👩‍💻中文b", "e\u{301}中文👩‍💻", "🇮🇸中文Ａ"]
+  {
+    let grapheme_boundaries: Vec<usize> = text
+      .grapheme_indices(true)
+      .map(|(byte_idx, _)| byte_idx)
+      .chain(std::iter::once(text.len()))
+      .collect();
+    let widest_grapheme =
+      text.graphemes(true).map(UnicodeWidthStr::width).max().unwrap_or(0);
+
+    for width in 1..=7 {
+      for lines in [justify(text, width), wrap_preserve_whitespace(text, width)]
+      {
+        assert_eq!(lines.concat(), text, "{lines:?}");
+        assert!(
+          lines.iter().all(|line| line.width() <= width.max(widest_grapheme)),
+          "width {width}: {lines:?}"
+        );
+        let mut end = 0;
+        for line in lines {
+          end += line.len();
+          assert!(grapheme_boundaries.contains(&end), "split at {end}");
+        }
+      }
+    }
+  }
 }
 
 #[test]
@@ -50,6 +81,15 @@ fn indentation_counts_toward_display_width() {
 }
 
 #[test]
+fn tabs_do_not_disappear_from_the_width_budget() {
+  // A tab after three columns reaches the next tab stop before `def`.
+  assert_eq!(wrap_preserve_whitespace("abc\tdef", 6), ["abc", "def"]);
+  let lines = wrap_preserve_whitespace("\t中文", 8);
+  assert!(lines.iter().all(|line| !line.contains('\t') && line.width() <= 8));
+  assert_eq!(lines.concat().trim(), "中文");
+}
+
+#[test]
 fn pdf_hybrid_wraps_cjk_by_columns() {
   let lines = justify_pdf_hybrid("中文日本語한국어中文日本語한국어", 8);
   assert!(lines.iter().all(|line| line.width() <= 8), "{lines:?}");
@@ -57,4 +97,27 @@ fn pdf_hybrid_wraps_cjk_by_columns() {
     lines.concat().replace(' ', ""),
     "中文日本語한국어中文日本語한국어"
   );
+}
+
+#[test]
+fn pdf_toc_handles_unicode_prefix_and_cjk_title() {
+  // Mixing narrow multibyte letters with a fullwidth letter makes the
+  // prefix's display width land inside the final UTF-8 character.
+  let mixed_prefix = "Ééééａé 1   The title and more words   12";
+  assert_eq!(justify_pdf_hybrid(mixed_prefix, 80), [mixed_prefix]);
+
+  let wrapped = justify_pdf_hybrid(mixed_prefix, 24);
+  assert!(wrapped.iter().all(|line| line.width() <= 24), "{wrapped:?}");
+  assert_eq!(
+    wrapped.join(" ").split_whitespace().collect::<Vec<_>>(),
+    mixed_prefix.split_whitespace().collect::<Vec<_>>()
+  );
+
+  let cjk_title = "Chapter 1   中文测试日本語한국어   12";
+  let wrapped = justify_pdf_hybrid(cjk_title, 24);
+  assert!(wrapped.iter().all(|line| line.width() <= 24), "{wrapped:?}");
+  let without_spacing = |text: &str| {
+    text.chars().filter(|ch| !ch.is_whitespace()).collect::<String>()
+  };
+  assert_eq!(without_spacing(&wrapped.concat()), without_spacing(cjk_title));
 }

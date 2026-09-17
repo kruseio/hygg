@@ -7,9 +7,9 @@ pub(crate) fn wrap_line_preserving_whitespace(
   line: &str,
   line_width: usize,
 ) -> Vec<String> {
-  if line_width == 0 {
-    return vec![String::new()];
-  }
+  // Preserve text at zero columns, just as `justify` does. A grapheme
+  // wider than the effective one-column budget is emitted intact.
+  let line_width = line_width.max(1);
 
   if display_width(line) <= line_width {
     return vec![line.to_string()];

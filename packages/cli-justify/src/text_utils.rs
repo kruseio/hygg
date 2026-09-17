@@ -17,7 +17,11 @@ pub(crate) fn split_at_width(s: &str, columns: usize) -> (&str, Option<&str>) {
 }
 
 pub(crate) fn display_width(s: &str) -> usize {
+  // unicode-width treats tabs as zero-width control characters. A tab can
+  // advance up to eight columns at the usual terminal tab stops, so count
+  // that upper bound when the starting column is unknown.
   UnicodeWidthStr::width(s)
+    + s.bytes().filter(|byte| *byte == b'\t').count() * 8
 }
 
 pub(crate) fn is_ascii_numeric(s: &str) -> bool {

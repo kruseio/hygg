@@ -27,10 +27,11 @@ pub(crate) fn wrap_aligned_toc_row(
 
   while let Some(last_line) = wrapped.last() {
     let last_idx = wrapped.len() - 1;
+    // String slicing uses byte offsets, not terminal column widths.
     let prefix_len = if last_idx == 0 {
-      display_width(&first_prefix)
+      first_prefix.len()
     } else {
-      display_width(&continuation_prefix)
+      continuation_prefix.len()
     };
     let usable_width =
       if last_idx == 0 { first_limit } else { continuation_limit };
