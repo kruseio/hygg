@@ -1,13 +1,13 @@
 use crate::text_utils::{
-  char_len, is_ascii_numeric, leading_whitespace, leading_whitespace_width,
-  split_trailing_numeric_token_with_min_gap,
+  display_width, is_ascii_numeric, leading_whitespace,
+  leading_whitespace_width, split_trailing_numeric_token_with_min_gap,
 };
 
 use super::looks_like_toc_entry;
 use super::toc_patterns::{
-  TocPrefixKind, classify_toc_entry_prefix, looks_like_caption_prefix,
-  looks_like_named_toc_heading, looks_like_toc_entry_prefix,
-  looks_like_toc_section_marker, merge_counter_into_prefix_if_needed,
+  TocPrefixKind, classify_toc_entry_prefix, looks_like_named_toc_heading,
+  looks_like_toc_entry_prefix, looks_like_toc_section_marker,
+  merge_counter_into_prefix_if_needed,
 };
 
 pub(crate) struct AlignedTocRow {
@@ -40,7 +40,7 @@ fn split_on_first_wide_gap(text: &str) -> Option<(&str, &str)> {
     if gap_start.is_some() && gap_len >= 2 {
       let prefix = &text[..idx];
       let title = text[idx..].trim();
-      if !prefix.trim().is_empty() && !title.is_empty() {
+      if !prefix.trim().is_empty() {
         return Some((prefix, title));
       }
     }
@@ -59,7 +59,7 @@ fn parse_dot_leader_toc_row(line: &str) -> Option<AlignedTocRowStart> {
     return None;
   }
 
-  let number_start = trimmed.rfind(page_number)?;
+  let number_start = trimmed.rfind(page_number).expect("page token is in line");
   let before_number =
     trimmed[..number_start].trim_end_matches(|ch: char| ch.is_whitespace());
 
@@ -109,19 +109,11 @@ pub(crate) fn parse_aligned_toc_row_start(
   let (entry_prefix, title) = split_on_first_wide_gap(left)?;
   let (entry_prefix, title) =
     merge_counter_into_prefix_if_needed(entry_prefix, title)?;
-  let prefix_trimmed = entry_prefix.trim_start();
-  if looks_like_caption_prefix(prefix_trimmed) {
-    return None;
-  }
-
   if page_number.is_none() {
     let indent_width = leading_whitespace_width(line);
     let gap_width =
       entry_prefix.chars().rev().take_while(|ch| ch.is_whitespace()).count();
-    if indent_width > 8
-      || gap_width < 3
-      || !looks_like_toc_entry_prefix(&entry_prefix)
-    {
+    if indent_width > 8 || gap_width < 3 {
       return None;
     }
   }
@@ -167,10 +159,11 @@ pub(crate) fn parse_aligned_toc_continuation(
 
   let (left, page_number) =
     split_trailing_numeric_token_with_min_gap(trimmed, 2);
-  if left.is_empty() {
+  // A pending TOC title can wrap onto an indented line, or end on a
+  // page-numbered line. Unindented prose without a page number ends the row.
+  if leading_whitespace(line).is_empty() && page_number.is_none() {
     return None;
   }
-
   Some((left.to_string(), page_number.map(str::to_string)))
 }
 
@@ -183,11 +176,8 @@ pub(crate) fn parse_plain_aligned_toc_row(line: &str) -> Option<AlignedTocRow> {
   let (title, page_number) =
     split_trailing_numeric_token_with_min_gap(trimmed, 2);
   let page_number = page_number?;
-  if title.is_empty() {
-    return None;
-  }
-
-  let first_token = title.split_whitespace().next()?;
+  let first_token =
+    title.split_whitespace().next().expect("page number has a title");
   if looks_like_toc_section_marker(first_token) {
     return None;
   }
@@ -208,7 +198,7 @@ pub(crate) fn parse_plain_aligned_toc_row(line: &str) -> Option<AlignedTocRow> {
 
 pub(crate) fn normalize_preserved_compact_layout_line(line: &str) -> String {
   let indent = leading_whitespace(line);
-  let indent_width = char_len(indent);
+  let indent_width = display_width(indent);
   if indent_width > 3 {
     return line.to_string();
   }
@@ -236,9 +226,6 @@ pub(crate) fn normalize_preserved_compact_layout_line(line: &str) -> String {
     .take_while(|ch| ch.is_whitespace())
     .map(char::len_utf8)
     .sum();
-  if label_gap_len == 0 {
-    return line.to_string();
-  }
   let after_label = &after_label[label_gap_len..];
 
   let mut number_end = 0usize;
@@ -266,7 +253,7 @@ pub(crate) fn normalize_preserved_compact_layout_line(line: &str) -> String {
   }
 
   let marker = format!("{label} {number}");
-  let marker_width = char_len(&marker);
+  let marker_width = display_width(&marker);
   let target_title_column = 14usize;
   let target_gap_width =
     target_title_column.saturating_sub(indent_width + marker_width + 1);
@@ -276,3 +263,6 @@ pub(crate) fn normalize_preserved_compact_layout_line(line: &str) -> String {
 
   format!("{indent}{marker}{}{text}", " ".repeat(target_gap_width))
 }
+
+#[cfg(test)]
+mod tests;

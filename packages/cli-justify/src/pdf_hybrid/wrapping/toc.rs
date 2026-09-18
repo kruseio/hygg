@@ -1,4 +1,4 @@
-use crate::text_utils::char_len;
+use crate::text_utils::display_width;
 
 use crate::pdf_hybrid::alignment::TocAlignmentState;
 use crate::pdf_hybrid::engine::PendingAlignedTocRow;
@@ -12,7 +12,7 @@ pub(crate) fn wrap_aligned_toc_row(
   line_width: usize,
 ) -> Vec<String> {
   let first_prefix = format!("{}{}", row.indent, row.entry_prefix);
-  let continuation_prefix = " ".repeat(char_len(&first_prefix));
+  let continuation_prefix = " ".repeat(display_width(&first_prefix));
   let mut wrapped = wrap_plain_with_prefix(
     &row.title,
     line_width,
@@ -21,22 +21,21 @@ pub(crate) fn wrap_aligned_toc_row(
   );
 
   let page_suffix = format!("   {}", row.page_number);
-  let first_limit = line_width.saturating_sub(char_len(&first_prefix));
-  let continuation_limit =
-    line_width.saturating_sub(char_len(&continuation_prefix));
+  let first_limit = line_width.saturating_sub(display_width(&first_prefix));
 
-  while let Some(last_line) = wrapped.last() {
+  // The prefix wrapper always returns at least one line.
+  loop {
     let last_idx = wrapped.len() - 1;
+    let last_line = &wrapped[last_idx];
+    // String slicing uses byte offsets, not terminal column widths.
     let prefix_len = if last_idx == 0 {
-      char_len(&first_prefix)
+      first_prefix.len()
     } else {
-      char_len(&continuation_prefix)
+      continuation_prefix.len()
     };
-    let usable_width =
-      if last_idx == 0 { first_limit } else { continuation_limit };
     let last_text = &last_line[prefix_len..];
-    let required = char_len(last_text) + char_len(&page_suffix);
-    if required <= usable_width {
+    let required = display_width(last_text) + display_width(&page_suffix);
+    if required <= first_limit {
       break;
     }
 
@@ -53,9 +52,7 @@ pub(crate) fn wrap_aligned_toc_row(
     }
   }
 
-  if let Some(last_line) = wrapped.last_mut() {
-    last_line.push_str(&page_suffix);
-  }
+  wrapped.last_mut().expect("wrapped row has a line").push_str(&page_suffix);
 
   wrapped
 }
@@ -79,11 +76,65 @@ pub(crate) fn flush_pending_aligned_toc_row(
   alignment_state.normalize_row(&mut row);
 
   let first_prefix = format!("{}{}", row.indent, row.entry_prefix);
-  let continuation_prefix = " ".repeat(char_len(&first_prefix));
+  let continuation_prefix = " ".repeat(display_width(&first_prefix));
   out.extend(wrap_plain_with_prefix(
     &row.title,
     line_width,
     &first_prefix,
     &continuation_prefix,
   ));
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{flush_pending_aligned_toc_row, wrap_aligned_toc_row};
+  use crate::pdf_hybrid::alignment::TocAlignmentState;
+  use crate::pdf_hybrid::engine::PendingAlignedTocRow;
+  use crate::pdf_hybrid::structure::AlignedTocRow;
+
+  fn row(title: &str) -> AlignedTocRow {
+    AlignedTocRow {
+      indent: String::new(),
+      entry_prefix: "1  ".to_string(),
+      title: title.to_string(),
+      page_number: "12".to_string(),
+    }
+  }
+
+  #[test]
+  fn page_suffix_moves_after_a_word_without_losing_the_title() {
+    assert_eq!(
+      wrap_aligned_toc_row(&row("one two"), 11),
+      ["1  one", "   two   12"]
+    );
+    assert_eq!(
+      wrap_aligned_toc_row(&row("one two three four"), 15),
+      ["1  one two", "   three", "   four   12"]
+    );
+  }
+
+  #[test]
+  fn a_single_word_uses_a_separate_suffix_line_when_needed() {
+    assert_eq!(wrap_aligned_toc_row(&row("word"), 8), ["1  word", "      12"]);
+  }
+
+  #[test]
+  fn flushing_an_incomplete_row_keeps_its_title_without_a_page_number() {
+    let mut state = TocAlignmentState::new();
+    let mut out = Vec::new();
+    let mut pending = None;
+    flush_pending_aligned_toc_row(&mut pending, &mut out, 24, &mut state);
+    assert!(out.is_empty());
+
+    pending = Some(PendingAlignedTocRow {
+      indent: String::new(),
+      entry_prefix: "1  ".to_string(),
+      title: "中文 title".to_string(),
+    });
+    flush_pending_aligned_toc_row(&mut pending, &mut out, 24, &mut state);
+    assert!(pending.is_none());
+    assert_eq!(out.len(), 1);
+    assert!(out[0].contains("中文 title"));
+    assert!(!out[0].ends_with("   12"));
+  }
 }

@@ -1,4 +1,4 @@
-use crate::text_utils::{char_len, is_ascii_numeric};
+use crate::text_utils::{display_width, is_ascii_numeric};
 use std::collections::HashMap;
 
 use super::structure::{AlignedTocRow, looks_like_toc_section_marker};
@@ -27,7 +27,7 @@ impl TocAlignmentState {
   ) {
     if let Some((_, section_title_column)) = self.canonical_numeric_toc_layout {
       let target_indent = section_title_column.saturating_sub(1);
-      let current_indent = char_len(&row.indent);
+      let current_indent = display_width(&row.indent);
       if current_indent.abs_diff(target_indent) <= 1 {
         row.indent = " ".repeat(target_indent);
       }
@@ -37,7 +37,7 @@ impl TocAlignmentState {
     if allow_fallback_shift {
       // The first chapter heading can be extracted one column too far right
       // before subsection rows establish canonical TOC alignment.
-      let current_indent = char_len(&row.indent);
+      let current_indent = display_width(&row.indent);
       if current_indent >= 21 {
         row.indent = " ".repeat(current_indent - 1);
       }
@@ -56,8 +56,8 @@ impl TocAlignmentState {
     }
 
     if let Some(plate_marker) = plate_entry_marker(&row.entry_prefix) {
-      let indent_width = char_len(&row.indent);
-      let marker_width = char_len(&plate_marker);
+      let indent_width = display_width(&row.indent);
+      let marker_width = display_width(&plate_marker);
       let target_title_column =
         if indent_width <= 3 { 14usize } else { 21usize };
       let target_gap_width =
@@ -81,12 +81,12 @@ impl TocAlignmentState {
     let is_numeric_or_appendix_marker =
       is_numeric_marker || is_appendix_subsection_marker(&marker);
 
-    let mut current_indent = char_len(&row.indent);
-    let marker_width = char_len(&marker);
+    let mut current_indent = display_width(&row.indent);
+    let marker_width = display_width(&marker);
     let dot_offset =
       marker.chars().position(|ch| ch == '.').map_or(0, |idx| idx + 1);
     let mut gap_width =
-      char_len(&row.entry_prefix).saturating_sub(marker_width);
+      display_width(&row.entry_prefix).saturating_sub(marker_width);
 
     if gap_width == 0 {
       gap_width = 1;
@@ -161,7 +161,7 @@ impl TocAlignmentState {
       return;
     }
 
-    let prefix_width = char_len(&row.entry_prefix);
+    let prefix_width = display_width(&row.entry_prefix);
     let current_title_column = current_indent + prefix_width;
     let canonical_title_column = self
       .title_column_by_prefix_width
@@ -244,3 +244,6 @@ fn update_numeric_toc_layout(
     }
   }
 }
+
+#[cfg(test)]
+mod tests;

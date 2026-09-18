@@ -1,5 +1,5 @@
 use crate::justify;
-use crate::text_utils::char_len;
+use crate::text_utils::display_width;
 
 use crate::pdf_hybrid::engine::PendingPdfBlock;
 use crate::pdf_hybrid::wrapping::hyphenation::append_pdf_paragraph_fragment;
@@ -60,16 +60,16 @@ fn wrap_paragraph_with_prefix(
     return Vec::new();
   }
 
-  let first_width = line_width.saturating_sub(char_len(first_prefix));
+  let first_width = line_width.saturating_sub(display_width(first_prefix));
   let continuation_width =
-    line_width.saturating_sub(char_len(continuation_prefix));
+    line_width.saturating_sub(display_width(continuation_prefix));
   let usable_width = first_width.min(continuation_width);
   if usable_width == 0 {
     return vec![format!("{first_prefix}{paragraph}")];
   }
 
   let left_align_deeply_indented_block =
-    char_len(first_prefix).max(char_len(continuation_prefix)) >= 12;
+    display_width(first_prefix).max(display_width(continuation_prefix)) >= 12;
   if left_align_deeply_indented_block {
     return wrap_plain_with_prefix(
       paragraph,
@@ -80,9 +80,7 @@ fn wrap_paragraph_with_prefix(
   }
 
   let mut wrapped = justify(paragraph, usable_width);
-  if wrapped.last().is_some_and(|line| line.is_empty()) {
-    wrapped.pop();
-  }
+  wrapped.pop(); // `justify` always appends an empty paragraph separator.
 
   apply_prefixes(wrapped, first_prefix, continuation_prefix)
 }
@@ -96,7 +94,7 @@ fn capped_paragraph_indent_width(
     return None;
   }
 
-  if char_len(indent) > MAX_PARAGRAPH_INDENT_CHARS {
+  if display_width(indent) > MAX_PARAGRAPH_INDENT_CHARS {
     return Some(MAX_PARAGRAPH_INDENT_CHARS);
   }
 
@@ -143,7 +141,7 @@ pub(crate) fn flush_pending_pdf_block(
     PendingPdfBlock::ListItem { indent, marker, lines } => {
       let paragraph = collapse_pdf_paragraph_lines(lines);
       let continuation_prefix =
-        format!("{indent}{}", " ".repeat(char_len(&marker)));
+        format!("{indent}{}", " ".repeat(display_width(&marker)));
       let first_prefix = format!("{indent}{marker}");
       out.extend(wrap_paragraph_with_prefix(
         &paragraph,
@@ -153,5 +151,111 @@ pub(crate) fn flush_pending_pdf_block(
       ));
       None
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{
+    capped_paragraph_indent_width, flush_pending_pdf_block,
+    pending_block_ends_with_hyphen, pending_paragraph_ends_mid_sentence,
+    wrap_paragraph_with_prefix,
+  };
+  use crate::pdf_hybrid::engine::PendingPdfBlock;
+  use crate::text_utils::display_width;
+
+  fn paragraph(lines: &[&str]) -> Option<PendingPdfBlock> {
+    Some(PendingPdfBlock::Paragraph {
+      indent: String::new(),
+      lines: lines.iter().map(|line| (*line).to_string()).collect(),
+    })
+  }
+
+  #[test]
+  fn paragraph_boundaries_respect_hyphens_and_sentence_endings() {
+    assert!(!pending_block_ends_with_hyphen(&None));
+    assert!(pending_block_ends_with_hyphen(&paragraph(&["split-  "])));
+    assert!(!pending_block_ends_with_hyphen(&paragraph(&[])));
+    assert!(pending_block_ends_with_hyphen(&Some(PendingPdfBlock::ListItem {
+      indent: String::new(),
+      marker: "- ".into(),
+      lines: vec!["word-".into()],
+    })));
+
+    assert!(!pending_paragraph_ends_mid_sentence(&None));
+    assert!(!pending_paragraph_ends_mid_sentence(&paragraph(&[])));
+    assert!(!pending_paragraph_ends_mid_sentence(&paragraph(&["   "])));
+    assert!(!pending_paragraph_ends_mid_sentence(&paragraph(&["Done.” "])));
+    assert!(pending_paragraph_ends_mid_sentence(&paragraph(&[
+      "still reading "
+    ])));
+  }
+
+  #[test]
+  fn paragraph_prefixes_handle_empty_narrow_and_deep_layouts() {
+    assert!(wrap_paragraph_with_prefix("", 10, "1  ", "   ").is_empty());
+    assert_eq!(
+      wrap_paragraph_with_prefix("text", 2, "1  ", "   "),
+      ["1  text"]
+    );
+
+    let deep = wrap_paragraph_with_prefix(
+      "中文 title and more words",
+      18,
+      "            ",
+      "            ",
+    );
+    assert!(deep.iter().all(|line| display_width(line) <= 18));
+    assert_eq!(
+      deep.concat().split_whitespace().collect::<String>(),
+      "中文titleandmorewords"
+    );
+
+    let ordinary =
+      wrap_paragraph_with_prefix("one two three", 11, "1  ", "   ");
+    assert_eq!(ordinary, ["1  one  two", "   three"]);
+  }
+
+  #[test]
+  fn long_paragraph_indents_are_capped_but_short_ones_are_not() {
+    assert_eq!(capped_paragraph_indent_width("one two", "             "), None);
+    assert_eq!(
+      capped_paragraph_indent_width(
+        "one two three four five six",
+        "             "
+      ),
+      Some(12)
+    );
+    assert_eq!(
+      capped_paragraph_indent_width("one two three four five six", "  "),
+      None
+    );
+  }
+
+  #[test]
+  fn flushing_paragraphs_and_list_items_preserves_their_roles() {
+    let mut out = Vec::new();
+    let mut pending = None;
+    assert_eq!(flush_pending_pdf_block(&mut pending, &mut out, 24), None);
+    assert!(out.is_empty());
+
+    pending = paragraph(&["Table 2. 中文 options"]);
+    assert_eq!(flush_pending_pdf_block(&mut pending, &mut out, 24), None);
+    assert_eq!(out, ["Table 2. 中文 options"]);
+
+    pending = Some(PendingPdfBlock::Paragraph {
+      indent: "             ".into(),
+      lines: vec!["one two three four five six seven".into()],
+    });
+    assert_eq!(flush_pending_pdf_block(&mut pending, &mut out, 24), Some(12));
+    assert!(out.last().is_some_and(|line| line.starts_with("            ")));
+
+    pending = Some(PendingPdfBlock::ListItem {
+      indent: "  ".into(),
+      marker: "- ".into(),
+      lines: vec!["a list item with more words".into()],
+    });
+    assert_eq!(flush_pending_pdf_block(&mut pending, &mut out, 20), None);
+    assert!(out.iter().any(|line| line.starts_with("  - ")));
   }
 }

@@ -1,4 +1,4 @@
-use crate::text_utils::{char_len, leading_whitespace};
+use crate::text_utils::{display_width, leading_whitespace};
 
 use super::structure::{
   ListMarkerKind, code_line_continues, is_list_continuation_line,
@@ -59,7 +59,7 @@ fn narration_skip_reasons(
       if looks_like_code_continuation_line(line, base_indent_width) {
         reasons[idx] = Some(NarrationSkipReason::Code);
         code_continuation_indent_width = if code_line_continues(trimmed) {
-          Some(char_len(leading_whitespace(line)))
+          Some(display_width(leading_whitespace(line)))
         } else {
           None
         };
@@ -132,7 +132,7 @@ fn narration_skip_reasons(
       reasons[idx] = Some(NarrationSkipReason::Code);
       table_context = None;
       code_continuation_indent_width = if code_line_continues(trimmed) {
-        Some(char_len(leading_whitespace(line)))
+        Some(display_width(leading_whitespace(line)))
       } else {
         None
       };
@@ -173,8 +173,8 @@ fn shell_session_accepts(line: &str, session_indent: &str) -> bool {
   }
 
   let line_indent = leading_whitespace(line);
-  let session_indent_width = char_len(session_indent);
-  let line_indent_width = char_len(line_indent);
+  let session_indent_width = display_width(session_indent);
+  let line_indent_width = display_width(line_indent);
   if line_indent_width < session_indent_width {
     return false;
   }
@@ -273,3 +273,6 @@ fn looks_like_table_header(trimmed: &str) -> bool {
       .is_some_and(|last| matches!(*last, "Description" | "Notes" | "Grade"))
     && !trimmed.ends_with(['.', '!', '?'])
 }
+
+#[cfg(test)]
+mod tests;

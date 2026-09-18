@@ -78,6 +78,7 @@ fn narration_from_deep_cursor_with_following_text_stays_forward() {
   let lines: Vec<String> =
     (0..600).map(|i| format!("line {i} has several words here")).collect();
   let mut editor = Editor::new(lines, 80);
+  editor.tts_enabled = true;
   editor.height = 24;
   editor.total_lines = 600;
   editor.offset = 400;

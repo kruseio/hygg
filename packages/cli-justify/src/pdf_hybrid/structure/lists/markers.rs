@@ -1,4 +1,4 @@
-use crate::text_utils::{char_len, leading_whitespace};
+use crate::text_utils::{display_width, leading_whitespace};
 
 use crate::pdf_hybrid::structure::layout_signals::looks_like_git_log_graph_line;
 use crate::pdf_hybrid::structure::should_keep_pdf_line_layout;
@@ -188,8 +188,8 @@ pub(crate) fn is_list_continuation_line(
 
   let leading_ws =
     line.chars().take_while(|&ch| ch == ' ' || ch == '\t').count();
-  let list_indent_width = char_len(list_indent);
-  let continuation_indent_width = list_indent_width + char_len(marker);
+  let list_indent_width = display_width(list_indent);
+  let continuation_indent_width = list_indent_width + display_width(marker);
   if leading_ws >= continuation_indent_width {
     return true;
   }
@@ -197,3 +197,6 @@ pub(crate) fn is_list_continuation_line(
   leading_ws >= list_indent_width
     && trimmed.chars().next().is_some_and(|ch| ch.is_lowercase())
 }
+
+#[cfg(test)]
+mod tests;

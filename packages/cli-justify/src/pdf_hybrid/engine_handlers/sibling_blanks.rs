@@ -1,4 +1,4 @@
-use crate::text_utils::char_len;
+use crate::text_utils::display_width;
 
 use crate::pdf_hybrid::structure::looks_like_table_or_figure_caption;
 
@@ -16,6 +16,9 @@ fn line_starts_sibling_list_item(
   indent: &str,
   marker: &str,
 ) -> bool {
+  if marker.is_empty() {
+    return false;
+  }
   if line.starts_with(&format!("{indent}{marker}")) {
     return true;
   }
@@ -60,7 +63,7 @@ pub(crate) fn drop_trailing_blanks_after_sibling_list(
   if blanks_start == out.len() || blanks_start == 0 {
     return;
   }
-  let continuation_indent_width = char_len(indent) + char_len(marker);
+  let continuation_indent_width = display_width(indent) + display_width(marker);
   let scan_floor = blanks_start.saturating_sub(MAX_SIBLING_LOOKBACK_LINES);
   for idx in (scan_floor..blanks_start).rev() {
     let line = &out[idx];
@@ -117,3 +120,6 @@ pub(crate) fn out_ends_in_caption_context(out: &mut Vec<String>) -> bool {
   }
   false
 }
+
+#[cfg(test)]
+mod tests;

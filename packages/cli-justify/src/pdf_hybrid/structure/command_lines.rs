@@ -1,10 +1,9 @@
-use crate::text_utils::{char_len, leading_whitespace};
+use crate::text_utils::{display_width, leading_whitespace};
 
 pub(crate) fn code_line_continues(trimmed: &str) -> bool {
   trimmed.ends_with('\\')
     || trimmed.ends_with('|')
     || trimmed.ends_with("&&")
-    || trimmed.ends_with("||")
     || trimmed.contains("<<")
 }
 
@@ -17,7 +16,7 @@ pub(crate) fn looks_like_code_continuation_line(
     return false;
   }
 
-  let line_indent_width = char_len(leading_whitespace(line));
+  let line_indent_width = display_width(leading_whitespace(line));
   line_indent_width > base_indent_width
     || trimmed.starts_with("&&")
     || trimmed.starts_with("||")
@@ -147,7 +146,11 @@ pub(crate) fn looks_like_shell_command_line(trimmed: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-  use super::looks_like_shell_command_line;
+  use super::{
+    code_line_continues, looks_like_code_continuation_line,
+    looks_like_env_assignment, looks_like_path_arg,
+    looks_like_shell_command_line, strip_shell_wrappers,
+  };
 
   #[test]
   fn recognises_unprompted_shell_commands() {
@@ -167,5 +170,104 @@ mod tests {
     assert!(!looks_like_shell_command_line(
       "install the package manager before continuing"
     ));
+  }
+
+  #[test]
+  fn continuation_lines_require_indent_or_an_operator() {
+    for line in [
+      r"git status \",
+      "git status |",
+      "git status &&",
+      "git status ||",
+      "cat <<EOF",
+    ] {
+      assert!(code_line_continues(line), "{line}");
+    }
+    assert!(!code_line_continues("git status"));
+    assert!(!looks_like_code_continuation_line("", 2));
+    assert!(looks_like_code_continuation_line("   next", 2));
+    for line in ["&& next", "|| next", "| next", "EOF"] {
+      assert!(looks_like_code_continuation_line(line, 2), "{line}");
+    }
+    assert!(!looks_like_code_continuation_line("ordinary", 2));
+  }
+
+  #[test]
+  fn shell_wrappers_and_assignments_need_real_ascii_names_and_values() {
+    for token in ["FOO=bar", "X1=2", "_A=abc"] {
+      assert!(looks_like_env_assignment(token), "{token}");
+    }
+    for token in ["FOO", "=bar", "FOO=", "foo=bar", "ＦＯＯ=bar"] {
+      assert!(!looks_like_env_assignment(token), "{token}");
+    }
+    assert_eq!(
+      strip_shell_wrappers("sudo env FOO=bar time git status"),
+      "git status"
+    );
+    assert_eq!(strip_shell_wrappers("sudo"), "sudo");
+    assert!(looks_like_shell_command_line("FOO=bar X1=2"));
+    assert!(!looks_like_shell_command_line("FOO=bar ordinary prose"));
+  }
+
+  #[test]
+  fn path_arguments_are_recognized_without_accepting_plain_words() {
+    for path in
+      [".", "..", "/tmp", "~/bin", "./build", "../src", "a/b", "a\\b", "a.txt"]
+    {
+      assert!(looks_like_path_arg(path), "{path}");
+    }
+    assert!(!looks_like_path_arg("ordinary"));
+    assert!(!looks_like_path_arg(""));
+  }
+
+  #[test]
+  fn command_families_accept_known_actions_and_reject_prose() {
+    for command in [
+      "apt install pkg",
+      "apk add pkg",
+      "brew install pkg",
+      "cargo test",
+      "git status",
+      "gh pr list",
+      "docker compose up",
+      "kubectl get pods",
+      "npm run build",
+      "pip install pkg",
+      "python script.py",
+      "cat file.txt",
+      "cd ../repo",
+      "cmake --build .",
+      "make check",
+      "mkdir -p dir",
+      "tar -xzf file",
+      "hygg book.pdf",
+      "./configure --prefix=/tmp",
+      "../configure --prefix=/tmp",
+    ] {
+      assert!(looks_like_shell_command_line(command), "{command}");
+    }
+    for prose in [
+      "",
+      "git",
+      "apt read docs",
+      "brew read docs",
+      "cargo read docs",
+      "git read docs",
+      "gh read docs",
+      "docker read docs",
+      "kubectl read docs",
+      "npm read docs",
+      "pip read docs",
+      "cd somewhere",
+      "cmake read docs",
+      "make sure",
+      "mkdir home",
+      "tar archive",
+      "unknown action",
+      "FOO=",
+      "plain text",
+    ] {
+      assert!(!looks_like_shell_command_line(prose), "{prose}");
+    }
   }
 }

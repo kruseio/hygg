@@ -142,6 +142,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      # --all-features enables cli-text-reader's TTS backend, whose ALSA
+      # dependency needs system headers even for cargo clippy.
+      - name: Install ALSA headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev
       - id: toolchain
         run: echo "v=$(./tools/ci.sh toolchain stable)" >> "$GITHUB_OUTPUT"
       - name: Rust toolchain (pinned stable)

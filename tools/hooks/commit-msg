@@ -88,10 +88,11 @@ else
   type="${BASH_REMATCH[1]}"
   scope="${BASH_REMATCH[3]}"
   desc="${BASH_REMATCH[5]}"
+  lower_type="$(printf '%s' "$type" | tr '[:upper:]' '[:lower:]')"
 
-  if [ "$type" != "${type,,}" ]; then
+  if [ "$type" != "$lower_type" ]; then
     problems+=("the type '$type' is capitalised; types are lowercase")
-  elif ! printf '%s\n' "$TYPES" | grep -qx "${type,,}"; then
+  elif ! printf '%s\n' "$TYPES" | grep -qx "$lower_type"; then
     problems+=("'$type' is not one of the types this repo releases from")
   fi
 

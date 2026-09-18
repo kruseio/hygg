@@ -1,4 +1,4 @@
-use crate::text_utils::{char_len, split_at_char};
+use crate::text_utils::{display_width, split_at_width};
 
 pub(super) fn apply_prefixes(
   lines: Vec<String>,
@@ -26,9 +26,9 @@ pub(super) fn wrap_plain_with_prefix(
     return vec![first_prefix.to_string()];
   }
 
-  let first_width = line_width.saturating_sub(char_len(first_prefix));
+  let first_width = line_width.saturating_sub(display_width(first_prefix));
   let continuation_width =
-    line_width.saturating_sub(char_len(continuation_prefix));
+    line_width.saturating_sub(display_width(continuation_prefix));
   if first_width == 0 || continuation_width == 0 {
     return vec![format!("{first_prefix}{text}")];
   }
@@ -38,8 +38,21 @@ pub(super) fn wrap_plain_with_prefix(
   let mut current_width_limit = first_width;
 
   for mut word in text.split_whitespace() {
-    while char_len(word) > current_width_limit && current_line.is_empty() {
-      let (chunk, rest) = split_at_char(word, current_width_limit);
+    if !current_line.is_empty() {
+      let candidate_len =
+        display_width(&current_line) + 1 + display_width(word);
+      if candidate_len <= current_width_limit {
+        current_line.push(' ');
+        current_line.push_str(word);
+        continue;
+      }
+
+      text_lines.push(std::mem::take(&mut current_line));
+      current_width_limit = continuation_width;
+    }
+
+    while display_width(word) > current_width_limit {
+      let (chunk, rest) = split_at_width(word, current_width_limit);
       text_lines.push(chunk.to_string());
       word = rest.unwrap_or("");
       current_width_limit = continuation_width;
@@ -50,30 +63,11 @@ pub(super) fn wrap_plain_with_prefix(
     if word.is_empty() {
       continue;
     }
-
-    let word_len = char_len(word);
-    if current_line.is_empty() {
-      current_line.push_str(word);
-      continue;
-    }
-
-    let candidate_len = char_len(&current_line) + 1 + word_len;
-    if candidate_len <= current_width_limit {
-      current_line.push(' ');
-      current_line.push_str(word);
-      continue;
-    }
-
-    text_lines.push(current_line);
-    current_line = word.to_string();
-    current_width_limit = continuation_width;
+    current_line.push_str(word);
   }
 
   if !current_line.is_empty() {
     text_lines.push(current_line);
-  }
-  if text_lines.is_empty() {
-    text_lines.push(String::new());
   }
 
   apply_prefixes(text_lines, first_prefix, continuation_prefix)
@@ -87,4 +81,78 @@ pub(super) fn split_last_word(line: &str) -> Option<(String, String)> {
     return None;
   }
   Some((left.to_string(), right.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{apply_prefixes, split_last_word, wrap_plain_with_prefix};
+  use crate::text_utils::display_width;
+  use proptest::prelude::*;
+
+  #[test]
+  fn prefixes_apply_to_the_first_and_continuation_lines() {
+    assert_eq!(
+      apply_prefixes(vec!["one".into(), "two".into()], "1  ", "   "),
+      ["1  one", "   two"]
+    );
+  }
+
+  #[test]
+  fn empty_titles_and_zero_content_width_keep_the_prefix() {
+    assert_eq!(wrap_plain_with_prefix(" \t ", 8, "1  ", "   "), ["1  "]);
+    assert_eq!(wrap_plain_with_prefix("中文", 2, "1  ", "   "), ["1  中文"]);
+    assert_eq!(wrap_plain_with_prefix("中文", 2, "", "   "), ["中文"]);
+  }
+
+  #[test]
+  fn oversized_graphemes_and_words_wrap_without_losing_text() {
+    assert_eq!(
+      wrap_plain_with_prefix("中文中文", 2, "", ""),
+      ["中", "文", "中", "文"]
+    );
+    assert_eq!(wrap_plain_with_prefix("中文", 1, "", ""), ["中", "文"]);
+    assert_eq!(
+      wrap_plain_with_prefix("one two three", 7, "1  ", "   "),
+      ["1  one", "   two", "   thre", "   e"]
+    );
+  }
+
+  #[test]
+  fn final_word_splits_only_when_both_sides_have_text() {
+    assert_eq!(split_last_word("one two"), Some(("one".into(), "two".into())));
+    assert_eq!(split_last_word("one"), None);
+    assert_eq!(split_last_word(" one"), None);
+    assert_eq!(split_last_word("one "), None);
+  }
+
+  proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    #[test]
+    fn prefixed_wrapping_keeps_every_unicode_character_within_the_budget(
+      words in prop::collection::vec(
+        prop::collection::vec(
+          prop::sample::select(vec!["a", "中", "Ａ", "e\u{301}", "👩‍💻", "\u{200b}", "\u{202e}"]),
+          1..7,
+        ).prop_map(|parts| parts.concat()),
+        0..15,
+      ),
+      first_prefix in prop::sample::select(vec!["", "• ", "中 ", "Ａ "]),
+      continuation_prefix in prop::sample::select(vec!["", "  ", "↳ ", "    "]),
+      width in 8usize..33,
+    ) {
+      let text = words.join(" ");
+      let output = wrap_plain_with_prefix(&text, width, first_prefix, continuation_prefix);
+      prop_assert!(!output.is_empty());
+      let mut recovered = String::new();
+      for (index, line) in output.iter().enumerate() {
+        let prefix = if index == 0 { first_prefix } else { continuation_prefix };
+        let content = line.strip_prefix(prefix).expect("wrapper keeps requested prefix");
+        recovered.extend(content.chars().filter(|ch| !ch.is_whitespace()));
+        prop_assert!(display_width(line) <= width, "{text:?} -> {output:?}, width {width}");
+      }
+      let expected: String = text.chars().filter(|ch| !ch.is_whitespace()).collect();
+      prop_assert_eq!(recovered, expected);
+    }
+  }
 }

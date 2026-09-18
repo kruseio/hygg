@@ -8,7 +8,7 @@
 # whole tree (axum, sea-orm, webauthn, the bundled tract OCR engine) from cold —
 # which the CI image build does on every pull request.
 
-FROM rust:1.88-slim AS chef
+FROM rust:1.94.0-slim-bookworm AS chef
 WORKDIR /build
 # libssl-dev is not optional, despite sea-orm being configured for rustls:
 # webauthn-rs -> webauthn-rs-core -> webauthn-attestation-ca pulls the `openssl`
