@@ -115,7 +115,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
+        with:
+          # The action's default also requests the removed legacy `tools`
+          # package; the versioned command-line tools already provide sdkmanager.
+          packages: platform-tools
       - name: Install NDK
         run: sdkmanager "ndk;26.3.11579264"
       # wasm32 is required alongside the Android targets: the beforeBuildCommand
@@ -128,17 +132,7 @@ jobs:
       - uses: jetli/trunk-action@v0.5.0
         with:
           version: latest
-      # Prebuilt, not compiled: `cargo install tauri-cli` built the CLI from
-      # source on every run and cost minutes. Tauri publishes cargo-tauri
-      # binaries per platform, and binstall fetches the one for this runner in
-      # seconds.
-      #
-      # It has to land as `cargo-tauri` on PATH rather than as the npm CLI: the
-      # projects `tauri android init` / `ios init` generate re-invoke the CLI
-      # themselves — gradle's BuildTask.kt bakes in the executable it was
-      # initialised with and runs `cargo tauri android android-studio-script`,
-      # and the Xcode project bakes `cargo tauri ios xcode-script`. Installed
-      # any other way, init writes an invocation that later cannot be resolved.
+      # Install cargo-tauri on PATH: Gradle re-invokes it after Android init.
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-binstall
@@ -186,22 +180,13 @@ jobs:
       # pods; cocoapods ships on the runner image, xcodegen does not.
       - name: Install iOS project tooling
         run: brew install xcodegen
-      # Prebuilt, not compiled: `cargo install tauri-cli` built the CLI from
-      # source on every run and cost minutes. Tauri publishes cargo-tauri
-      # binaries per platform, and binstall fetches the one for this runner in
-      # seconds.
-      #
-      # It has to land as `cargo-tauri` on PATH rather than as the npm CLI: the
-      # projects `tauri android init` / `ios init` generate re-invoke the CLI
-      # themselves — gradle's BuildTask.kt bakes in the executable it was
-      # initialised with and runs `cargo tauri android android-studio-script`,
-      # and the Xcode project bakes `cargo tauri ios xcode-script`. Installed
-      # any other way, init writes an invocation that later cannot be resolved.
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-binstall
-      - name: Install Tauri CLI
-        run: cargo binstall tauri-cli --version "^2" --no-confirm
+      # Binstall selects an x86_64 Tauri CLI on this ARM runner. Invoking it
+      # under Rosetta makes `ios init` run ARM Homebrew from an x86_64 process,
+      # which Homebrew rejects. Build a native cargo-tauri for the simulator job.
+      - name: Install native Tauri CLI
+        run: |
+          cargo install tauri-cli --version 2.11.4 --locked --target aarch64-apple-darwin
+          lipo -archs "$(command -v cargo-tauri)" | grep -qw arm64
       - name: Build simulator app
         working-directory: packages/hygg-tauri
         run: |

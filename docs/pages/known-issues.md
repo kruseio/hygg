@@ -5,13 +5,13 @@
 Advisories this project is carrying knowingly, why they cannot be patched from
 here, and what would clear each one.
 
-`cargo audit` reports **0 vulnerabilities** against the committed lockfile. What
-it does report is 21 warnings — one unsoundness and twenty unmaintained crates —
-and every one of them is inventoried below. The audit leg in CI reports rather
-than gates for exactly this reason (see the `audit` job in
-`.github/workflows/ci.yml`): its input is the advisory database, which moves on
-its own schedule, so it is read as news rather than as a verdict on whoever
-happens to have a pull request open.
+`cargo audit` reports **0 vulnerabilities** against the committed lockfile. The
+current advisory database reports 11 warnings — one unsoundness and ten
+unmaintained crates — inventoried below alongside related GTK3 ecosystem risks.
+The audit leg in CI reports rather than gates for exactly this reason (see the
+`audit` job in `.github/workflows/ci.yml`): its input is the advisory database,
+which moves on its own schedule, so it is read as news rather than as a verdict
+on whoever happens to have a pull request open.
 
 None of the entries below is dismissed on GitHub. An open alert is a standing
 reminder to re-check; a dismissed one is a decision nobody revisits.
@@ -134,7 +134,7 @@ that are stable rather than abandoned mid-problem.
 ## Reproducing this inventory
 
 ```sh
-cargo audit                 # 0 vulnerabilities, 21 warnings
+cargo audit                 # 0 vulnerabilities, 11 warnings
 ./tools/ci.sh audit         # the same, as CI runs it
 ```
 
