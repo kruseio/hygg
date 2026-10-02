@@ -78,6 +78,13 @@ categories = [
   "text-processing",
 ]
 
+# Read by tools/sweep-incremental.sh, not by cargo, which ignores this table.
+# Cargo has no setting that caps how large incremental compilation caches grow,
+# so the script enforces this one: past it, the least recently used caches under
+# target/ are deleted until the total fits again.
+[workspace.metadata.sweep]
+incremental-max-gb = 4
+
 [workspace.lints.rust]
 unused_parens = "allow"
 unused_imports = "allow"

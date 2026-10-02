@@ -15,6 +15,13 @@ see [Contributing](../../CONTRIBUTING.md). Arm the hook that checks it, once:
 git config core.hooksPath tools/hooks
 ```
 
+## Disk use
+rustc's incremental caches under `target/` grow without bound, and Cargo has no
+setting to cap them. `tools/sweep-incremental.sh` does it instead: past
+`incremental-max-gb` in the root `Cargo.toml` (4 GB), it deletes the least
+recently used caches until they fit. The pre-push hook runs it; `-n` shows what
+it would delete.
+
 ## Cutting a release
 Maintainers only, and irreversible in part: the tag publishes to crates.io,
 where a version can be yanked but never replaced.

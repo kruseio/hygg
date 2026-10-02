@@ -44,5 +44,9 @@ fi
 
 root="$(git rev-parse --show-toplevel)"
 
+# Before the build rather than after it: the build is an exec, and nothing runs
+# once it returns. A failed sweep is not a reason to refuse the push.
+"$root/tools/sweep-incremental.sh" || echo "pre-push: incremental sweep failed, continuing" >&2
+
 echo "pre-push: fmt + loc + clippy + test (tools/ci.sh fast) — --no-verify skips it" >&2
 exec "$root/tools/ci.sh" fast
