@@ -3,7 +3,8 @@
 #   hygg-cli-<tag>-x86_64-linux.tar.gz      the TUI/CLI, one archive per platform
 #   hygg-cli-<tag>-macos-universal.tar.gz   Intel + Apple silicon in one binary
 #   hygg-cli-<tag>-x86_64-windows.zip
-#   hygg-desktop-<tag>-*.{dmg,deb,AppImage,rpm,msi,exe}   Tauri native app
+#   hygg-desktop-<tag>-*.{dmg,deb,AppImage,rpm}   Tauri native app
+#   hygg-desktop-<tag>-x86_64-windows.zip         portable — no installer
 #   hygg-android-<tag>-debug.apk            (release-signed when secrets exist)
 #   hygg-ios-<tag>-simulator.app.zip        simulator only — see the note below
 #   SHA256SUMS
@@ -227,20 +228,51 @@ jobs:
       # Unsigned: notarization/signing needs the maintainer's certs as secrets.
       # macOS users will see Gatekeeper's "unidentified developer" prompt.
       - name: Build app
+        if: runner.os != 'Windows'
         uses: tauri-apps/tauri-action@v0
         with:
           projectPath: packages/hygg-tauri
           args: --target ${{ matrix.target }}
 
+      # Windows ships portable: the bare executable in a zip, no MSI or NSIS
+      # installer. `--no-bundle` still runs the beforeBuildCommand and embeds
+      # the frontend — everything `tauri build` does except the installer step.
+      # The CLI is invoked directly rather than through tauri-action, which
+      # expects bundles to collect afterwards.
+      - if: runner.os == 'Windows'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
+      - name: Build app (portable)
+        if: runner.os == 'Windows'
+        working-directory: packages/hygg-tauri
+        run: |
+          set -euo pipefail
+          cargo binstall tauri-cli --version "^2" --no-confirm
+          cargo tauri build --target ${{ matrix.target }} --no-bundle
+
       - name: Collect bundles
         run: |
           set -euo pipefail
           mkdir -p dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            # The cargo binary is hygg-tauri.exe; it ships as hygg.exe, the name
+            # an installer would have given it. Inside a folder of the archive's
+            # own name rather than flat like the CLI zip, whose binary is also
+            # hygg.exe — unpacking both in one place must not overwrite either.
+            name="hygg-desktop-${TAG}-${{ matrix.name }}"
+            mkdir -p "staging/$name"
+            cp "target/${{ matrix.target }}/release/hygg-tauri.exe" "staging/$name/hygg.exe"
+            cp README.md LICENSE LICENSE-MIT "staging/$name/"
+            (cd staging && 7z a "../dist/$name.zip" "$name") >/dev/null
+            ls -lh dist
+            exit 0
+          fi
           # find rather than `shopt -s globstar` + `**`: this job also runs on the
           # macOS runner, whose /bin/bash is 3.2 and has no globstar.
           while IFS= read -r -d '' f; do
             case "$f" in
-              *.dmg|*.deb|*.AppImage|*.rpm|*.msi|*-setup.exe)
+              *.dmg|*.deb|*.AppImage|*.rpm)
                 cp "$f" "dist/hygg-desktop-${TAG}-${{ matrix.name }}.${f##*.}" ;;
             esac
           done < <(find "target/${{ matrix.target }}/release/bundle" -type f -print0)

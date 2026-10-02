@@ -23,7 +23,7 @@ not build or install anything.
 | `hygg-cli-<tag>-x86_64-windows.zip` | Windows | The TUI |
 | `hygg-desktop-<tag>-*.dmg` | macOS | Native desktop app |
 | `hygg-desktop-<tag>-*.{deb,AppImage,rpm}` | Linux | Native desktop app |
-| `hygg-desktop-<tag>-*.{msi,exe}` | Windows | Native desktop app |
+| `hygg-desktop-<tag>-x86_64-windows.zip` | Windows | Native desktop app, portable — no installer |
 | `hygg-android-<tag>-*.apk` | Android | Sideloadable app |
 | `hygg-ios-<tag>-simulator.app.zip` | iOS | Simulator only — see below |
 | `SHA256SUMS` | — | Checksums for everything above |
@@ -41,6 +41,11 @@ which is deliberately not bundled — install it separately if you read those.
 first launch, because signing them needs an Apple Developer certificate and a
 Windows code-signing certificate that this project does not have. On macOS,
 right-click the app and choose Open to get the override dialog.
+
+On Windows the app is portable: unzip it anywhere and run `hygg.exe`. Nothing is
+installed, so there is nothing to uninstall — delete the folder. It needs the
+WebView2 runtime, which Windows 11 ships and Windows 10 receives through Windows
+Update; on a machine without it, install the Evergreen runtime from Microsoft.
 
 ### The Android APK
 Usually `-debug.apk`: debug-signed, because release signing needs secrets that

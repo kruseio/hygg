@@ -77,12 +77,28 @@ jobs:
       # tauri-action installs the Tauri CLI, runs the beforeBuildCommand
       # (trunk build), and bundles the installers for the host OS.
       - name: Build app
+        if: runner.os != 'Windows'
         uses: tauri-apps/tauri-action@v0
         with:
           projectPath: packages/hygg-tauri
           args: --target ${{ matrix.target }}
 
-      - name: Upload installers
+      # Windows ships portable, with no installer (see release.yml), so this
+      # builds the bare executable the same way rather than an MSI nobody gets.
+      - if: runner.os == 'Windows'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
+      - name: Build app (portable)
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: packages/hygg-tauri
+        run: |
+          set -euo pipefail
+          cargo binstall tauri-cli --version "^2" --no-confirm
+          cargo tauri build --target ${{ matrix.target }} --no-bundle
+
+      - name: Upload builds
         uses: actions/upload-artifact@v4
         with:
           name: hygg-${{ matrix.target }}
@@ -93,8 +109,7 @@ jobs:
             target/${{ matrix.target }}/release/bundle/**/*.deb
             target/${{ matrix.target }}/release/bundle/**/*.AppImage
             target/${{ matrix.target }}/release/bundle/**/*.rpm
-            target/${{ matrix.target }}/release/bundle/**/*.msi
-            target/${{ matrix.target }}/release/bundle/**/*-setup.exe
+            target/${{ matrix.target }}/release/hygg-tauri.exe
 
   android:
     name: android (debug apk)

@@ -141,10 +141,11 @@ why each path needs its own build.
 The desktop app wraps the same Leptos UI as the web app in an OS webview, and
 runs the document pipeline natively instead of in wasm.
 
-### Prebuilt installers
+### Prebuilt downloads
 From the [latest release](https://github.com/kruseio/hygg/releases/latest):
 `hygg-desktop-<tag>-macos-universal.dmg`, `.deb` / `.AppImage` / `.rpm` for
-Linux, `.msi` / `-setup.exe` for Windows. All unsigned — Gatekeeper and
+Linux, and a portable `hygg-desktop-<tag>-x86_64-windows.zip` for Windows —
+unzip and run `hygg.exe`, no installer. All unsigned — Gatekeeper and
 SmartScreen will warn on first launch.
 
 ### Build from source

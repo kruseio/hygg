@@ -52,11 +52,12 @@ https://kruseio.github.io/hygg/
 Add it to your home screen and it reads offline like a native app.
 
 ### Install the desktop app
-Download your platform's installer from the
+Download your platform's build from the
 [latest release](https://github.com/kruseio/hygg/releases/latest):
-`.dmg` (macOS), `.deb` / `.AppImage` / `.rpm` (Linux), `.msi` / `.exe` (Windows).
+`.dmg` (macOS), `.deb` / `.AppImage` / `.rpm` (Linux), or the portable `.zip`
+(Windows — unzip and run `hygg.exe`, nothing to install).
 
-The installers are unsigned, so macOS Gatekeeper and Windows SmartScreen warn on
+The downloads are unsigned, so macOS Gatekeeper and Windows SmartScreen warn on
 first launch.
 
 ### Install on mobile
