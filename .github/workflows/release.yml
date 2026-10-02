@@ -304,7 +304,13 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
+        with:
+          # The action's default also requests the removed legacy `tools`
+          # package, and sdkmanager fails the job on it ("Failed to find package
+          # 'tools'") — which cost 0.1.27 its APK. The versioned command-line
+          # tools already provide sdkmanager. Same fix as native-apps.yml.
+          packages: platform-tools
       - name: Install NDK
         run: sdkmanager "ndk;26.3.11579264"
 
