@@ -200,6 +200,14 @@ fn ensure_one(artifact: &Artifact) -> Result<PathBuf, String> {
   Ok(path)
 }
 
+/// Whether every artifact is already in the cache.
+pub(crate) fn models_cached() -> bool {
+  [&DET, &REC, &DICT].iter().all(|a| model_dir().join(a.file_name).exists())
+}
+
+/// The size of a first-use download.
+pub(crate) const DOWNLOAD_BYTES: u64 = DET.len + REC.len + DICT.len;
+
 /// Ensure the detection model, recognition model and dictionary exist locally,
 /// downloading on first use. Returns the resolved paths. Network is only
 /// touched when a file is missing.

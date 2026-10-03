@@ -4,9 +4,9 @@ use super::extract::{extract_native_text_regions, ocr_missing_text_regions};
 use super::merge::merge_native_and_ocr_regions_text;
 
 #[cfg(feature = "ocr")]
-fn bundled_ocr_config() -> pdf_oxide::ocr::OcrConfig {
+fn bundled_ocr_config(det_max_side: u32) -> pdf_oxide::ocr::OcrConfig {
   pdf_oxide::ocr::OcrConfig::builder()
-    .det_max_side(960)
+    .det_max_side(det_max_side)
     .rec_target_height(32)
     .build()
 }
@@ -54,6 +54,16 @@ pub(crate) fn ocr_size_guarded(
 #[cfg(feature = "ocr")]
 pub(crate) fn bundled_ocr_engine()
 -> Result<pdf_oxide::ocr::OcrEngine, Box<dyn std::error::Error>> {
+  bundled_ocr_engine_with(960)
+}
+
+/// [`bundled_ocr_engine`] detecting text on images scaled to at most
+/// `det_max_side` pixels (whole rendered pages need more than embedded
+/// images do: their lines are small relative to the page).
+#[cfg(feature = "ocr")]
+pub(crate) fn bundled_ocr_engine_with(
+  det_max_side: u32,
+) -> Result<pdf_oxide::ocr::OcrEngine, Box<dyn std::error::Error>> {
   let (det_path, rec_path, dict_path) = super::files::ensure_ocr_models()?;
   let det_model = std::fs::read(&det_path)?;
   let rec_model = std::fs::read(&rec_path)?;
@@ -62,7 +72,7 @@ pub(crate) fn bundled_ocr_engine()
     &det_model,
     &rec_model,
     &dict,
-    bundled_ocr_config(),
+    bundled_ocr_config(det_max_side),
   )
   .map_err(|e| format!("failed to initialize OCR engine: {e}").into())
 }

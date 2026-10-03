@@ -30,6 +30,11 @@ mod visual_place;
 mod visuals;
 
 pub use stream::{PdfLineKind, PdfRenderedPage, PdfStream, SharedPdfStream};
+// OCR of one rendered image, for GUIs that rasterize pages themselves.
+#[cfg(all(not(target_arch = "wasm32"), feature = "ocr"))]
+pub use ocr::{
+  OCR_MODELS_DOWNLOAD_BYTES, OcrLine, OcrSession, ocr_models_cached,
+};
 #[cfg(feature = "visual-assets")]
 pub use visual_place::{VisualPlacement, place_visuals};
 #[cfg(feature = "visual-assets")]
