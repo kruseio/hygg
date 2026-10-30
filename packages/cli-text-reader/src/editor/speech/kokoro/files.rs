@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use ndarray::Array3;
-use ndarray_npy::NpzReader;
+use ndarray_npy::ReadNpyExt;
 use sha2::{Digest, Sha256};
 
 use super::common::{STYLE_DIM, VoiceStyles};
@@ -221,11 +221,18 @@ pub(crate) fn ensure_models(
 pub(crate) fn load_voices(voices_path: &Path) -> Result<VoiceStyles, String> {
   let file = File::open(voices_path)
     .map_err(|e| format!("open voices {}: {e}", voices_path.display()))?;
-  let mut npz = NpzReader::new(file).map_err(|e| e.to_string())?;
+  let mut npz = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
   let mut map = HashMap::new();
-  let names = npz.names().map_err(|e| e.to_string())?;
-  for name in names {
-    let data: Array3<f32> = npz.by_name(&name).map_err(|e| e.to_string())?;
+  for index in 0..npz.len() {
+    let entry = npz
+      .by_index_with_options(
+        index,
+        zip::read::ZipReadOptions::new().enforce_header_consistency(true),
+      )
+      .map_err(|e| e.to_string())?;
+    let name = entry.name().map_err(|e| e.to_string())?;
+    let name = name.strip_suffix(".npy").unwrap_or(&name).to_owned();
+    let data = Array3::<f32>::read_npy(entry).map_err(|e| e.to_string())?;
     let mut rows = vec![[[0.0f32; STYLE_DIM]; 1]; 511];
     for (i, plane) in data.outer_iter().enumerate().take(511) {
       for (j, row) in plane.outer_iter().enumerate().take(1) {

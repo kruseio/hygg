@@ -25,7 +25,9 @@
 //! }
 //! ```
 
-use epub::doc::EpubDoc;
+mod archive;
+
+use archive::EpubDoc;
 use hygg_shared::{PathError, normalize_file_path};
 use std::error::Error;
 use std::fmt;
@@ -133,9 +135,7 @@ fn extract_spine_text<R: std::io::Read + std::io::Seek>(
   for spine_item in epub.spine.clone() {
     // Resource not found is skipped silently — some EPUBs reference
     // non-essential resources that don't affect the main content.
-    if let Some((xhtml_bytes, _media_type)) =
-      epub.get_resource(&spine_item.idref)
-    {
+    if let Some(xhtml_bytes) = epub.get_resource(&spine_item)? {
       // html2text parses its input as UTF-8, but chapters may be UTF-16 (which
       // EPUB 2 allows) or carry a legacy charset in their XML declaration or
       // <meta>. Decode first: a BOM wins, then valid UTF-8, then the declared
@@ -144,7 +144,7 @@ fn extract_spine_text<R: std::io::Read + std::io::Seek>(
       let text = html2text::from_read(xhtml.as_bytes(), 110).map_err(|e| {
         EpubError::HtmlConversion(format!(
           "Failed to convert HTML to text for resource '{}': {}",
-          spine_item.idref, e
+          spine_item, e
         ))
       })?;
 

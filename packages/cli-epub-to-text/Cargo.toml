@@ -18,7 +18,10 @@ categories.workspace = true
 workspace = true
 
 [dependencies]
-epub = "2.1.5"
+# Read the container/OPF spine directly: epub 2.1.5 pins vulnerable zip 3.
+zip = { version = "9.1.3", default-features = false, features = ["deflate"] }
+roxmltree = "0.20"
+percent-encoding = "2.3"
 html2text = "0.17"
 hygg-shared = { version = "0.1", path = "../hygg-shared" }
 
@@ -27,4 +30,3 @@ hygg-shared = { version = "0.1", path = "../hygg-shared" }
 # hygg-shared).
 encoding_rs = "0.8"
 tempfile = "3"
-zip = "9"

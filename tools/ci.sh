@@ -10,9 +10,9 @@
 #   ./tools/ci.sh          Every leg, cheapest first. The local reproduction of
 #                          a full CI run, and as slow as one.
 #
-#   ./tools/ci.sh fast     fmt, loc, clippy, test — the subset that
+#   ./tools/ci.sh fast     audit, fmt, loc, clippy, test, pages — the subset that
 #                          tools/hooks/pre-push runs before a branch leaves the
-#                          machine. See ci_fast below for why those four, and
+#                          machine. See ci_fast below for this selection, and
 #                          why a green hook is not a green CI.
 #
 #   ./tools/ci.sh <leg>    One gate, alone. This is how .github/workflows/ci.yml
@@ -28,7 +28,7 @@
 # database; it is measured in tens of minutes, and running it to "check my work"
 # after a small edit spends all of that to learn what `cargo check -p <member>`
 # would have said in seconds. The one invocation that is not your decision is the
-# pre-push hook: if you are pushing on someone's behalf, let it run its four legs
+# pre-push hook: if you are pushing on someone's behalf, let it run its checks
 # — reaching for `--no-verify` to get a push through is exactly the thing the
 # hook exists to prevent.
 #
@@ -242,22 +242,12 @@ ci_all () {
   ci_tauri
 }
 
-# What tools/hooks/pre-push runs, and the reason it is a subset rather than the
-# suite: four of the legs here are the ones whose cost is a compile the laptop
-# was going to pay anyway, plus ci_pages — a pure-Python injector self-test that
-# costs nothing and guards the Pages deploy that a tag, not a PR, used to be the
-# first to exercise. Together they catch most of what turns a pull request red.
-# The five they leave out each want something a runner has and a laptop does not —
-# espeak built through CMake (tts), a second full build on nightly (udeps), a
-# Trunk release bundle (wasm), a WebKitGTK stack and a Tauri binary (tauri) — or,
-# in audit's case, an answer that changes with the advisory database rather than
-# with the push.
-#
-# The result is deliberately not a promise that CI will be green. It is the half
-# of CI that fails for reasons visible from here, bought at a price people will
-# actually pay: a hook that costs a Tauri build is a hook that teaches everyone
-# to type --no-verify, and then it gates nothing at all.
+# The pre-push subset includes the security audit before compilation, so known
+# vulnerabilities reported by cargo-audit fail even when functional tests pass.
+# Install cargo-audit once (see CONTRIBUTING.md). TTS-specific tests, udeps,
+# WASM and Tauri builds remain separate CI legs.
 ci_fast () {
+  ci_audit
   ci_fmt
   ci_loc
   ci_clippy
@@ -298,7 +288,7 @@ if [ "$1" = "toolchain" ]; then
   exit
 fi
 
-# Also not a leg: the hook's subset, named here rather than spelled out as four
+# Also not a leg: the hook's subset, named here rather than spelled out as separate
 # calls in tools/hooks/pre-push, so that what the hook gates is a decision this
 # file records and not one buried in .git's plumbing.
 if [ "$1" = "fast" ]; then
@@ -316,7 +306,7 @@ for leg in $LEGS; do
 done
 
 echo "usage: ${0##*/} [$(echo "$LEGS" | tr ' ' '|')]" >&2
-echo "       ${0##*/} fast    (fmt + loc + clippy + test — what pre-push runs)" >&2
+echo "       ${0##*/} fast    (audit + fmt + loc + clippy + test + pages — what pre-push runs)" >&2
 echo "       (no argument runs every leg; none of them write to the tree)" >&2
 echo "       (the dependency refresh and the fixups are tools/ci-mutable.sh)" >&2
 exit 2

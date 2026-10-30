@@ -5,54 +5,36 @@
 Advisories this project is carrying knowingly, why they cannot be patched from
 here, and what would clear each one.
 
-`cargo audit` reports **6 vulnerabilities** against the committed lockfile —
-three `zip` advisories, each reached through two transitive copies of `zip` —
-and **6 warnings**: one unsoundness and five unmaintained crates. All are
-inventoried below alongside related GTK3 ecosystem risks.
-The audit leg in CI reports rather than gates for exactly this reason (see the
-`audit` job in `.github/workflows/ci.yml`): its input is the advisory database,
-which moves on its own schedule, so it is read as news rather than as a verdict
-on whoever happens to have a pull request open.
+`cargo audit` reports **0 vulnerabilities** against the committed lockfile and
+**6 warnings**: one unsoundness and five unmaintained crates. The warnings are
+inventoried below. Vulnerabilities now fail both the pre-push hook and the CI
+audit job; informational warnings remain visible without being suppressed.
 
-None of the entries below is dismissed on GitHub. An open alert is a standing
-reminder to re-check; a dismissed one is a decision nobody revisits.
+None of the remaining entries is dismissed on GitHub.
 
 ---
 
-## zip extraction advisories
+## Resolved: vulnerable ZIP dependencies (2026-10-30)
 
-|              |                                                                                    |
-| ------------ | ---------------------------------------------------------------------------------- |
-| **Advisory** | RUSTSEC-2026-0367 · RUSTSEC-2026-0368 · RUSTSEC-2026-0369                          |
-| **Affected** | `zip` 3.0.0 (via `epub` 2.1.5) and `zip` 6.0.0 (via `ndarray-npy` 0.10.0, `tts` only) |
-| **Fixed in** | `zip` 9 (9.1.3 is current)                                                         |
-| **Status**   | Open — cannot be patched from this repository; not reachable from hygg's code      |
-| **Assessed** | 2026-10-30                                                                         |
+The lockfile now contains only `zip` 9.1.3. This removes the older copies
+behind Dependabot [#14](https://github.com/kruseio/hygg/security/dependabot/14),
+[#15](https://github.com/kruseio/hygg/security/dependabot/15),
+[#16](https://github.com/kruseio/hygg/security/dependabot/16), and
+[#17](https://github.com/kruseio/hygg/security/dependabot/17), as well as
+RUSTSEC-2026-0367, RUSTSEC-2026-0368 and RUSTSEC-2026-0369.
 
-### What it is
+- EPUB conversion reads the container, manifest and spine directly using
+  `zip` 9.1.3 and `roxmltree`, replacing `epub` 2.1.5 and its `zip` 3 dependency.
+- Voice loading uses `zip` 9.1.3 for NPZ entries and `ndarray-npy` for NPY arrays
+  only. Disabling its default features removes the `zip` 6 dependency.
+- Both readers enable ZIP local/central header consistency checks and use only
+  stored/deflated entry support. They never extract archives to the filesystem.
+  Regression tests reject conflicting header names.
 
-All three concern extracting an archive to disk: `ZipArchive::extract` and
-`ZipStreamReader::extract` preserve SUID/SGID bits, create symlinks whose
-targets point outside the destination, and apply permissions through those
-symlinks.
-
-### Why it cannot be patched here
-
-Both copies come from parents already at their latest release, and each pins a
-`zip` major version below the fix:
-
-```
-cli-epub-to-text -> epub 2.1.5 -> zip 3.0.0
-cli-text-reader (tts) -> ndarray-npy 0.10.0 -> zip 6.0.0
-```
-
-### What it affects
-
-Nothing at runtime. `epub` reads chapters out of the archive into memory and
-`ndarray-npy` reads the Kokoro voices `.npz` the same way; neither calls the
-`extract` APIs, and no hygg crate uses `zip` directly outside tests (the
-EPUB test fixtures are built with `zip` 9). The advisories clear when `epub`
-and `ndarray-npy` release on `zip` 9.
+The former statement that these dependencies could not be patched from this
+repository was too strong: replacing the wrappers removed them. Its blanket
+runtime-safety claim did not assess the four later GitHub advisories and has
+been removed.
 
 ---
 
@@ -186,7 +168,7 @@ dependency upgrade.
 ## Reproducing this inventory
 
 ```sh
-cargo audit                 # 6 vulnerabilities (zip), 6 warnings
+cargo audit                 # 0 vulnerabilities, 6 warnings
 ./tools/ci.sh audit         # the same, as CI runs it
 ```
 

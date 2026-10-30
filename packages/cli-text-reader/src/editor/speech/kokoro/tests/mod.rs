@@ -10,3 +10,4 @@ mod alignment;
 mod assemble;
 mod espeak;
 mod synthesis;
+mod voices;

@@ -49,8 +49,7 @@ on:
   # Weekly is deliberate — an entry is evicted after 7 days unattended, and if one
   # does lapse this run simply rebuilds and re-saves it, on nobody's critical path.
   # It doubles as a canary that main still builds when no PR has touched it, and
-  # now also the one place cargo audit's advisory scan is read as news rather
-  # than noise (see the audit job).
+  # also catches newly published dependency advisories (see the audit job).
   # Disabled: the weekly run described above is turned off. Uncomment the two
   # lines below to restore it.
   # schedule:
@@ -103,22 +102,11 @@ jobs:
       - uses: actions/checkout@v4
       - run: ./tools/ci.sh loc
 
-  # Reports; does not gate. It is the one leg here that cannot, because its input
-  # is not the pull request — it is the advisory database, which moves on its own
-  # schedule. An advisory published overnight against a transitive dependency
-  # would turn every open pull request red while having found nothing wrong with
-  # any of them, and the contributor holding the red X would be the one person
-  # unable to fix it. It is also not quite the check ci-mutable.sh runs locally:
-  # there, audit follows cargo update/upgrade and so judges a freshly resolved
-  # tree, while here it judges the committed lockfile, advisories and all.
-  #
-  # So it runs on pull requests for its annotation, and the weekly scheduled run
-  # above is where it is read as news. When it is loud, fix it on a branch of its
-  # own rather than inside whatever pull request happened to be open.
+  # Fail on known vulnerabilities. Informational warnings (including the
+  # tracked GTK3 unsoundness) remain visible; see docs/pages/known-issues.md.
   audit:
-    name: audit (advisory report)
+    name: audit
     runs-on: ubuntu-22.04
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@v2

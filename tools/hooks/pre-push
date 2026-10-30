@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 
-# Runs `tools/ci.sh fast` — fmt, loc, clippy, test — before anything leaves this
-# machine. Four legs of nine, chosen there rather than here; a green hook is not
-# a green CI and is not trying to be. It is the part of CI that fails for reasons
-# you can already see from this machine, at a price worth paying on every push.
+# Runs `tools/ci.sh fast` — audit, fmt, loc, clippy, test and Pages checks —
+# before anything leaves this machine. See that script for the full CI suite.
+# Install cargo-audit once as described in CONTRIBUTING.md.
 #
 # Installed by pointing git at this directory rather than by copying the file
 # into .git/hooks, which is untracked and therefore drifts silently:
@@ -48,5 +47,5 @@ root="$(git rev-parse --show-toplevel)"
 # once it returns. A failed sweep is not a reason to refuse the push.
 "$root/tools/sweep-incremental.sh" || echo "pre-push: incremental sweep failed, continuing" >&2
 
-echo "pre-push: fmt + loc + clippy + test (tools/ci.sh fast) — --no-verify skips it" >&2
+echo "pre-push: audit + fmt + loc + clippy + test + pages (tools/ci.sh fast) — --no-verify skips it" >&2
 exec "$root/tools/ci.sh" fast
