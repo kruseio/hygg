@@ -1,0 +1,3 @@
+Zero​width​spaces sit between these words, with a soft­hyphen, a word⁠joiner, and a zero-width no-break space in the middle: x﻿y.
+
+Bidi controls: ‮right-to-left override‬, ⁧an isolate⁩, ‏RLM and ‎LRM marks. English with Hebrew שלום and Arabic مرحبا inline, and a ‌ZWNJ.

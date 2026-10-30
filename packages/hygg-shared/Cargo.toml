@@ -18,11 +18,22 @@ categories.workspace = true
 workspace = true
 
 [dependencies]
-sha2 = "0.10"
+sha2 = "0.11"
 # The crate also hosts `sync::proto`, the JSON wire contract between the hygg
 # client and server, so it needs serde here (not just in its consumers).
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Text decoding (`text_decode`): encoding_rs implements the WHATWG encodings
+# (UTF-16, Windows-125x, ISO-8859-x, KOI8, Shift_JIS, EUC-JP, ISO-2022-JP,
+# GBK/GB18030, Big5, EUC-KR, ...) and chardetng is Mozilla's detector built to
+# pair with it. Both are pure Rust (wasm-safe) and MIT OR Apache-2.0.
+encoding_rs = "0.8"
+chardetng = "1.0"
 
 [dev-dependencies]
 tempfile = "3"
+# The text_decode matrix test checks decoded text survives the justifier, and
+# builds the decomposed form Windows-1258 Vietnamese is written in. Neither
+# adds a crate to the lockfile (unicode-normalization is already transitive).
+cli-justify = { version = "0.1", path = "../cli-justify" }
+unicode-normalization = "0.1"

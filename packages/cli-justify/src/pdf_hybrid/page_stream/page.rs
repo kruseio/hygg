@@ -1,4 +1,5 @@
 use crate::pdf_hybrid::engine::justify_pdf_hybrid;
+use crate::str_slice::slice;
 
 // Same lookback window the per-page engine uses when reasoning about
 // sibling list / caption continuity, applied here to peek across the
@@ -118,7 +119,8 @@ fn split_paragraphs(text: &str) -> Vec<&str> {
     let trimmed = line.trim();
     if trimmed.is_empty() {
       if let Some(s) = start.take() {
-        paragraphs.push(text[s..byte_pos].trim_end_matches('\n').trim_end());
+        paragraphs
+          .push(slice(text, s, byte_pos).trim_end_matches('\n').trim_end());
       }
       blank_run += 1;
       let _ = blank_run;
@@ -131,7 +133,7 @@ fn split_paragraphs(text: &str) -> Vec<&str> {
     byte_pos += line.len();
   }
   if let Some(s) = start {
-    paragraphs.push(text[s..byte_pos].trim_end_matches('\n').trim_end());
+    paragraphs.push(slice(text, s, byte_pos).trim_end_matches('\n').trim_end());
   }
   paragraphs
 }

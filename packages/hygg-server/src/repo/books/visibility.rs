@@ -2,7 +2,7 @@
 //! library listing and the storage rollups so both agree on one definition of
 //! visibility rather than drifting apart.
 
-use sea_orm::sea_query::{Expr, Query, SimpleExpr};
+use sea_orm::sea_query::{Expr, ExprTrait, Query, SimpleExpr};
 use sea_orm::{ColumnTrait, Condition};
 
 use crate::entity::{books, document_shares, organization_members};

@@ -1,3 +1,8 @@
+// Slicing a str at a byte that is not a char boundary panics (hygg issue #99).
+// With CI's `-D warnings` a raw `&s[a..b]` is a build error: use `str::get`
+// or a boundary-clamping helper. Tests may slice.
+#![cfg_attr(not(test), warn(clippy::string_slice))]
+
 mod args;
 mod binary_lookup;
 mod demo_mode;
@@ -11,15 +16,28 @@ use input_pipeline::{
   cleanup_temp_file, prepare_input, read_stdin_content, resolve_pdf_path,
 };
 use std::io::IsTerminal;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+  // First thing, before anything can take over the terminal: once the reader
+  // owns the screen a panic is otherwise invisible (#99). The guard has to
+  // stay bound for all of `main` — its drop during an escaping panic is what
+  // restores the terminal and writes the crash report. Exit codes are
+  // unchanged: the panic still unwinds out of `main` (101).
+  let _crash_guard = cli_text_reader::install_panic_hook();
   let mut args = Args::parse();
   if args.config {
     println!("{}", cli_text_reader::config_env_path()?.display());
     return Ok(());
   }
 
+  // HYGG_DEBUG only. Opened here rather than when the reader starts so the
+  // log's header records the terminal and environment as launched, and the
+  // input line below lands in it. A log that can't be opened must not stop
+  // hygg from reading the book.
+  let _ = cli_text_reader::init_debug_logging();
   let mut stdin_content = read_stdin_content();
+  debug_log_input(&args, stdin_content.is_some());
   let ocr_from_cli = args.ocr.is_some();
   // OCR enablement, highest priority first: the `--ocr` flag (which also
   // persists the choice), then the `HYGG_OCR` runtime override, then the saved
@@ -72,7 +90,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
           && args.file.is_none()
           && cli_text_reader::should_show_home()))
     {
-      match cli_text_reader::run_home(args.col)? {
+      let picked = {
+        let _stderr = capture_stderr_for_tui();
+        cli_text_reader::run_home(args.col)?
+      };
+      match picked {
         Some(path) => args.file = Some(path),
         None => return Ok(()),
       }
@@ -94,15 +116,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
           std::process::exit(1);
         }
       };
-      if let Err(e) = redirect_stderr::redirect_stderr() {
-        eprintln!("Warning: Failed to redirect stderr: {e}");
-      }
-      let outcome = if ocr_enabled {
-        cli_text_reader::run_cli_text_reader_pdf_path_with_bundled_ocr(
-          pdf_path, args.col,
-        )?
-      } else {
-        cli_text_reader::run_cli_text_reader_pdf_path(pdf_path, args.col)?
+      let outcome = {
+        let _stderr = capture_stderr_for_tui();
+        if ocr_enabled {
+          cli_text_reader::run_cli_text_reader_pdf_path_with_bundled_ocr(
+            pdf_path, args.col,
+          )?
+        } else {
+          cli_text_reader::run_cli_text_reader_pdf_path(pdf_path, args.col)?
+        }
       };
       if outcome == cli_text_reader::RunOutcome::Home {
         args.file = None;
@@ -150,19 +172,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       return Ok(());
     }
 
-    if let Err(e) = redirect_stderr::redirect_stderr() {
-      eprintln!("Warning: Failed to redirect stderr: {e}");
-    }
-
-    let outcome = if let Some(content) = prepared.raw_content {
-      cli_text_reader::run_cli_text_reader_with_source(
-        prepared.lines,
-        args.col,
-        Some(content),
-        prepared.source_path.clone(),
-      )?
-    } else {
-      cli_text_reader::run_cli_text_reader(prepared.lines, args.col)?
+    let outcome = {
+      let _stderr = capture_stderr_for_tui();
+      if let Some(content) = prepared.raw_content {
+        cli_text_reader::run_cli_text_reader_with_source(
+          prepared.lines,
+          args.col,
+          Some(content),
+          prepared.source_path.clone(),
+        )?
+      } else {
+        cli_text_reader::run_cli_text_reader(prepared.lines, args.col)?
+      }
     };
 
     cleanup_temp_file(prepared.temp_file.as_deref())?;
@@ -174,4 +195,63 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     return Ok(());
   }
+}
+
+/// Sends stderr to `<log dir>/stderr.log` for as long as the returned guard
+/// lives; bind it around a call that puts the TUI on screen.
+///
+/// hygg's own code no longer writes to stderr while the TUI is up, and in the
+/// default build none of the PDF/EPUB/OCR libraries do either (they only use
+/// `log`/`tracing`, and no logger is installed). The `tts` build is the
+/// exception: rodio prints "Dropping DeviceSink..." and audio-stream errors,
+/// cpal can complain about real-time thread priority, and the vendored
+/// espeak-ng `fprintf`s data errors — all from audio threads, mid-session,
+/// straight over the reader's screen. So stderr is still diverted while the
+/// TUI is up, but into a file rather than /dev/null (nothing is lost), and only
+/// for that window: errors before the TUI starts and after it exits reach the
+/// terminal. (Panics are reported by the crash guard either way.)
+fn capture_stderr_for_tui() -> Option<redirect_stderr::StderrRedirect> {
+  // One stderr.log per run: truncate on the first capture, then append, so
+  // `:home` -> reader -> home doesn't wipe what an earlier screen captured.
+  static FIRST_CAPTURE: AtomicBool = AtomicBool::new(true);
+  let path = cli_text_reader::stderr_log_path();
+  let truncate = FIRST_CAPTURE.swap(false, Ordering::Relaxed);
+  let file = path
+    .parent()
+    .map_or(Ok(()), std::fs::create_dir_all)
+    .and_then(|()| {
+      std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(truncate)
+        .append(!truncate)
+        .open(&path)
+    })
+    // No writable log dir: fall back to discarding, as hygg always used to —
+    // a clean screen matters more than keeping library chatter.
+    .or_else(|_| {
+      std::fs::File::create(if cfg!(windows) { "NUL" } else { "/dev/null" })
+    })
+    .ok()?;
+  redirect_stderr::redirect_stderr_to_file(&file).ok()
+}
+
+/// Debug mode only: what hygg was asked to open, so a bug report says which
+/// input path it took. Plain-text sources (stdin, `.txt`) get their detected
+/// encoding logged by the input pipeline, which is where they're decoded.
+fn debug_log_input(args: &Args, has_stdin: bool) {
+  if !cli_text_reader::debug_enabled() || has_stdin {
+    return;
+  }
+  let input = match args.file.as_deref() {
+    Some(file) => {
+      let kind = std::path::Path::new(file)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map_or("no extension".to_string(), str::to_lowercase);
+      format!("input: {file} (type {kind})")
+    }
+    None => "input: none (home view)".to_string(),
+  };
+  cli_text_reader::debug_log("startup", &input);
 }

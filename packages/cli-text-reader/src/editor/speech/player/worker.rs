@@ -66,8 +66,11 @@ fn run(
   let mut engine = KokoroEngine::load(&model, &voices)?;
 
   // The output stream must outlive the player; keep it on this thread.
-  let stream =
+  let mut stream =
     rodio::DeviceSinkBuilder::open_default_sink().map_err(|e| e.to_string())?;
+  // Dropping the sink is how narration ends, so rodio's "Dropping DeviceSink"
+  // notice is expected here, and printed to stderr it would tear the TUI.
+  stream.log_on_drop(false);
   let sink = Player::connect_new(stream.mixer());
 
   let chunks = build_utterance_chunks(words, speed);

@@ -1,0 +1,5 @@
+# The text-encoding corpus and fixtures must stay byte-for-byte as written:
+# they include CRLF files, BOMs and legacy code pages, which autocrlf or eol
+# normalisation on checkout would silently rewrite. See
+# tools/gen-encoding-fixtures.py.
+test-data/encodings/** -text

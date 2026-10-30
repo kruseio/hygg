@@ -1,3 +1,4 @@
+use crate::editor::char_boundary::ByteCol;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
@@ -30,8 +31,8 @@ pub(crate) struct WordSpan {
   pub abs_start: usize,
   pub abs_end: usize,
   pub line: usize,
-  pub col_start: usize,
-  pub col_end: usize,
+  pub col_start: ByteCol,
+  pub col_end: ByteCol,
 }
 
 // Messages from the narration worker to the main loop.

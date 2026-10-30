@@ -1,3 +1,8 @@
+// Slicing a str at a byte that is not a char boundary panics (hygg issue #99).
+// Every slice goes through `str_slice`; with CI's `-D warnings` a raw
+// `&s[a..b]` is a build error. Tests may slice.
+#![cfg_attr(not(test), warn(clippy::string_slice))]
+
 use std::{
   env,
   io::{self, BufRead},

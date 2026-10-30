@@ -1,13 +1,59 @@
+use super::char_boundary::{CursorCol, DisplayCol, Pos};
 use super::core::{Editor, ViewMode};
+use crate::core_types::DesiredColumn;
 
 impl Editor {
-  // Helper method to move to a specific position
-  pub fn move_to_position(&mut self, target_line: usize, target_col: usize) {
-    if target_line != self.offset + self.cursor_y {
-      // Line changed - use existing navigation logic
-      self.goto_line_with_overscroll(target_line);
+  // The display column j/k should aim for: the remembered one if the cursor
+  // is still where the last j/k (or `$`) left it, otherwise the cursor's own
+  // on-screen column.
+  fn desired_display_column(&self) -> DisplayCol {
+    let line_idx = self.offset + self.cursor_y;
+    if let Some(desired) = self.editor_state.desired_column
+      && desired.line == line_idx
+      && desired.cursor_x == self.cursor_x
+    {
+      return desired.column;
     }
-    self.cursor_x = target_col;
+    self
+      .lines
+      .get(line_idx)
+      .map_or(DisplayCol::default(), |line| self.cursor_x.display_col(line))
+  }
+
+  // Put the cursor on the grapheme covering display column `column` of the
+  // current line (clamped to the last grapheme) and remember the column for
+  // the next vertical motion.
+  fn land_on_display_column(&mut self, column: DisplayCol) {
+    let line_idx = self.offset + self.cursor_y;
+    if let Some(line) = self.lines.get(line_idx) {
+      self.cursor_x = CursorCol::from_display_col(line, column);
+    }
+    self.remember_display_column(column);
+  }
+
+  // Remember `column` as where j/k should aim, anchored to the current cursor
+  // position so any other motion invalidates it.
+  pub(crate) fn remember_display_column(&mut self, column: DisplayCol) {
+    self.editor_state.desired_column = Some(DesiredColumn {
+      column,
+      line: self.offset + self.cursor_y,
+      cursor_x: self.cursor_x,
+    });
+  }
+
+  // Helper method to move to a specific position
+  pub fn move_to_position(&mut self, target: Pos) {
+    if target.line != self.offset + self.cursor_y {
+      // Line changed - use existing navigation logic
+      self.goto_line_with_overscroll(target.line);
+    }
+    // Settle onto the start of a grapheme of the line the cursor landed on,
+    // so it never sits inside a visible character.
+    self.cursor_x = self
+      .lines
+      .get(self.offset + self.cursor_y)
+      .map_or(CursorCol::ZERO, |line| CursorCol::floor(line, target.col));
+    self.editor_state.desired_column = None;
     self.cursor_moved = true;
 
     // No longer need to save state after every movement since we use live state
@@ -20,6 +66,7 @@ impl Editor {
   pub fn move_cursor_down(&mut self) {
     // Get the current absolute line position
     let current_line = self.offset + self.cursor_y;
+    let desired_column = self.desired_display_column();
 
     self.debug_log(&format!(
       "move_cursor_down: current_line={}, total_lines={}, offset={}, cursor_y={}, active_buffer={}",
@@ -62,11 +109,9 @@ impl Editor {
       self.cursor_y = max_cursor_y;
     }
 
-    // Keep cursor position on the current line
-    let current_line_idx = self.offset + self.cursor_y;
-    if let Some(line) = self.lines.get(current_line_idx) {
-      self.cursor_x = self.cursor_x.min(line.len().saturating_sub(1));
-    }
+    // Keep the on-screen column: land on the grapheme under it, or the last
+    // one on a shorter line, and remember it so the next j/k restores it.
+    self.land_on_display_column(desired_column);
 
     // No longer need to save state after every movement since we use live state
     // for active buffer
@@ -78,6 +123,7 @@ impl Editor {
   pub fn move_cursor_up(&mut self) {
     // Get the current absolute line position
     let current_line = self.offset + self.cursor_y;
+    let desired_column = self.desired_display_column();
 
     // Strict boundary check - cannot move beyond first line
     if current_line == 0 {
@@ -113,11 +159,9 @@ impl Editor {
       self.cursor_y = max_cursor_y;
     }
 
-    // Keep cursor position on the current line
-    let current_line_idx = self.offset + self.cursor_y;
-    if let Some(line) = self.lines.get(current_line_idx) {
-      self.cursor_x = self.cursor_x.min(line.len().saturating_sub(1));
-    }
+    // Keep the on-screen column: land on the grapheme under it, or the last
+    // one on a shorter line, and remember it so the next j/k restores it.
+    self.land_on_display_column(desired_column);
 
     // No longer need to save state after every movement since we use live state
     // for active buffer
@@ -125,10 +169,16 @@ impl Editor {
     self.mark_dirty();
   }
 
-  // Move cursor left one character
+  // Move cursor left one visible character: `cursor_x` is a byte offset, so
+  // step back over the whole previous grapheme cluster, not one byte or one
+  // char of it (issue #99).
   pub fn move_cursor_left(&mut self) {
-    if self.cursor_x > 0 {
-      self.cursor_x -= 1;
+    let current_line_idx = self.offset + self.cursor_y;
+    if self.cursor_x > CursorCol::ZERO
+      && let Some(line) = self.lines.get(current_line_idx)
+    {
+      self.cursor_x = self.cursor_x.prev(line);
+      self.editor_state.desired_column = None;
       self.cursor_moved = true;
 
       // Save state back to buffer if in split view
@@ -140,13 +190,15 @@ impl Editor {
     }
   }
 
-  // Move cursor right one character
+  // Move cursor right one visible character. Steps over the whole current
+  // grapheme cluster and stops on the start of the last one (issue #99).
   pub fn move_cursor_right(&mut self) {
     let current_line_idx = self.offset + self.cursor_y;
     if current_line_idx < self.lines.len() {
-      let line_length = self.lines[current_line_idx].len();
-      if self.cursor_x < line_length.saturating_sub(1) {
-        self.cursor_x += 1;
+      let line = &self.lines[current_line_idx];
+      if self.cursor_x < CursorCol::last(line) {
+        self.cursor_x = self.cursor_x.next(line);
+        self.editor_state.desired_column = None;
         self.cursor_moved = true;
 
         // Save state back to buffer if in split view
@@ -161,7 +213,8 @@ impl Editor {
 
   // Move cursor to word boundary
   pub fn move_to_word_boundary(&mut self, forward: bool, big_word: bool) {
-    let (new_line, new_col) = self.find_word_boundary(forward, big_word);
+    let target = self.find_word_boundary(forward, big_word);
+    let new_line = target.line;
 
     if new_line != self.offset + self.cursor_y {
       // Line changed - need to update cursor position properly
@@ -203,7 +256,12 @@ impl Editor {
       }
     }
 
-    self.cursor_x = new_col;
+    // Settle onto a grapheme start of the target line (issue #99).
+    self.cursor_x = self
+      .lines
+      .get(new_line)
+      .map_or(CursorCol::ZERO, |line| CursorCol::floor(line, target.col));
+    self.editor_state.desired_column = None;
 
     // Use appropriate centering based on view mode
     match &self.view_mode {
@@ -218,3 +276,6 @@ impl Editor {
     self.mark_dirty();
   }
 }
+
+#[cfg(test)]
+mod tests;

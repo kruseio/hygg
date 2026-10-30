@@ -121,6 +121,10 @@ impl Editor {
       self.lines = new_lines;
       self.line_kinds = new_line_kinds;
       self.total_lines = self.lines.len();
+      // The streamed pages replace the line under the cursor, so a column
+      // that was a char start in the old text can fall inside a character
+      // of the new one. Settle it before the next draw.
+      self.normalize_cursor_column();
     }
     self.needs_redraw = true;
   }

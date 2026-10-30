@@ -83,8 +83,8 @@ LOCKED=""
 #   - udeps: cargo-udeps passes -Z flags, which stable rustc rejects outright.
 # Pinning them buys the same thing pinning STABLE does: rustfmt and clippy both
 # rewrite their own rules over time, and neither should do it under a release.
-STABLE="+1.94.0"
-NIGHTLY="+nightly-2026-03-05"
+STABLE="+1.99.1"
+NIGHTLY="+nightly-2026-10-29"
 
 # The toolchain every other leg runs on — which is every leg that has a choice.
 # Stable, because a gate should hold a tree to the compiler that ships rather

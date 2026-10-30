@@ -2,15 +2,17 @@ use crossterm::{QueueableCommand, cursor::MoveTo, execute};
 use std::io::{self, Write};
 
 use super::super::core::Editor;
+use crate::editor::char_boundary::{CursorCol, display_width};
 
 pub(crate) const PROGRESS_SLOT_WIDTH: usize = 4;
 pub(crate) const PDF_LOADING_SLOT_WIDTH: usize = 14; // "P[x] O[x] T[x]"
 pub(crate) const PDF_LOADING_FRAMES: [&str; 4] = ["◰", "◳", "◲", "◱"];
 
 impl Editor {
-  // Draw position information in the status line
-  #[allow(dead_code)]
-  fn draw_position_info(&self, stdout: &mut io::Stdout) -> io::Result<()> {
+  // "line: column (line/total)", with an overlay marker. The column is the
+  // cursor's on-screen column (display width before it, plus one), the same
+  // one the terminal cursor is placed at.
+  pub(crate) fn position_info(&self) -> String {
     let current_line = self.offset + self.cursor_y;
 
     // Add overlay indicator if we're in overlay mode
@@ -29,17 +31,23 @@ impl Editor {
         String::new()
       };
 
-    let position_info = format!(
+    format!(
       "{}{}: {} ({}/{})",
       overlay_info,
       current_line + 1,
-      self.cursor_x + 1,
+      self.cursor_screen_column() + 1,
       current_line + 1,
       self.total_lines
-    );
+    )
+  }
+
+  // Draw position information in the status line
+  #[allow(dead_code)]
+  fn draw_position_info(&self, stdout: &mut io::Stdout) -> io::Result<()> {
+    let position_info = self.position_info();
 
     let x = (self.width as u16)
-      .saturating_sub(position_info.len() as u16)
+      .saturating_sub(display_width(&position_info) as u16)
       .saturating_sub(1);
     let y = (self.height as u16).saturating_sub(1);
     execute!(stdout, MoveTo(x, y))?;
@@ -210,4 +218,25 @@ pub(crate) fn pdf_loading_slots_message_for_state(
     "    ".to_string()
   };
   format!("{parser} {ocr} {tts}")
+}
+
+#[cfg(test)]
+mod position_tests {
+  use super::super::super::char_boundary::CursorCol;
+  use super::super::super::core::Editor;
+
+  #[test]
+  fn position_info_reports_the_display_column() {
+    // a 1 cell, e+accent 1, 中 2, 👩‍💻 2, 🇪🇸 2, z.
+    let line = "ae\u{301}中👩\u{200d}💻🇪🇸z";
+    let mut editor = Editor::new(vec![line.to_string()], 80);
+    editor.offset = 0;
+    editor.cursor_y = 0;
+    for (needle, column) in
+      [("a", 1), ("e", 2), ("中", 3), ("👩", 5), ("🇪", 7), ("z", 9)]
+    {
+      editor.cursor_x = CursorCol::lit(line.find(needle).unwrap());
+      assert_eq!(editor.position_info(), format!("1: {column} (1/1)"));
+    }
+  }
 }

@@ -2,6 +2,7 @@ mod chars;
 mod diagram;
 mod headers;
 mod labels;
+pub(crate) mod str_slice;
 
 #[cfg(test)]
 mod tests;

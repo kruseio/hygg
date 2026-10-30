@@ -185,7 +185,7 @@ fn user_of_same_tenant() -> RelationDef {
 /// time.
 fn last_activity() -> SimpleExpr {
   SimpleExpr::from(Func::coalesce([
-    Expr::col((sessions::Entity, sessions::Column::LastUsedAt)).into(),
-    Expr::col((sessions::Entity, sessions::Column::CreatedAt)).into(),
+    Expr::col((sessions::Entity, sessions::Column::LastUsedAt)),
+    Expr::col((sessions::Entity, sessions::Column::CreatedAt)),
   ]))
 }

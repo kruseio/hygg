@@ -1,5 +1,6 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 
+use super::char_boundary::{ByteCol, Pos};
 use super::core::{Editor, EditorMode, ViewMode};
 
 impl Editor {
@@ -102,15 +103,18 @@ impl Editor {
         self.set_active_mode(EditorMode::VisualLine);
 
         // Start selection at beginning
-        self.editor_state.selection_start = Some((0, 0));
+        self.editor_state.selection_start = Some(Pos::default());
         if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-          buffer.selection_start = Some((0, 0));
+          buffer.selection_start = Some(Pos::default());
         }
 
         // Move to the last line and update selection
         let last_line = self.lines.len().saturating_sub(1);
-        let last_col = self.lines.get(last_line).map_or(0, |line| line.len());
-        self.move_to_position(last_line, last_col);
+        let last_col = self
+          .lines
+          .get(last_line)
+          .map_or(ByteCol::ZERO, |line| ByteCol::end(line));
+        self.move_to_position(Pos::new(last_line, last_col));
         self.update_selection();
 
         Ok(Some(false))

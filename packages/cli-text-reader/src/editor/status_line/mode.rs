@@ -20,7 +20,7 @@ impl Editor {
       if self.show_progress {
         self.draw_progress_indicator(stdout)?;
       } else {
-        let y = self.height as u16 - 2;
+        let y = (self.height as u16).saturating_sub(2);
         self.draw_pdf_loading_slots(
           stdout,
           self.progress_indicator_x() as u16,
@@ -40,7 +40,7 @@ impl Editor {
 
     match effective_mode {
       EditorMode::Command => {
-        execute!(stdout, MoveTo(0, (self.height - 1) as u16))?;
+        execute!(stdout, MoveTo(0, self.height.saturating_sub(1) as u16))?;
         let command = self.get_active_command_buffer();
         write!(stdout, ":{command}")?;
         self.draw_command_completion(stdout, 1 + command.len())?;
@@ -52,7 +52,7 @@ impl Editor {
         )?;
       }
       EditorMode::CommandExecution => {
-        execute!(stdout, MoveTo(0, (self.height - 1) as u16))?;
+        execute!(stdout, MoveTo(0, self.height.saturating_sub(1) as u16))?;
         write!(stdout, ":{}", self.get_active_command_buffer())?;
         execute!(
           stdout,
@@ -62,7 +62,7 @@ impl Editor {
         )?;
       }
       EditorMode::Search => {
-        execute!(stdout, MoveTo(0, (self.height - 1) as u16))?;
+        execute!(stdout, MoveTo(0, self.height.saturating_sub(1) as u16))?;
         write!(stdout, "/{}", self.get_active_command_buffer())?;
         execute!(
           stdout,
@@ -72,7 +72,7 @@ impl Editor {
         )?;
       }
       EditorMode::ReverseSearch => {
-        execute!(stdout, MoveTo(0, (self.height - 1) as u16))?;
+        execute!(stdout, MoveTo(0, self.height.saturating_sub(1) as u16))?;
         write!(stdout, "?{}", self.get_active_command_buffer())?;
         execute!(
           stdout,
@@ -82,7 +82,7 @@ impl Editor {
         )?;
       }
       EditorMode::VisualChar => {
-        execute!(stdout, MoveTo(0, (self.height - 1) as u16))?;
+        execute!(stdout, MoveTo(0, self.height.saturating_sub(1) as u16))?;
         write!(stdout, "-- VISUAL --")?;
         execute!(
           stdout,
@@ -92,7 +92,7 @@ impl Editor {
         )?;
       }
       EditorMode::VisualLine => {
-        execute!(stdout, MoveTo(0, (self.height - 1) as u16))?;
+        execute!(stdout, MoveTo(0, self.height.saturating_sub(1) as u16))?;
         write!(stdout, "-- VISUAL LINE --")?;
         execute!(
           stdout,
@@ -102,7 +102,7 @@ impl Editor {
         )?;
       }
       EditorMode::Tutorial => {
-        execute!(stdout, MoveTo(0, (self.height - 1) as u16))?;
+        execute!(stdout, MoveTo(0, self.height.saturating_sub(1) as u16))?;
         write!(stdout, "-- TUTORIAL --")?;
         execute!(
           stdout,
@@ -114,7 +114,7 @@ impl Editor {
       _ => {
         // Normal mode: prompt to jump to a newer server position, surface a
         // narration failure, else clear the line.
-        execute!(stdout, MoveTo(0, (self.height - 1) as u16))?;
+        execute!(stdout, MoveTo(0, self.height.saturating_sub(1) as u16))?;
         if self.server_progress_prompt {
           write!(
             stdout,
@@ -172,7 +172,7 @@ impl Editor {
       if self.show_progress {
         self.draw_progress_indicator_buffered(buffer)?;
       } else {
-        let y = self.height as u16 - 2;
+        let y = (self.height as u16).saturating_sub(2);
         self.draw_pdf_loading_slots_buffered(
           buffer,
           self.progress_indicator_x() as u16,
@@ -191,7 +191,7 @@ impl Editor {
   ) -> io::Result<()> {
     let effective_mode = self.get_active_mode();
 
-    buffer.queue(MoveTo(0, (self.height - 1) as u16))?;
+    buffer.queue(MoveTo(0, self.height.saturating_sub(1) as u16))?;
 
     match effective_mode {
       EditorMode::Command => {

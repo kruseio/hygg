@@ -1,3 +1,4 @@
+use super::char_boundary::CursorCol;
 use super::core::{BufferState, Editor, EditorMode, SplitPosition, ViewMode};
 
 impl Editor {
@@ -70,7 +71,7 @@ impl Editor {
       self.buffers[cmd_buffer_idx].lines = lines;
       self.buffers[cmd_buffer_idx].command = Some(cmd.to_string());
       self.buffers[cmd_buffer_idx].offset = 0;
-      self.buffers[cmd_buffer_idx].cursor_x = 0;
+      self.buffers[cmd_buffer_idx].cursor_x = CursorCol::ZERO;
       self.buffers[cmd_buffer_idx].cursor_y = 0;
       self.buffers[cmd_buffer_idx].viewport_height = bottom_height;
       self.buffers[cmd_buffer_idx].split_height = Some(bottom_height);

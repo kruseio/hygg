@@ -1,3 +1,9 @@
+// Issue #99: slicing a str at a byte that is not a char boundary panics, and
+// took the reader down on accented text. Every slice goes through
+// `editor::char_boundary` (`slice`, `slice_from`, `slice_to`) instead; with
+// CI's `-D warnings` a raw `&s[a..b]` is a build error. Tests may slice.
+#![cfg_attr(not(test), warn(clippy::string_slice))]
+
 use std::env;
 use std::io::{self, BufRead};
 
@@ -7,6 +13,9 @@ pub fn print_help_menu(args: Vec<String>, opts: getopts::Options) {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+  // Keep bound for all of `main`: restores the terminal and writes a crash
+  // report if a panic escapes the reader (see `cli_text_reader::crash`).
+  let _crash_guard = cli_text_reader::install_panic_hook();
   let args: Vec<String> = env::args().collect();
   let mut opts = getopts::Options::new();
 

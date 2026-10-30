@@ -1,4 +1,6 @@
+use super::super::char_boundary::{ByteCol, CursorCol, LineSpan};
 use super::super::core::Editor;
+use super::matching::{find_ci, find_ci_from, rfind_ci_before};
 
 impl Editor {
   // Find match for preview and move cursor to preview position
@@ -8,7 +10,6 @@ impl Editor {
       return;
     }
 
-    let query_lower = query.to_lowercase();
     // Use original saved position for search, not current cursor position
     let (search_line, search_x) = if let (Some((y, x)), Some(offset)) = (
       self.editor_state.search_original_cursor,
@@ -19,28 +20,21 @@ impl Editor {
       (self.offset + self.cursor_y, self.cursor_x)
     };
 
-    let find_in_line = |line: &str, query: &str| -> Option<(usize, usize)> {
-      line.to_lowercase().find(query).map(|start| (start, start + query.len()))
-    };
-
     if forward {
       // First check current line from cursor position onward
       if search_line < self.lines.len() && !self.is_ansi_art_line(search_line) {
         let line = &self.lines[search_line];
-        if search_x < line.len() {
-          let remaining = &line[search_x..];
-          if let Some(pos) = remaining.to_lowercase().find(&query_lower) {
-            let start = search_x + pos;
-            let end = start + query.len();
-            self.editor_state.search_preview_match =
-              Some((search_line, start, end));
-            // Also store in active buffer for split view
-            if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-              buffer.current_match = Some((search_line, start, end));
-            }
-            self.center_on_preview_match();
-            return;
+        if search_x.col() < ByteCol::end(line)
+          && let Some((start, end)) = find_ci_from(line, query, search_x.col())
+        {
+          self.editor_state.search_preview_match =
+            Some(LineSpan::new(search_line, start, end));
+          // Also store in active buffer for split view
+          if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
+            buffer.current_match = Some(LineSpan::new(search_line, start, end));
           }
+          self.center_on_preview_match();
+          return;
         }
       }
 
@@ -49,11 +43,12 @@ impl Editor {
         if self.is_ansi_art_line(i) {
           continue;
         }
-        if let Some((start, end)) = find_in_line(&self.lines[i], &query_lower) {
-          self.editor_state.search_preview_match = Some((i, start, end));
+        if let Some((start, end)) = find_ci(&self.lines[i], query) {
+          self.editor_state.search_preview_match =
+            Some(LineSpan::new(i, start, end));
           // Also store in active buffer for split view
           if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-            buffer.current_match = Some((i, start, end));
+            buffer.current_match = Some(LineSpan::new(i, start, end));
           }
           self.center_on_preview_match();
           return;
@@ -64,11 +59,12 @@ impl Editor {
         if self.is_ansi_art_line(i) {
           continue;
         }
-        if let Some((start, end)) = find_in_line(&self.lines[i], &query_lower) {
-          self.editor_state.search_preview_match = Some((i, start, end));
+        if let Some((start, end)) = find_ci(&self.lines[i], query) {
+          self.editor_state.search_preview_match =
+            Some(LineSpan::new(i, start, end));
           // Also store in active buffer for split view
           if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-            buffer.current_match = Some((i, start, end));
+            buffer.current_match = Some(LineSpan::new(i, start, end));
           }
           self.center_on_preview_match();
           return;
@@ -77,18 +73,17 @@ impl Editor {
     } else {
       // Backward search logic
       if search_line < self.lines.len()
-        && search_x > 0
+        && search_x > CursorCol::ZERO
         && !self.is_ansi_art_line(search_line)
       {
         let line = &self.lines[search_line];
-        let before_cursor = &line[..search_x];
-        if let Some(pos) = before_cursor.to_lowercase().rfind(&query_lower) {
-          let end = pos + query.len();
+        if let Some((start, end)) = rfind_ci_before(line, query, search_x.col())
+        {
           self.editor_state.search_preview_match =
-            Some((search_line, pos, end));
+            Some(LineSpan::new(search_line, start, end));
           // Also store in active buffer for split view
           if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-            buffer.current_match = Some((search_line, pos, end));
+            buffer.current_match = Some(LineSpan::new(search_line, start, end));
           }
           self.center_on_preview_match();
           return;
@@ -100,11 +95,12 @@ impl Editor {
         if self.is_ansi_art_line(i) {
           continue;
         }
-        if let Some((start, end)) = find_in_line(&self.lines[i], &query_lower) {
-          self.editor_state.search_preview_match = Some((i, start, end));
+        if let Some((start, end)) = find_ci(&self.lines[i], query) {
+          self.editor_state.search_preview_match =
+            Some(LineSpan::new(i, start, end));
           // Also store in active buffer for split view
           if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-            buffer.current_match = Some((i, start, end));
+            buffer.current_match = Some(LineSpan::new(i, start, end));
           }
           self.center_on_preview_match();
           return;
@@ -115,11 +111,12 @@ impl Editor {
         if self.is_ansi_art_line(i) {
           continue;
         }
-        if let Some((start, end)) = find_in_line(&self.lines[i], &query_lower) {
-          self.editor_state.search_preview_match = Some((i, start, end));
+        if let Some((start, end)) = find_ci(&self.lines[i], query) {
+          self.editor_state.search_preview_match =
+            Some(LineSpan::new(i, start, end));
           // Also store in active buffer for split view
           if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-            buffer.current_match = Some((i, start, end));
+            buffer.current_match = Some(LineSpan::new(i, start, end));
           }
           self.center_on_preview_match();
           return;
@@ -146,7 +143,8 @@ impl Editor {
 
   // Center the view on the preview match and move cursor to preview it
   pub fn center_on_preview_match(&mut self) {
-    if let Some((line_idx, col_idx, _)) = self.editor_state.search_preview_match
+    if let Some(LineSpan { line: line_idx, start: col_idx, .. }) =
+      self.editor_state.search_preview_match
     {
       // Center the view
       let content_height = self.height.saturating_sub(1);
@@ -160,9 +158,13 @@ impl Editor {
         new_offset as usize
       };
 
-      // Move cursor to the match position for preview
+      // Move cursor to the match position for preview (floored in case the
+      // line changed since the match was found)
       self.cursor_y = line_idx.saturating_sub(self.offset);
-      self.cursor_x = col_idx;
+      self.cursor_x = self
+        .lines
+        .get(line_idx)
+        .map_or(CursorCol::ZERO, |line| CursorCol::floor(line, col_idx));
       self.cursor_moved = true;
     }
   }

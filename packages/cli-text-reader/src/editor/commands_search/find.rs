@@ -1,4 +1,6 @@
+use super::super::char_boundary::{ByteCol, CursorCol, LineSpan};
 use super::super::core::Editor;
+use super::matching::{find_ci, find_ci_from, rfind_ci, rfind_ci_before};
 
 impl Editor {
   // Find first match from current cursor position (for new searches)
@@ -8,29 +10,24 @@ impl Editor {
       return;
     }
 
-    let query = self.editor_state.search_query.to_lowercase();
+    let query = self.editor_state.search_query.clone();
     let current_line = self.offset + self.cursor_y;
 
     // Clear any existing match to ensure we search from cursor position
     self.editor_state.current_match = None;
-
-    let find_in_line = |line: &str, query: &str| -> Option<(usize, usize)> {
-      line.to_lowercase().find(query).map(|start| (start, start + query.len()))
-    };
 
     if forward {
       // First check current line from cursor position onward
       if current_line < self.lines.len() && !self.is_ansi_art_line(current_line)
       {
         let line = &self.lines[current_line];
-        if self.cursor_x < line.len() {
-          let remaining = &line[self.cursor_x..];
-          if let Some(pos) = remaining.to_lowercase().find(&query) {
-            let start = self.cursor_x + pos;
-            let end = start + query.len();
-            self.editor_state.current_match = Some((current_line, start, end));
-            return;
-          }
+        if self.cursor_x.col() < ByteCol::end(line)
+          && let Some((start, end)) =
+            find_ci_from(line, &query, self.cursor_x.col())
+        {
+          self.editor_state.current_match =
+            Some(LineSpan::new(current_line, start, end));
+          return;
         }
       }
 
@@ -39,11 +36,11 @@ impl Editor {
         if self.is_ansi_art_line(i) {
           continue;
         }
-        if let Some((start, end)) = find_in_line(&self.lines[i], &query) {
-          self.editor_state.current_match = Some((i, start, end));
+        if let Some((start, end)) = find_ci(&self.lines[i], &query) {
+          self.editor_state.current_match = Some(LineSpan::new(i, start, end));
           // Also update active buffer's current_match
           if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-            buffer.current_match = Some((i, start, end));
+            buffer.current_match = Some(LineSpan::new(i, start, end));
           }
           return;
         }
@@ -53,11 +50,11 @@ impl Editor {
         if self.is_ansi_art_line(i) {
           continue;
         }
-        if let Some((start, end)) = find_in_line(&self.lines[i], &query) {
-          self.editor_state.current_match = Some((i, start, end));
+        if let Some((start, end)) = find_ci(&self.lines[i], &query) {
+          self.editor_state.current_match = Some(LineSpan::new(i, start, end));
           // Also update active buffer's current_match
           if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-            buffer.current_match = Some((i, start, end));
+            buffer.current_match = Some(LineSpan::new(i, start, end));
           }
           return;
         }
@@ -65,14 +62,15 @@ impl Editor {
     } else {
       // First check current line from cursor position backward
       if current_line < self.lines.len()
-        && self.cursor_x > 0
+        && self.cursor_x > CursorCol::ZERO
         && !self.is_ansi_art_line(current_line)
       {
         let line = &self.lines[current_line];
-        let before_cursor = &line[..self.cursor_x];
-        if let Some(pos) = before_cursor.to_lowercase().rfind(&query) {
-          let end = pos + query.len();
-          self.editor_state.current_match = Some((current_line, pos, end));
+        if let Some((start, end)) =
+          rfind_ci_before(line, &query, self.cursor_x.col())
+        {
+          self.editor_state.current_match =
+            Some(LineSpan::new(current_line, start, end));
           return;
         }
       }
@@ -82,11 +80,11 @@ impl Editor {
         if self.is_ansi_art_line(i) {
           continue;
         }
-        if let Some((start, end)) = find_in_line(&self.lines[i], &query) {
-          self.editor_state.current_match = Some((i, start, end));
+        if let Some((start, end)) = find_ci(&self.lines[i], &query) {
+          self.editor_state.current_match = Some(LineSpan::new(i, start, end));
           // Also update active buffer's current_match
           if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-            buffer.current_match = Some((i, start, end));
+            buffer.current_match = Some(LineSpan::new(i, start, end));
           }
           return;
         }
@@ -96,11 +94,11 @@ impl Editor {
         if self.is_ansi_art_line(i) {
           continue;
         }
-        if let Some((start, end)) = find_in_line(&self.lines[i], &query) {
-          self.editor_state.current_match = Some((i, start, end));
+        if let Some((start, end)) = find_ci(&self.lines[i], &query) {
+          self.editor_state.current_match = Some(LineSpan::new(i, start, end));
           // Also update active buffer's current_match
           if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-            buffer.current_match = Some((i, start, end));
+            buffer.current_match = Some(LineSpan::new(i, start, end));
           }
           return;
         }
@@ -113,21 +111,11 @@ impl Editor {
       return;
     }
 
-    let query = self.editor_state.search_query.to_lowercase();
-    let start_idx = if let Some((idx, _, _)) = self.editor_state.current_match {
-      idx
+    let query = self.editor_state.search_query.clone();
+    let start_idx = if let Some(found) = self.editor_state.current_match {
+      found.line
     } else {
       self.offset + self.cursor_y
-    };
-
-    let find_in_line = |line: &str, query: &str| -> Option<(usize, usize)> {
-      line.to_lowercase().find(query).map(|start| (start, start + query.len()))
-    };
-
-    let find_in_line_backward = |line: &str,
-                                 query: &str|
-     -> Option<(usize, usize)> {
-      line.to_lowercase().rfind(query).map(|start| (start, start + query.len()))
     };
 
     if forward {
@@ -136,11 +124,11 @@ impl Editor {
         if self.is_ansi_art_line(i) {
           continue;
         }
-        if let Some((start, end)) = find_in_line(&self.lines[i], &query) {
-          self.editor_state.current_match = Some((i, start, end));
+        if let Some((start, end)) = find_ci(&self.lines[i], &query) {
+          self.editor_state.current_match = Some(LineSpan::new(i, start, end));
           // Also update active buffer's current_match
           if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-            buffer.current_match = Some((i, start, end));
+            buffer.current_match = Some(LineSpan::new(i, start, end));
           }
           return;
         }
@@ -150,11 +138,11 @@ impl Editor {
         if self.is_ansi_art_line(i) {
           continue;
         }
-        if let Some((start, end)) = find_in_line(&self.lines[i], &query) {
-          self.editor_state.current_match = Some((i, start, end));
+        if let Some((start, end)) = find_ci(&self.lines[i], &query) {
+          self.editor_state.current_match = Some(LineSpan::new(i, start, end));
           // Also update active buffer's current_match
           if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-            buffer.current_match = Some((i, start, end));
+            buffer.current_match = Some(LineSpan::new(i, start, end));
           }
           return;
         }
@@ -165,13 +153,11 @@ impl Editor {
         if self.is_ansi_art_line(i) {
           continue;
         }
-        if let Some((start, end)) =
-          find_in_line_backward(&self.lines[i], &query)
-        {
-          self.editor_state.current_match = Some((i, start, end));
+        if let Some((start, end)) = rfind_ci(&self.lines[i], &query) {
+          self.editor_state.current_match = Some(LineSpan::new(i, start, end));
           // Also update active buffer's current_match
           if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-            buffer.current_match = Some((i, start, end));
+            buffer.current_match = Some(LineSpan::new(i, start, end));
           }
           return;
         }
@@ -181,13 +167,11 @@ impl Editor {
         if self.is_ansi_art_line(i) {
           continue;
         }
-        if let Some((start, end)) =
-          find_in_line_backward(&self.lines[i], &query)
-        {
-          self.editor_state.current_match = Some((i, start, end));
+        if let Some((start, end)) = rfind_ci(&self.lines[i], &query) {
+          self.editor_state.current_match = Some(LineSpan::new(i, start, end));
           // Also update active buffer's current_match
           if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-            buffer.current_match = Some((i, start, end));
+            buffer.current_match = Some(LineSpan::new(i, start, end));
           }
           return;
         }
@@ -197,7 +181,9 @@ impl Editor {
 
   // Center the view on the current search match and move cursor to it
   pub fn center_on_match(&mut self) {
-    if let Some((line_idx, col_idx, _)) = self.editor_state.current_match {
+    if let Some(LineSpan { line: line_idx, start: col_idx, .. }) =
+      self.editor_state.current_match
+    {
       // Center the view
       let content_height = self.height.saturating_sub(1);
       let half_height = (content_height / 2) as i32;
@@ -213,9 +199,13 @@ impl Editor {
         new_offset as usize
       };
 
-      // Move cursor to the match position
+      // Move cursor to the match position. Match columns are byte offsets on
+      // character boundaries; floor anyway in case the line changed since.
       self.cursor_y = line_idx.saturating_sub(self.offset);
-      self.cursor_x = col_idx;
+      self.cursor_x = self
+        .lines
+        .get(line_idx)
+        .map_or(CursorCol::ZERO, |line| CursorCol::floor(line, col_idx));
       self.cursor_moved = true;
     }
   }

@@ -1,6 +1,7 @@
 use crossterm::cursor::SetCursorStyle;
 
 use super::super::core::{Editor, EditorMode};
+use crate::editor::char_boundary::CursorCol;
 use crate::editor::streaming::{PendingPdfStream, StreamReady};
 use std::sync::mpsc;
 use std::time::Instant;
@@ -9,7 +10,7 @@ fn test_editor() -> Editor {
   let mut editor = Editor::new(vec!["line".to_string()], 80);
   editor.height = 24;
   editor.width = 80;
-  editor.cursor_x = 0;
+  editor.cursor_x = CursorCol::lit(0);
   editor.cursor_y = 0;
   editor
 }

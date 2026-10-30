@@ -144,8 +144,8 @@ fn device_of_same_tenant() -> RelationDef {
 /// and failing that to when the token was minted.
 fn last_activity() -> SimpleExpr {
   SimpleExpr::from(Func::coalesce([
-    Expr::col((api_tokens::Entity, api_tokens::Column::LastUsedAt)).into(),
-    Expr::col((devices::Entity, devices::Column::LastSeenAt)).into(),
-    Expr::col((api_tokens::Entity, api_tokens::Column::CreatedAt)).into(),
+    Expr::col((api_tokens::Entity, api_tokens::Column::LastUsedAt)),
+    Expr::col((devices::Entity, devices::Column::LastSeenAt)),
+    Expr::col((api_tokens::Entity, api_tokens::Column::CreatedAt)),
   ]))
 }

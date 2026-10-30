@@ -1,3 +1,4 @@
+use super::char_boundary::{CursorCol, DisplayCol, Pos};
 use super::core::Editor;
 use crossterm::event::{self, Event as CEvent, KeyCode};
 
@@ -57,15 +58,18 @@ impl Editor {
       }
       KeyCode::Char('0') => {
         // '0' - jump to start of line
-        self.cursor_x = 0;
+        self.cursor_x = CursorCol::ZERO;
         Ok(Some(false))
       }
       KeyCode::Char('$') => {
         // '$' - jump to end of line
         let current_line_idx = self.offset + self.cursor_y;
         if current_line_idx < self.lines.len() {
-          let line_length = self.lines[current_line_idx].len();
-          self.cursor_x = if line_length > 0 { line_length - 1 } else { 0 };
+          // Start of the last visible character, not `len() - 1`, which
+          // lands inside a trailing multi-byte character (issue #99).
+          self.cursor_x = CursorCol::last(&self.lines[current_line_idx]);
+          // Like vim, `$` makes j/k stay at the end of every line.
+          self.remember_display_column(DisplayCol::END);
         }
         Ok(Some(false))
       }
@@ -73,22 +77,16 @@ impl Editor {
         // '^' - jump to first non-whitespace character
         let current_line_idx = self.offset + self.cursor_y;
         if current_line_idx < self.lines.len() {
-          let line = &self.lines[current_line_idx];
-          for (idx, c) in line.char_indices() {
-            if !c.is_whitespace() {
-              self.cursor_x = idx;
-              return Ok(Some(false));
-            }
-          }
-          // If line is all whitespace, go to start
-          self.cursor_x = 0;
+          // The start if the line is all whitespace
+          self.cursor_x =
+            CursorCol::first_non_blank(&self.lines[current_line_idx]);
         }
         Ok(Some(false))
       }
       KeyCode::Char('%') => {
         // Jump to matching bracket/parenthesis
-        if let Some((line, col)) = self.find_matching_bracket() {
-          self.move_to_position(line, col);
+        if let Some(target) = self.find_matching_bracket() {
+          self.move_to_position(target);
         }
         Ok(Some(false))
       }
@@ -104,44 +102,44 @@ impl Editor {
     match key_code {
       KeyCode::Char('{') => {
         // Previous paragraph
-        let (line, col) = self.find_paragraph_boundary(false);
-        self.move_to_position(line, col);
+        let target = self.find_paragraph_boundary(false);
+        self.move_to_position(target);
         Ok(Some(false))
       }
       KeyCode::Char('}') => {
         // Next paragraph
-        let (line, col) = self.find_paragraph_boundary(true);
-        self.move_to_position(line, col);
+        let target = self.find_paragraph_boundary(true);
+        self.move_to_position(target);
         Ok(Some(false))
       }
       KeyCode::Char('(') => {
         // Previous sentence
-        let (line, col) = self.find_sentence_boundary(false);
-        self.move_to_position(line, col);
+        let target = self.find_sentence_boundary(false);
+        self.move_to_position(target);
         Ok(Some(false))
       }
       KeyCode::Char(')') => {
         // Next sentence
-        let (line, col) = self.find_sentence_boundary(true);
-        self.move_to_position(line, col);
+        let target = self.find_sentence_boundary(true);
+        self.move_to_position(target);
         Ok(Some(false))
       }
       KeyCode::Char('H') => {
         // High - top of screen
-        let (line, col) = self.get_screen_position('H');
-        self.move_to_position(line, col);
+        let target = self.get_screen_position('H');
+        self.move_to_position(target);
         Ok(Some(false))
       }
       KeyCode::Char('M') => {
         // Middle - middle of screen
-        let (line, col) = self.get_screen_position('M');
-        self.move_to_position(line, col);
+        let target = self.get_screen_position('M');
+        self.move_to_position(target);
         Ok(Some(false))
       }
       KeyCode::Char('L') => {
         // Low - bottom of screen
-        let (line, col) = self.get_screen_position('L');
-        self.move_to_position(line, col);
+        let target = self.get_screen_position('L');
+        self.move_to_position(target);
         Ok(Some(false))
       }
       _ => Ok(None),
@@ -171,9 +169,10 @@ impl Editor {
         if let KeyCode::Char(mark_char) = mark_key.code
           && mark_char.is_ascii_lowercase()
         {
-          let (line, col) = self.get_cursor_position();
-          self.marks.insert(mark_char, (line, col));
+          let pos = self.get_cursor_position();
+          self.marks.insert(mark_char, pos.to_raw());
           self.save_bookmarks();
+          let (line, col) = pos.to_raw();
           self.enqueue_bookmark_sync(mark_char, line, col, false);
         }
         Ok(Some(false))
@@ -195,18 +194,21 @@ impl Editor {
         match mark_key.code {
           KeyCode::Char('\'') => {
             // '' - jump to previous position
-            if let Some((line, col)) = self.previous_position {
+            if let Some(target) = self.previous_position {
               let current_pos = self.get_cursor_position();
               self.previous_position = Some(current_pos);
-              self.move_to_position(line, col);
+              self.move_to_position(target);
             }
           }
           KeyCode::Char(mark_char) if mark_char.is_ascii_lowercase() => {
             // '{mark} - jump to mark
-            if let Some(&(line, col)) = self.marks.get(&mark_char) {
+            if let Some(&raw) = self.marks.get(&mark_char) {
+              // Marks come from disk or another device: check the column
+              // against this line before jumping.
+              let target = Pos::from_raw(&self.lines, raw);
               let current_pos = self.get_cursor_position();
               self.previous_position = Some(current_pos);
-              self.move_to_position(line, col);
+              self.move_to_position(target);
               // Track bookmark jump for tutorial
               if self.tutorial_active {
                 self.tutorial_bookmark_jumped = true;
@@ -218,6 +220,44 @@ impl Editor {
         Ok(Some(false))
       }
       _ => Ok(None),
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::editor::char_boundary::CursorCol;
+
+  fn new_editor(lines: &[&str]) -> Editor {
+    let mut editor =
+      Editor::new(lines.iter().map(|l| l.to_string()).collect(), 80);
+    editor.height = 10;
+    editor.offset = 0;
+    editor.cursor_y = 0;
+    editor
+  }
+
+  #[test]
+  fn dollar_goes_to_start_of_last_multibyte_char() {
+    let mut editor = new_editor(&["La canción está aquí", "5€", "日本語", ""]);
+    for (row, expected) in [(0, 21), (1, 1), (2, 6), (3, 0)] {
+      editor.cursor_y = row;
+      editor.cursor_x = CursorCol::lit(0);
+      editor.handle_jump_keys(KeyCode::Char('$')).unwrap();
+      assert_eq!(editor.cursor_x.raw(), expected, "row {row}");
+    }
+  }
+
+  #[test]
+  fn dollar_goes_to_start_of_last_grapheme() {
+    let lines = ["cafe\u{301}", "x👩\u{200d}💻", "🇪🇸🇪🇸", "ที่", "नमस्ते कि"];
+    let mut editor = new_editor(&lines);
+    for (row, expected) in [(0, 3), (1, 1), (2, 8), (3, 0), (4, 19)] {
+      editor.cursor_y = row;
+      editor.cursor_x = CursorCol::lit(0);
+      editor.handle_jump_keys(KeyCode::Char('$')).unwrap();
+      assert_eq!(editor.cursor_x.raw(), expected, "{:?}", lines[row]);
     }
   }
 }

@@ -1,0 +1,3 @@
+Café and café look alike: the first spells e + U+0301 COMBINING ACUTE ACCENT. Stacked marks: à́̂̃ and ño. Decomposed Vietnamese: Việt Nam. Hangul jamo: 한글. Devanagari with a joiner: क्‍ष.
+
+A long run of combining marks must not split a grapheme: Z͑͒͗͐͛͆ā̆̇l̈̊̋ǧ̍̎o̐̑.

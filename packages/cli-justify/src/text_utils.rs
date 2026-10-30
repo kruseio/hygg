@@ -1,3 +1,4 @@
+use crate::str_slice::slice_to;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -68,7 +69,7 @@ pub(crate) fn leading_whitespace(s: &str) -> &str {
     }
     end = byte_idx + ch.len_utf8();
   }
-  &s[..end]
+  slice_to(s, end)
 }
 
 pub(crate) fn leading_whitespace_width(s: &str) -> usize {
@@ -88,7 +89,7 @@ pub(crate) fn split_trailing_numeric_token_with_min_gap(
 
   // `last_token` came from `s`, so this search always succeeds.
   let number_start = s.rfind(last_token).expect("last token is in source");
-  let before_number = &s[..number_start];
+  let before_number = slice_to(s, number_start);
   let gap_before_number =
     before_number.chars().rev().take_while(|ch| ch.is_whitespace()).count();
   if gap_before_number < min_gap {

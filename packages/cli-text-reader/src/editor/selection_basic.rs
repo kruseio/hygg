@@ -1,3 +1,4 @@
+use super::char_boundary::Pos;
 use super::core::Editor;
 
 impl Editor {
@@ -85,8 +86,7 @@ impl Editor {
       }
 
       // Move cursor to the end of the selection
-      let (line, col) = end;
-      self.move_to_position(line, col);
+      self.move_to_position(end);
     } else {
       self.debug_log("No previous visual selection to restore");
     }

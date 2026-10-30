@@ -100,6 +100,11 @@ pub async fn require_user(
   current_user(state, headers).await
 }
 
+#[expect(
+  clippy::result_large_err,
+  reason = "the Err is the HTTP response itself, returned straight to axum; \
+            boxing it would only add an allocation on every rejection"
+)]
 pub(crate) async fn require_workspace_user_response(
   state: &AppState,
   headers: &HeaderMap,
@@ -118,6 +123,11 @@ pub(crate) async fn require_workspace_user_response(
   Ok(user)
 }
 
+#[expect(
+  clippy::result_large_err,
+  reason = "the Err is the HTTP response itself, returned straight to axum; \
+            boxing it would only add an allocation on every rejection"
+)]
 pub async fn require_admin_response(
   state: &AppState,
   headers: &HeaderMap,
@@ -133,6 +143,11 @@ pub async fn require_admin_response(
 
 /// Allow a tenant admin or an owner of the given organization to manage it.
 /// Returns the loaded org row so the caller need not re-fetch it.
+#[expect(
+  clippy::result_large_err,
+  reason = "the Err is the HTTP response itself, returned straight to axum; \
+            boxing it would only add an allocation on every rejection"
+)]
 pub async fn require_org_manager(
   state: &AppState,
   headers: &HeaderMap,

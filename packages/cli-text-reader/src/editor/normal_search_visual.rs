@@ -1,5 +1,6 @@
 use crossterm::event::{self, Event as CEvent, KeyCode, KeyModifiers};
 
+use super::char_boundary::{Pos, settle_span};
 use super::core::{Editor, EditorMode};
 
 impl Editor {
@@ -204,8 +205,14 @@ impl Editor {
                 && let Some((start, end)) = self.find_text_object(c)
               {
                 let line_idx = self.offset + self.cursor_y;
-                self.editor_state.selection_start = Some((line_idx, start));
-                self.editor_state.selection_end = Some((line_idx, end));
+                // Selection columns are byte offsets on character boundaries.
+                let (start, end) = self
+                  .lines
+                  .get(line_idx)
+                  .map_or((start, end), |l| settle_span(l, start, end));
+                self.editor_state.selection_start =
+                  Some(Pos::new(line_idx, start));
+                self.editor_state.selection_end = Some(Pos::new(line_idx, end));
               }
               self.editor_state.operator_pending = None;
             }

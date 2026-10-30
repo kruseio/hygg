@@ -49,13 +49,13 @@ serde-wasm-bindgen = "0.6"
 console_error_panic_hook = "0.1"
 
 # File import (File/Blob → bytes) and IndexedDB (offline document storage).
-gloo-file = { version = "0.3", features = ["futures"] }
+gloo-file = { version = "0.4", features = ["futures"] }
 # Yield to the browser between extraction pages (keeps the reader responsive).
-gloo-timers = { version = "0.3", features = ["futures"] }
+gloo-timers = { version = "0.4", features = ["futures"] }
 rexie = "0.6"
 
 # Optional server sync (progressive enhancement): fetch + op ids.
-gloo-net = { version = "0.6", features = ["http"] }
+gloo-net = { version = "0.7", features = ["http"] }
 uuid = { version = "1", features = ["v4", "js"] }
 # Hold non-`Send` web-sys resources (the SSE `EventSource` + its listener
 # closure) across Leptos's `Send + Sync` cleanup bound. Sound here: the CSR app
@@ -65,7 +65,7 @@ send_wrapper = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Base64-encode file bytes for the native IPC call (see src/tauri_ipc.rs).
-base64 = "0.22"
+base64 = "0.23"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
 version = "0.3"

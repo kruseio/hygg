@@ -46,7 +46,7 @@ esac
 
 run_started_at=$(date +%s)
 mutation_status=0
-cargo +1.94.0 mutants -p cli-justify \
+cargo +1.99.1 mutants -p cli-justify \
   "${files[@]}" --re "$selector" "${output[@]}" \
   --jobs 1 --jobserver-tasks 1 --cargo-arg=-j1 \
   --timeout 6 --build-timeout 120 || mutation_status=$?

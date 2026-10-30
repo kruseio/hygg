@@ -4,6 +4,7 @@ mod buffer;
 mod buffer_overlay;
 mod buffer_split;
 mod buffer_state;
+pub(crate) mod char_boundary;
 mod char_navigation;
 mod command_execution;
 mod command_execution_core;
@@ -74,3 +75,5 @@ pub use core::{Editor, EditorMode, EditorState, RunOutcome};
 // Tests
 #[cfg(test)]
 mod toggle_highlight_test;
+#[cfg(test)]
+mod unicode_fuzz_tests;

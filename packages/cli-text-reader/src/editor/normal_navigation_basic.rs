@@ -63,14 +63,14 @@ impl Editor {
       }
       KeyCode::Char('e') => {
         // End of word motion
-        let (new_line, new_col) = self.find_word_end(false);
-        self.move_to_position(new_line, new_col);
+        let target = self.find_word_end(false);
+        self.move_to_position(target);
         Ok(Some(false))
       }
       KeyCode::Char('E') => {
         // End of big word motion
-        let (new_line, new_col) = self.find_word_end(true);
-        self.move_to_position(new_line, new_col);
+        let target = self.find_word_end(true);
+        self.move_to_position(target);
         Ok(Some(false))
       }
       _ => Ok(None),

@@ -1,3 +1,4 @@
+use crate::str_slice::{slice_from, slice_to};
 use crate::text_utils::{display_width, split_at_width};
 
 pub(super) fn apply_prefixes(
@@ -75,8 +76,8 @@ pub(super) fn wrap_plain_with_prefix(
 
 pub(super) fn split_last_word(line: &str) -> Option<(String, String)> {
   let split_idx = line.rfind(' ')?;
-  let left = line[..split_idx].trim_end();
-  let right = line[split_idx..].trim();
+  let left = slice_to(line, split_idx).trim_end();
+  let right = slice_from(line, split_idx).trim();
   if left.is_empty() || right.is_empty() {
     return None;
   }

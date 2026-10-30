@@ -1,74 +1,137 @@
+// Opt-in debug log (`HYGG_DEBUG=1`), written to `<log dir>/debug.log`.
+//
+// Nothing here writes to stderr. It used to echo every line there (and print
+// "DEBUG: init_debug_logging called" on every run, debug mode or not), which
+// was the stderr noise the TUI then had to hide by sending stderr to
+// /dev/null — taking panic messages down with it (#99). The file is the
+// single destination; `CrashGuard` tells the user where it is on exit.
+
 use std::fs::OpenOptions;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 static DEBUG_FILE: Mutex<Option<std::fs::File>> = Mutex::new(None);
 
-pub fn init_debug_logging() -> Result<(), Box<dyn std::error::Error>> {
-  eprintln!("DEBUG: init_debug_logging called");
-  if std::env::var("HYGG_DEBUG").is_ok() {
-    eprintln!("DEBUG: HYGG_DEBUG is set");
-    let mut debug_dir =
-      dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
-    debug_dir.push(".hygg");
-    eprintln!("DEBUG: Creating debug dir: {debug_dir:?}");
-    std::fs::create_dir_all(&debug_dir)?;
+/// Where `init_debug_logging` puts the log, alongside the crash files.
+fn debug_log_file_path() -> PathBuf {
+  crate::crash::log_dir().join("debug.log")
+}
 
-    let debug_file_path = debug_dir.join("debug.log");
-    eprintln!("DEBUG: Creating debug file: {debug_file_path:?}");
+pub fn debug_enabled() -> bool {
+  std::env::var("HYGG_DEBUG").is_ok()
+}
 
-    let file = OpenOptions::new()
-      .create(true)
-      .truncate(true) // Clear previous log
-      .write(true)
-      .open(&debug_file_path)?;
+/// The debug log's path, once `init_debug_logging` has actually opened it —
+/// so callers only point users at a file that exists.
+pub fn debug_log_path() -> Option<PathBuf> {
+  let opened = DEBUG_FILE.try_lock().map(|f| f.is_some()).unwrap_or(false);
+  opened.then(debug_log_file_path)
+}
 
-    let mut debug_file = DEBUG_FILE
-      .lock()
-      .map_err(|e| format!("Failed to acquire debug file mutex: {e}"))?;
-    *debug_file = Some(file);
-
-    // Write initial log entry
-    if let Some(ref mut file) = *debug_file {
-      writeln!(file, "=== HYGG DEBUG LOG STARTED ===")?;
-      writeln!(
-        file,
-        "Timestamp: {}",
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
-      )?;
-      writeln!(
-        file,
-        "Environment: HYGG_DEBUG={}",
-        std::env::var("HYGG_DEBUG").unwrap_or_default()
-      )?;
-      writeln!(file, "===============================")?;
-      file.flush()?;
-      eprintln!("DEBUG: Initial log entries written");
-    }
-  } else {
-    eprintln!("DEBUG: HYGG_DEBUG not set, skipping debug logging");
+/// Appends a pre-formatted block (a panic report) to the debug log. Unlike
+/// `debug_log` it never blocks on the log mutex: it runs inside the panic
+/// hook, where the panicking thread may be the one holding the lock.
+pub fn append_to_debug_log(block: &str) {
+  if !debug_enabled() {
+    return;
   }
+  if let Ok(mut debug_file) = DEBUG_FILE.try_lock()
+    && let Some(ref mut file) = *debug_file
+  {
+    let _ = writeln!(file, "{block}");
+    let _ = file.flush();
+  }
+}
+
+/// Opens (truncating) the debug log when `HYGG_DEBUG` is set; a no-op
+/// otherwise. Idempotent: `hygg` calls it first thing so the startup lines
+/// below describe the launch, and the reader's entry points call it again,
+/// which must not wipe what's already there.
+pub fn init_debug_logging() -> Result<(), Box<dyn std::error::Error>> {
+  if !debug_enabled() {
+    return Ok(());
+  }
+  let mut debug_file = DEBUG_FILE
+    .lock()
+    .map_err(|e| format!("Failed to acquire debug file mutex: {e}"))?;
+  if debug_file.is_some() {
+    return Ok(());
+  }
+
+  let debug_file_path = debug_log_file_path();
+  if let Some(dir) = debug_file_path.parent() {
+    std::fs::create_dir_all(dir)?;
+  }
+  let mut file = OpenOptions::new()
+    .create(true)
+    .truncate(true) // One log per run: the previous one is stale.
+    .write(true)
+    .open(&debug_file_path)?;
+  write!(file, "{}", startup_header(&debug_file_path))?;
+  file.flush()?;
+  *debug_file = Some(file);
   Ok(())
 }
 
+/// The environment facts most bug reports end up asking for, so the debug log
+/// answers them up front.
+fn startup_header(debug_file_path: &std::path::Path) -> String {
+  let env =
+    |key: &str| std::env::var(key).unwrap_or_else(|_| "<unset>".to_string());
+  let size = match crossterm::terminal::size() {
+    Ok((cols, rows)) => format!("{cols}x{rows}"),
+    Err(e) => format!("unavailable ({e})"),
+  };
+  let log_dir = crate::crash::log_dir();
+  let mut out = String::new();
+  let mut line = |s: String| {
+    out.push_str(&s);
+    out.push('\n');
+  };
+  line("=== HYGG DEBUG LOG STARTED ===".to_string());
+  line(format!(
+    "Timestamp: {}",
+    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+  ));
+  line(format!("Version: hygg {}", env!("CARGO_PKG_VERSION")));
+  line(format!(
+    "Platform: {} {}",
+    std::env::consts::OS,
+    std::env::consts::ARCH
+  ));
+  line(format!(
+    "Terminal: {size}, stdin tty={}, stdout tty={}",
+    std::io::stdin().is_terminal(),
+    std::io::stdout().is_terminal()
+  ));
+  for key in ["TERM", "COLORTERM", "TERM_PROGRAM", "LANG", "LC_ALL"] {
+    line(format!("Env: {key}={}", env(key)));
+  }
+  line(format!("Env: HYGG_DEBUG={}", env("HYGG_DEBUG")));
+  line(format!("Debug log: {}", debug_file_path.display()));
+  line(format!(
+    "Crash files: {}",
+    log_dir.join("crash-<time>-<pid>.log").display()
+  ));
+  line(format!(
+    "Captured stderr: {}",
+    crate::crash::stderr_log_path().display()
+  ));
+  line("===============================".to_string());
+  out
+}
+
 pub fn debug_log(module: &str, message: &str) {
-  if std::env::var("HYGG_DEBUG").is_ok() {
-    let timestamp = chrono::Utc::now().format("%H:%M:%S%.3f");
-    let log_line = format!("[{timestamp}] [{module}] {message}");
-
-    eprintln!("{log_line}");
-
-    // Write to file
-    if let Ok(mut debug_file) = DEBUG_FILE.lock()
-      && let Some(ref mut file) = *debug_file
-    {
-      if let Err(e) = writeln!(file, "{log_line}") {
-        eprintln!("Failed to write to debug log: {e}");
-      } else {
-        let _ = file.flush(); // Ensure immediate write
-      }
-    }
+  if !debug_enabled() {
+    return;
+  }
+  let timestamp = chrono::Utc::now().format("%H:%M:%S%.3f");
+  if let Ok(mut debug_file) = DEBUG_FILE.lock()
+    && let Some(ref mut file) = *debug_file
+  {
+    let _ = writeln!(file, "[{timestamp}] [{module}] {message}");
+    let _ = file.flush(); // Ensure immediate write
   }
 }
 

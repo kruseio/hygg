@@ -1,3 +1,4 @@
+use crate::editor::char_boundary::ByteCol;
 use std::time::Duration;
 
 use crate::editor::speech::kokoro::WordAlignment;
@@ -15,8 +16,8 @@ fn span_at(abs: usize) -> WordSpan {
     abs_start: abs,
     abs_end: abs + 1,
     line: 0,
-    col_start: 0,
-    col_end: 1,
+    col_start: ByteCol::ZERO,
+    col_end: ByteCol::lit(1),
   }
 }
 
@@ -223,8 +224,8 @@ fn plays_and_emits_words() {
         abs_start: i,
         abs_end: i + 1,
         line: 0,
-        col_start: 0,
-        col_end: 1,
+        col_start: ByteCol::ZERO,
+        col_end: ByteCol::lit(1),
       };
       (span, t.to_string())
     })

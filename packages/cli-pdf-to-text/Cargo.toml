@@ -52,7 +52,9 @@ getopts = "0.2"
 # deps), so the streaming path is the one that compiles for the browser PWA.
 #
 # Pinned to =0.3.70: every release from 0.3.71 onwards (re-verified against
-# 0.3.77) hangs indefinitely extracting pdfreference1.7old.pdf — pathological
+# 0.3.78, the latest, on 2026-10-30: the repro test below was killed after 600 s
+# at 100% CPU, where 0.3.70 passes it in ~21 s) hangs indefinitely extracting
+# pdfreference1.7old.pdf — pathological
 # deep recursion in pdf_oxide's structure-tree parser
 # (parse_struct_elem/parse_k_children re-parsing objects without memoization).
 # 0.3.70 is the last release before the regression and passes the full stream
@@ -71,16 +73,15 @@ image = { version = "0.25.10", default-features = false, features = ["png"] }
 # native-only (the wasm PWA never enables it), so ureq/sha2/dirs never reach the
 # browser build.
 ureq = { version = "3", optional = true }
-sha2 = { version = "0.10", optional = true }
-dirs = { version = "6", optional = true }
+sha2 = { version = "0.11", optional = true }
+dirs = { version = "7", optional = true }
 
 # Native-only backend for the non-streaming `pdf_to_text` layout path. These
-# don't build for wasm32 (rayon needs threads; redirect-stderr uses libc
-# dup/dup2; lopdf/pdf-extract are the up-front parser). The browser PWA uses
-# only the pdf_oxide streaming path (`PdfStream::open_bytes`), so we target-gate
-# them off wasm to keep that build lean and buildable.
+# don't build for wasm32 (rayon needs threads; lopdf/pdf-extract are the
+# up-front parser). The browser PWA uses only the pdf_oxide streaming path
+# (`PdfStream::open_bytes`), so we target-gate them off wasm to keep that build
+# lean and buildable.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-redirect-stderr = { version = "0.1", path = "../redirect-stderr" }
 # Upstream pdf-extract. This was a pair of in-tree forks (hygg-pdf-extract on
 # hygg-cff-parser) until 0.12 shipped: the forks existed only to stop
 # cff-parser's `panic!()` on Adobe Expert-encoded CFF fonts crashing extraction
@@ -91,5 +92,10 @@ pdf-extract = "0.12"
 # rather than two. `pdf_extract::Document` is a re-export of `lopdf::Document`;
 # nothing here passes one across that boundary today, but a version mismatch
 # would quietly make the two spellings different types the moment something did.
+# Re-checked 2026-10-30: pdf-extract 0.12.1 (latest) still requires lopdf ^0.42,
+# while lopdf is at 0.46. 0.46 builds here with one call-site change
+# (`get_page_content` no longer returns a Result), but the second copy adds
+# lopdf 0.46 + ecb to the lockfile, ~16 s of release compile, and a second PDF
+# parser in the `hygg` binary — so it stays held until pdf-extract moves.
 lopdf = "0.42"
 rayon = "1"

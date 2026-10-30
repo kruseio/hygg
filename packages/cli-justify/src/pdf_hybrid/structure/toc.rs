@@ -1,3 +1,4 @@
+use crate::str_slice::{slice_from, slice_to};
 use crate::text_utils::{
   display_width, is_ascii_numeric, leading_whitespace,
   leading_whitespace_width, split_trailing_numeric_token_with_min_gap,
@@ -38,8 +39,8 @@ fn split_on_first_wide_gap(text: &str) -> Option<(&str, &str)> {
     }
 
     if gap_start.is_some() && gap_len >= 2 {
-      let prefix = &text[..idx];
-      let title = text[idx..].trim();
+      let prefix = slice_to(text, idx);
+      let title = slice_from(text, idx).trim();
       if !prefix.trim().is_empty() {
         return Some((prefix, title));
       }
@@ -60,8 +61,8 @@ fn parse_dot_leader_toc_row(line: &str) -> Option<AlignedTocRowStart> {
   }
 
   let number_start = trimmed.rfind(page_number).expect("page token is in line");
-  let before_number =
-    trimmed[..number_start].trim_end_matches(|ch: char| ch.is_whitespace());
+  let before_number = slice_to(trimmed, number_start)
+    .trim_end_matches(|ch: char| ch.is_whitespace());
 
   let mut leader_start = before_number.len();
   let mut leader_dot_count = 0usize;
@@ -80,7 +81,7 @@ fn parse_dot_leader_toc_row(line: &str) -> Option<AlignedTocRowStart> {
     return None;
   }
 
-  let title = before_number[..leader_start].trim_end();
+  let title = slice_to(before_number, leader_start).trim_end();
   if title.is_empty() {
     return None;
   }
@@ -207,7 +208,7 @@ pub(crate) fn normalize_preserved_compact_layout_line(line: &str) -> String {
   let Some(label_end) = trimmed.find(char::is_whitespace) else {
     return line.to_string();
   };
-  let label = &trimmed[..label_end];
+  let label = slice_to(trimmed, label_end);
   if label.chars().count() > 12
     || !label.chars().next().is_some_and(|ch| ch.is_uppercase())
     || !label.chars().all(|ch| ch.is_alphabetic())
@@ -215,7 +216,7 @@ pub(crate) fn normalize_preserved_compact_layout_line(line: &str) -> String {
     return line.to_string();
   }
 
-  let after_label = &trimmed[label_end..];
+  let after_label = slice_from(trimmed, label_end);
   // Measure the gap in bytes, not characters. `label_end` is a byte offset from
   // `find`, and a single Unicode space such as U+2003 EM SPACE is one character
   // but three bytes — slicing by the character count lands one byte inside its
@@ -226,7 +227,7 @@ pub(crate) fn normalize_preserved_compact_layout_line(line: &str) -> String {
     .take_while(|ch| ch.is_whitespace())
     .map(char::len_utf8)
     .sum();
-  let after_label = &after_label[label_gap_len..];
+  let after_label = slice_from(after_label, label_gap_len);
 
   let mut number_end = 0usize;
   for ch in after_label.chars() {
@@ -240,14 +241,14 @@ pub(crate) fn normalize_preserved_compact_layout_line(line: &str) -> String {
     return line.to_string();
   }
 
-  let number = &after_label[..number_end];
-  let remainder = &after_label[number_end..];
+  let number = slice_to(after_label, number_end);
+  let remainder = slice_from(after_label, number_end);
   let spacing_len = remainder.chars().take_while(|&ch| ch == ' ').count();
   if spacing_len < 2 {
     return line.to_string();
   }
 
-  let text = remainder[spacing_len..].trim_start();
+  let text = slice_from(remainder, spacing_len).trim_start();
   if text.is_empty() {
     return line.to_string();
   }

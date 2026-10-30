@@ -1,12 +1,8 @@
-use std::io::{Result as IoResult, Write};
 use std::sync::atomic::Ordering;
 
-use crossterm::QueueableCommand;
-use crossterm::style::{
-  Color, ResetColor, SetBackgroundColor, SetForegroundColor,
-};
-use crossterm::terminal::{Clear, ClearType};
-
+use super::super::char_boundary::ByteCol;
+#[cfg(feature = "tts")]
+use super::super::char_boundary::slice;
 use super::super::core::Editor;
 use super::{SpeechMsg, TtsStatus, WordSpan, build_word_spans};
 
@@ -47,7 +43,7 @@ impl Editor {
           let text = self
             .lines
             .get(s.line)
-            .and_then(|l| l.get(s.col_start..s.col_end))
+            .map(|l| slice(l, s.col_start, s.col_end))
             .unwrap_or_default()
             .to_string();
           (*s, text)
@@ -156,67 +152,35 @@ impl Editor {
     self.cursor_moved = true;
   }
 
-  // Does the currently spoken word intersect the given screen row?
-  pub(crate) fn spoken_word_on_line(&self, screen_row: usize) -> bool {
-    let Some(state) = self.speech.as_ref() else {
-      return false;
-    };
-    let Some((word_start, word_end)) = state.current else {
-      return false;
-    };
-    let line_idx = self.offset + screen_row;
-    let Some((line_start, line_end)) = Self::persistent_highlight_line_range(
+  // Byte columns of the spoken word on document line `line_idx`, if the word
+  // the voice is reading intersects it. Word spans are built on char
+  // boundaries but against the lines as they were when narration started, so
+  // a reflow since can leave them past the end of, or inside a character of,
+  // the line now drawn: `line_highlights` settles them before slicing.
+  pub(crate) fn spoken_word_columns(
+    &self,
+    line_idx: usize,
+    line: &str,
+  ) -> Option<(ByteCol, ByteCol)> {
+    let (word_start, word_end) = self.speech.as_ref()?.current?;
+    let (line_start, line_end) = Self::persistent_highlight_line_range(
       line_idx,
       &self.lines,
       &self.line_kinds,
-    ) else {
-      return false;
-    };
-    word_start < line_end && word_end > line_start
+    )?;
+    (word_start < line_end && word_end > line_start).then(|| {
+      (
+        ByteCol::floor(line, word_start.saturating_sub(line_start)),
+        ByteCol::floor(line, word_end.saturating_sub(line_start)),
+      )
+    })
   }
 
-  // Render `line` with the spoken word styled. Mirrors the persistent-highlight
-  // renderer's structure so it composes with the rest of the frame.
-  pub(crate) fn highlight_spoken_word_buffered(
-    &self,
-    buffer: &mut Vec<u8>,
-    screen_row: usize,
-    line: &str,
-    center_offset_string: &str,
-  ) -> IoResult<bool> {
-    let Some(state) = self.speech.as_ref() else {
-      return Ok(false);
-    };
-    let Some((word_start, word_end)) = state.current else {
-      return Ok(false);
-    };
+  // Does the currently spoken word intersect the given screen row?
+  #[cfg(test)]
+  pub(crate) fn spoken_word_on_line(&self, screen_row: usize) -> bool {
     let line_idx = self.offset + screen_row;
-    let Some((line_start, _line_end)) = Self::persistent_highlight_line_range(
-      line_idx,
-      &self.lines,
-      &self.line_kinds,
-    ) else {
-      return Ok(false);
-    };
-
-    let start = word_start.saturating_sub(line_start).min(line.len());
-    let end = word_end.saturating_sub(line_start).min(line.len());
-    if start >= end {
-      return Ok(false);
-    }
-
-    write!(buffer, "{center_offset_string}")?;
-    if start > 0 {
-      write!(buffer, "{}", &line[..start])?;
-    }
-    buffer.queue(SetBackgroundColor(Color::Cyan))?;
-    buffer.queue(SetForegroundColor(Color::Black))?;
-    write!(buffer, "{}", &line[start..end])?;
-    buffer.queue(ResetColor)?;
-    if end < line.len() {
-      write!(buffer, "{}", &line[end..])?;
-    }
-    buffer.queue(Clear(ClearType::UntilNewLine))?;
-    Ok(true)
+    let line = self.lines.get(line_idx).map_or("", String::as_str);
+    self.spoken_word_columns(line_idx, line).is_some()
   }
 }

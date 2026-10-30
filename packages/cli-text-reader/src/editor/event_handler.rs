@@ -49,6 +49,10 @@ impl Editor {
       }
     }
 
+    // Whatever the handler did, never leave the cursor mid-character or past
+    // the end of its line for the next draw (issue #99).
+    self.normalize_cursor_column();
+
     result
   }
 }

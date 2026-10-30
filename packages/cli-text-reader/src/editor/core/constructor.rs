@@ -1,4 +1,5 @@
 use super::{BufferState, Editor, EditorState, ViewMode};
+use crate::editor::char_boundary::CursorCol;
 use crate::highlights::HighlightData;
 use crate::progress::generate_hash;
 use arboard::Clipboard;
@@ -119,7 +120,7 @@ impl Editor {
       total_lines,
       progress_display_until: None,
       show_progress: false,
-      cursor_x: 0,
+      cursor_x: CursorCol::ZERO,
       cursor_y: height / 2,
       clipboard,
       buffers: vec![initial_buffer],

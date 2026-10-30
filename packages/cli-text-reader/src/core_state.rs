@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use super::core_types::{BufferState, EditorState, ViewMode};
 use crate::demo_script::DemoScript;
+use crate::editor::char_boundary::{CursorCol, Pos, RawPos};
 use crate::editor::speech::SpeechState;
 use crate::editor::streaming::{PdfStreamingState, PendingPdfStream};
 use crate::highlights::HighlightData;
@@ -42,7 +43,9 @@ pub struct Editor {
   #[allow(dead_code)]
   pub progress_display_until: Option<Instant>,
   pub show_progress: bool,
-  pub cursor_x: usize,
+  // Byte column of the cursor on line `offset + cursor_y`, on the start of a
+  // grapheme cluster.
+  pub cursor_x: CursorCol,
   pub cursor_y: usize,
   pub clipboard: Option<Clipboard>,
   pub buffers: Vec<BufferState>,
@@ -52,8 +55,9 @@ pub struct Editor {
   pub last_find_char: Option<char>,
   pub last_find_forward: bool,
   pub last_find_till: bool,
-  pub marks: HashMap<char, (usize, usize)>,
-  pub previous_position: Option<(usize, usize)>,
+  // Unchecked: loaded from disk and synced from other devices.
+  pub marks: HashMap<char, RawPos>,
+  pub previous_position: Option<Pos>,
   pub number_prefix: String,
   pub highlights: HighlightData,
   // Split view management

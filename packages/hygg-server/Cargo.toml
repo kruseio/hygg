@@ -55,7 +55,7 @@ pulldown-cmark = { version = "0.13", default-features = false, features = [
 # work (native async-fn-in-trait is not yet dyn-compatible).
 async-trait = "0.1"
 axum = "0.8"
-tower-http = { version = "0.6", features = [
+tower-http = { version = "0.7", features = [
   "trace",
   "limit",
   "set-header",
@@ -63,12 +63,12 @@ tower-http = { version = "0.6", features = [
 ] }
 # The ORM. Entities and a query builder stand in for hand-written SQL, and the
 # schema is described once in Rust rather than as a per-backend DDL script.
-sea-orm = { version = "1.1", default-features = false, features = [
+sea-orm = { version = "2.0", default-features = false, features = [
   "runtime-tokio-rustls",
   "sqlx-sqlite",
   "macros",
 ] }
-sea-orm-migration = { version = "1.1", default-features = false, features = [
+sea-orm-migration = { version = "2.0", default-features = false, features = [
   "runtime-tokio-rustls",
   "sqlx-sqlite",
 ] }
@@ -82,18 +82,18 @@ tracing-appender = "0.2"
 thiserror = "2"
 
 # Auth + crypto
-argon2 = "0.5"
-sha2 = "0.10"
-rand = "0.8"
+argon2 = "0.6"
+sha2 = "0.11"
+rand = "0.10"
 subtle = "2"
-base64 = "0.22"
+base64 = "0.23"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 url = "2"
 webauthn-rs = "0.5.5"
 # Host/process resource metrics (CPU, memory, disk, network) for the admin
-# dashboard. Pinned below 0.39 to keep the workspace MSRV (1.88).
-sysinfo = { version = "0.38", default-features = false, features = [
+# dashboard. 0.40 needs Rust 1.95 and reports an unsupported OS as `Err`.
+sysinfo = { version = "0.40", default-features = false, features = [
   "system",
   "disk",
   "network",
@@ -103,12 +103,12 @@ sysinfo = { version = "0.38", default-features = false, features = [
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # Integration tests are their own crates, so they need these directly rather
 # than through hygg-server.
-sea-orm = { version = "1.1", default-features = false, features = [
+sea-orm = { version = "2.0", default-features = false, features = [
   "runtime-tokio-rustls",
   "sqlx-sqlite",
   "macros",
 ] }
-sea-orm-migration = { version = "1.1", default-features = false, features = [
+sea-orm-migration = { version = "2.0", default-features = false, features = [
   "runtime-tokio-rustls",
   "sqlx-sqlite",
 ] }

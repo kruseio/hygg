@@ -15,8 +15,8 @@ fi
 
 report=target/llvm-cov/justify-summary.json
 mkdir -p target/llvm-cov
-cargo +nightly-2026-03-05 llvm-cov clean --workspace
-cargo +nightly-2026-03-05 llvm-cov --branch -q -p cli-justify \
+cargo +nightly-2026-10-29 llvm-cov clean --workspace
+cargo +nightly-2026-10-29 llvm-cov --branch -q -p cli-justify \
   --json --summary-only --output-path "$report" --locked -j1 \
   -- --test-threads=1
 

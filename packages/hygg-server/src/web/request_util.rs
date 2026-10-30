@@ -86,7 +86,7 @@ pub(crate) fn delete_cookie() -> String {
 
 pub fn random_secret(bytes: usize) -> String {
   let mut buf = vec![0u8; bytes];
-  rand::thread_rng().fill_bytes(&mut buf);
+  rand::fill(&mut buf[..]);
   URL_SAFE_NO_PAD.encode(buf)
 }
 

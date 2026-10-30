@@ -1,5 +1,10 @@
+// Slicing a str at a byte that is not a char boundary panics (hygg issue #99).
+// Every slice goes through `sanitize::str_slice`; with CI's `-D warnings` a
+// raw `&s[a..b]` is a build error. Tests may slice.
+#![cfg_attr(not(test), warn(clippy::string_slice))]
+
 // The non-streaming, layout-fidelity `pdf_to_text` path (lopdf + pdf-extract +
-// rayon + redirect-stderr) is native-only — those deps don't build for wasm32.
+// rayon) is native-only — those deps don't build for wasm32.
 // The browser PWA reuses the pure pdf_oxide streaming path via the byte-input
 // `pdf_bytes_to_ansi_text` / `PdfStream::open_bytes`, which is portable.
 
@@ -110,12 +115,12 @@ fn extract_with_layout_text(
   Ok(combined)
 }
 
-/// The passes that must run with stdout redirected, in one fallible unit.
+/// The layout pass plus, when warranted, the plaintext fallback.
 ///
 /// Returns the sanitized layout text and, when the layout pass came out damaged
 /// enough to be worth a second opinion, the plaintext fallback's raw output.
 #[cfg(not(target_arch = "wasm32"))]
-fn extract_under_redirected_stdout(
+fn extract_layout_and_fallback(
   canonical_path: &std::path::Path,
 ) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
   let layout_text = extract_with_layout_text(canonical_path)?;
@@ -145,20 +150,16 @@ pub fn pdf_to_text(
 ) -> Result<String, Box<dyn std::error::Error>> {
   let canonical_path = normalize_file_path(pdf_path)?;
 
-  // `redirect_stderr::redirect_stdout` works on both Windows and Unix now;
-  // suppress the noisy logging pdf_extract / lopdf write to stdout while we
-  // do the extraction passes.
-  //
-  // The extraction is a separate function so that the restore below is not
-  // something the code between here and there can jump over. It used to be one
-  // straight-line body with a `?` in the middle, and that `?` returned with the
-  // process's stdout still pointing at /dev/null — a malformed PDF thus
-  // silently muted every later `println!` in the program. This is a library;
-  // the caller is not always about to exit.
-  redirect_stderr::redirect_stdout()?;
-  let extracted = extract_under_redirected_stdout(&canonical_path);
-  redirect_stderr::restore_stdout()?;
-  let (layout_sanitized, plaintext_result) = extracted?;
+  // No stdout redirect here any more. One was added (2024, ce4b791) because
+  // pdf-extract 0.7 / lopdf of that era `println!`ed debug noise mid-
+  // extraction. Neither does today: pdf-extract 0.12's `dlog!` expands to
+  // nothing and lopdf 0.42 only uses `log`, which is silent without a logger
+  // (hygg installs none) — the extracted text is byte-identical with and
+  // without the redirect on the test-data PDFs. A process-wide fd swap inside
+  // a library call was also hazardous on its own: anything another thread
+  // printed meanwhile vanished, and an early return once left stdout muted.
+  let (layout_sanitized, plaintext_result) =
+    extract_layout_and_fallback(&canonical_path)?;
 
   if let Some(plaintext_output) = plaintext_result {
     let plaintext_sanitized = sanitize_layout_text(&plaintext_output);

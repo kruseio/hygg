@@ -1,3 +1,4 @@
+use super::char_boundary::{ByteCol, Pos, grapheme_base_chars, slice};
 use super::core::Editor;
 
 // Emit OSC 52 so the outermost terminal (e.g. Alacritty on a local machine
@@ -25,8 +26,8 @@ fn base64_encode(input: &[u8]) -> String {
   const ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
-  let mut chunks = input.chunks_exact(3);
-  for chunk in &mut chunks {
+  let (chunks, rem) = input.as_chunks::<3>();
+  for chunk in chunks {
     let n =
       ((chunk[0] as u32) << 16) | ((chunk[1] as u32) << 8) | (chunk[2] as u32);
     out.push(ALPHABET[((n >> 18) & 0x3F) as usize] as char);
@@ -34,7 +35,6 @@ fn base64_encode(input: &[u8]) -> String {
     out.push(ALPHABET[((n >> 6) & 0x3F) as usize] as char);
     out.push(ALPHABET[(n & 0x3F) as usize] as char);
   }
-  let rem = chunks.remainder();
   match rem.len() {
     1 => {
       let n = (rem[0] as u32) << 16;
@@ -128,18 +128,18 @@ impl Editor {
 
   // Yank word under cursor
   pub fn yank_word(&mut self) {
-    let (line_idx, col_idx) = self.get_cursor_position();
+    let Pos { line: line_idx, col: col_idx } = self.get_cursor_position();
     if line_idx < self.lines.len() && !self.is_ansi_art_line(line_idx) {
       let line = &self.lines[line_idx];
 
-      // Find word boundaries. `start` and `end` walk with `chars()`, so they
-      // count characters — which means they cannot index `line`, whose indices
-      // are bytes. They agree for ASCII and part ways at the first accented
-      // letter: `yw` on "café" asked for line[0..4], four bytes into a
-      // five-byte string and one byte inside the 'é', and Rust panics on a
-      // slice that splits a character. Walk a char vector instead, so the unit
-      // is the same on both sides.
-      let chars: Vec<char> = line.chars().collect();
+      // Find word boundaries. Indices into `line` are bytes, so walking with
+      // `chars()` and slicing by those counts split the 'é' of "café" and
+      // panicked; and a char walk also drops a combining accent that is not
+      // alphanumeric itself ("cafe\u{301}"). Walk grapheme clusters, each
+      // classified by its first char, and slice the line by the byte offsets
+      // of the first and one-past-last graphemes (issue #99).
+      let chars = grapheme_base_chars(line);
+      let col_idx = col_idx.grapheme_index(line);
       if col_idx < chars.len() {
         let mut start = col_idx;
         while start > 0
@@ -160,7 +160,9 @@ impl Editor {
         }
 
         if start < end {
-          self.editor_state.yank_buffer = chars[start..end].iter().collect();
+          let start = ByteCol::from_grapheme_index(line, start);
+          let end = ByteCol::from_grapheme_index(line, end);
+          self.editor_state.yank_buffer = slice(line, start, end).to_string();
 
           // Copy to system clipboard if available
           if let Some(clipboard) = &mut self.clipboard {
@@ -181,7 +183,17 @@ impl Editor {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::editor::char_boundary::CursorCol;
   use cli_pdf_to_text::PdfLineKind;
+
+  #[test]
+  fn base64_encode_pads_remainders() {
+    assert_eq!(base64_encode(b""), "");
+    assert_eq!(base64_encode(b"f"), "Zg==");
+    assert_eq!(base64_encode(b"fo"), "Zm8=");
+    assert_eq!(base64_encode(b"foo"), "Zm9v");
+    assert_eq!(base64_encode("café".as_bytes()), "Y2Fmw6k=");
+  }
 
   #[test]
   fn yank_line_skips_ansi_art_rows() {
@@ -204,10 +216,53 @@ mod tests {
     // chars().nth() but slicing by those counts used to slice there and panic.
     let mut editor = Editor::new(vec!["café here".to_string()], 80);
     editor.cursor_y = 0;
-    editor.cursor_x = 0;
+    editor.cursor_x = CursorCol::lit(0);
 
     editor.yank_word();
 
     assert_eq!(editor.editor_state.yank_buffer, "café");
+  }
+
+  #[test]
+  fn yank_word_after_multibyte_word_uses_byte_cursor() {
+    // "canción" is 8 bytes but 7 chars, so "está" starts at byte 9 (char 8)
+    // and "aquí€" at byte 15 (char 13). Indexing the char vector with the byte
+    // column used to land two characters into the wrong place.
+    let line = "canción está aquí€ fin";
+    let mut editor = Editor::new(vec![line.to_string()], 80);
+    editor.offset = 0;
+    editor.cursor_y = 0;
+
+    editor.cursor_x = CursorCol::lit(line.find("está").unwrap());
+    assert_eq!(editor.cursor_x.raw(), 9);
+    editor.yank_word();
+    assert_eq!(editor.editor_state.yank_buffer, "está");
+
+    // Cursor in the middle of a word, on the 'í' of "aquí".
+    editor.cursor_x = CursorCol::lit(line.find('í').unwrap());
+    editor.yank_word();
+    assert_eq!(editor.editor_state.yank_buffer, "aquí");
+
+    editor.cursor_x = CursorCol::lit(line.find("fin").unwrap());
+    editor.yank_word();
+    assert_eq!(editor.editor_state.yank_buffer, "fin");
+  }
+
+  #[test]
+  fn yank_word_keeps_combining_marks_and_clusters() {
+    let line = "cafe\u{301} ที่นี่ नमस्ते";
+    let mut editor = Editor::new(vec![line.to_string()], 80);
+    editor.offset = 0;
+    editor.cursor_y = 0;
+    for (col, word) in [
+      (0, "cafe\u{301}"),
+      (4, "cafe\u{301}"),
+      (line.find("นี่").unwrap() + 3, "ที่นี่"),
+      (line.find("न").unwrap(), "नमस्ते"),
+    ] {
+      editor.cursor_x = CursorCol::lit(col);
+      editor.yank_word();
+      assert_eq!(editor.editor_state.yank_buffer, word, "at {col}");
+    }
   }
 }

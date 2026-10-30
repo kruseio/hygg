@@ -42,7 +42,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 # Decode the base64 file payload the frontend sends over IPC (a plain string
 # argument serializes unambiguously; see src/lib.rs).
-base64 = "0.22"
+base64 = "0.23"
 
 # The exact same native hygg pipeline the CLI uses — so a document renders as
 # the identical justified monospace column the CLI and PWA show.

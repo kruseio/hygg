@@ -1,3 +1,4 @@
+use super::super::char_boundary::{CursorCol, Pos};
 use super::super::core::{Editor, EditorMode};
 use crate::config::{AppConfig, save_config};
 use crate::interactive_tutorial::get_interactive_tutorial_steps;
@@ -139,14 +140,17 @@ impl Editor {
     self.set_active_mode(EditorMode::Normal);
 
     // Restore cursor position
-    if let Some((line, col)) = self.previous_position {
+    if let Some(Pos { line, col }) = self.previous_position {
       self.debug_log(&format!(
         "Restoring cursor position to line {line}, col {col}"
       ));
       if line < self.lines.len() {
         self.offset = line.saturating_sub(self.height / 2);
-        self.cursor_y = line.saturating_sub(self.offset).min(self.height - 2);
-        self.cursor_x = col;
+        self.cursor_y =
+          line.saturating_sub(self.offset).min(self.height.saturating_sub(2));
+        // The saved column is a byte offset; keep it on a grapheme start.
+        let text = &self.lines[line];
+        self.cursor_x = CursorCol::clamped(text, col);
       }
     }
 

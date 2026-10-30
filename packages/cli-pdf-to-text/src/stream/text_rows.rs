@@ -1,3 +1,4 @@
+use crate::sanitize::str_slice::slice;
 use crate::stream::text_lines::{is_digits_only, push_pdf_word_gap};
 use crate::stream::types::{
   PDF_TEXT_PT_PER_CHAR, PdfLineKind, PdfPageForAnsi, VisualTextRow,
@@ -184,7 +185,8 @@ fn has_visual_wide_gap_between(trimmed: &str, first: &str, last: &str) -> bool {
   if last_start <= first_end {
     return false;
   }
-  trimmed[first_end..last_start].chars().filter(|ch| *ch == ' ').count() >= 10
+  slice(trimmed, first_end, last_start).chars().filter(|ch| *ch == ' ').count()
+    >= 10
 }
 
 pub(crate) fn extract_visual_text_rows(

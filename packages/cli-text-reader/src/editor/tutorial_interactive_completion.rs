@@ -12,14 +12,15 @@ impl Editor {
           false
         }
         TutorialSuccessCondition::CursorPosition { line, col } => {
-          self.cursor_y == *line && self.cursor_x == *col
+          // A raw byte column, as the tutorial step spells it out.
+          self.cursor_y == *line && self.cursor_x.raw() == *col
         }
         TutorialSuccessCondition::VisualSelection { start_line, end_line } => {
           if let (Some(start), Some(end)) =
             (self.editor_state.selection_start, self.editor_state.selection_end)
           {
-            let start_y = self.offset + start.0;
-            let end_y = self.offset + end.0;
+            let start_y = self.offset + start.line;
+            let end_y = self.offset + end.line;
             start_y == *start_line && end_y == *end_line
           } else {
             false

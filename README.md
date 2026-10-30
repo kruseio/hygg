@@ -82,7 +82,7 @@ Visit the [Documentation](https://github.com/kruseio/hygg/blob/main/docs/README.
 
 **hygg** is built by readers, for readers. Join our growing community:
 
-- [Report issues](https://github.com/kruseio/hygg/issues)
+- [Report issues](https://github.com/kruseio/hygg/issues) ([what to attach](docs/pages/reporting-bugs.md))
 - [Request features](https://github.com/kruseio/hygg/issues)
 - [Contribute code](https://github.com/kruseio/hygg/pulls)
 

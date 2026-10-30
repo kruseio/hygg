@@ -1,3 +1,5 @@
+use super::str_slice::{slice, slice_to};
+
 pub(crate) fn is_vertical_margin_letter_line(line: &str) -> bool {
   let trimmed_end = line.trim_end();
   if trimmed_end.is_empty() {
@@ -30,7 +32,7 @@ fn has_wide_gap_before_page_number(trimmed: &str) -> bool {
   let Some(number_start) = trimmed.rfind(last_token) else {
     return false;
   };
-  let before_number = &trimmed[..number_start];
+  let before_number = slice_to(trimmed, number_start);
   let gap =
     before_number.chars().rev().take_while(|ch| ch.is_whitespace()).count();
 
@@ -174,5 +176,6 @@ fn has_wide_gap_between_tokens(trimmed: &str, first: &str, last: &str) -> bool {
   if last_start <= first_end {
     return false;
   }
-  trimmed[first_end..last_start].chars().filter(|ch| *ch == ' ').count() >= 10
+  slice(trimmed, first_end, last_start).chars().filter(|ch| *ch == ' ').count()
+    >= 10
 }

@@ -1,3 +1,4 @@
+use crate::str_slice::slice_from;
 use crate::text_utils::is_ascii_numeric;
 
 const PROMPT_PREFIXES: [&str; 7] = ["$", "#", ">", "%", ">>", ">>>", "PS>"];
@@ -70,7 +71,7 @@ pub(crate) fn looks_like_git_log_graph_line(trimmed: &str) -> bool {
     return false;
   }
 
-  let rest = &trimmed[graph_prefix_chars..];
+  let rest = slice_from(trimmed, graph_prefix_chars);
   if rest.is_empty() {
     // Pure-graph row (|, |\, |/, * |, etc.). Cap the length so we don't
     // accept long lines that happen to contain only graph characters.

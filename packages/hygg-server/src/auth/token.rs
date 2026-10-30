@@ -6,7 +6,6 @@
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use rand::RngCore;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
@@ -23,8 +22,8 @@ pub struct GeneratedToken {
 pub fn generate_token() -> GeneratedToken {
   let mut prefix_bytes = [0u8; 6];
   let mut secret_bytes = [0u8; 32];
-  rand::thread_rng().fill_bytes(&mut prefix_bytes);
-  rand::thread_rng().fill_bytes(&mut secret_bytes);
+  rand::fill(&mut prefix_bytes);
+  rand::fill(&mut secret_bytes);
   let prefix = URL_SAFE_NO_PAD.encode(prefix_bytes);
   let secret = URL_SAFE_NO_PAD.encode(secret_bytes);
   let hash = hash_secret(&secret);

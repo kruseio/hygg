@@ -41,7 +41,9 @@ pub(crate) fn run_fake_voice(
     if tx.send(msg).is_err() {
       return; // receiver gone (editor dropped the state)
     }
-    let chars = (span.col_end.saturating_sub(span.col_start)).max(1) as u64;
+    // The word's byte length stands in for its spoken length.
+    let chars =
+      (span.col_end.raw().saturating_sub(span.col_start.raw())).max(1) as u64;
     let dur = ((BASE_MS + PER_CHAR_MS * chars) as f32 / speed) as u64;
     if interruptible_sleep(dur, &cancel) {
       break;

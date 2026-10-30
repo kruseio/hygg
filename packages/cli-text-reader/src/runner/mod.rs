@@ -1,5 +1,6 @@
 mod config;
 mod entry;
+mod layout_migration;
 mod pdf;
 mod pdf_position;
 

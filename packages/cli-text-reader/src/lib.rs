@@ -1,7 +1,14 @@
+// Issue #99: slicing a str at a byte that is not a char boundary panics, and
+// took the reader down on accented text. Every slice goes through
+// `editor::char_boundary` (`slice`, `slice_from`, `slice_to`) instead; with
+// CI's `-D warnings` a raw `&s[a..b]` is a build error. Tests may slice.
+#![cfg_attr(not(test), warn(clippy::string_slice))]
+
 mod bookmarks;
 pub mod config;
 mod core_state;
 mod core_types;
+mod crash;
 mod debug;
 pub mod demo_components;
 mod demo_content;
@@ -31,6 +38,8 @@ mod word_anchor;
 mod runner;
 
 pub use config::config_env_path;
+pub use crash::{CrashGuard, install_panic_hook, log_dir, stderr_log_path};
+pub use debug::{debug_enabled, debug_log, init_debug_logging};
 pub use home::{run_home, should_show_home};
 pub use runner::{
   RunOutcome, load_ocr_enabled_config, ocr_enabled_config_opt,

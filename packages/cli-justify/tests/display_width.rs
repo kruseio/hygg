@@ -173,6 +173,29 @@ fn pdf_toc_handles_unicode_prefix_and_cjk_title() {
 }
 
 #[test]
+fn pdf_toc_unicode_prefix_wraps_to_exact_lines() {
+  // The wrapper strips each line's prefix by its byte length: the first
+  // line's prefix ("Ééééａé 1   ") is longer in bytes than in columns, and
+  // the continuation prefix is spaces. Mixing the two up used to slice inside
+  // a character and panic; slicing now clamps instead, so pin the exact lines.
+  let row = "Ééééａé 1   The title and more words   12";
+  assert_eq!(
+    justify_pdf_hybrid(row, 20),
+    [
+      "Ééééａé 1   The",
+      "            title",
+      "            and more",
+      "            words",
+      "               12",
+    ]
+  );
+  assert_eq!(
+    justify_pdf_hybrid(row, 26),
+    ["Ééééａé 1   The title and", "            more", "            words   12"]
+  );
+}
+
+#[test]
 fn unfinished_toc_row_does_not_absorb_following_prose() {
   let lines =
     justify_pdf_hybrid("Chapter 1   中文 title\nOrdinary prose follows.", 80);

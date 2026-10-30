@@ -3,7 +3,9 @@
 
 use std::borrow::Cow;
 use std::path::Path;
+use std::sync::OnceLock;
 
+use ort::environment::Environment;
 use ort::session::builder::SessionBuilder;
 use ort::session::{Session, SessionInputValue, SessionInputs};
 use ort::value::{Tensor, Value};
@@ -13,6 +15,20 @@ use super::common::{
   MAX_STYLE_ROWS, MAX_TOKENS, SAMPLE_RATE, STYLE_DIM, SessionInput, VoiceStyles,
 };
 use super::files::load_voices;
+
+/// The process-wide ONNX Runtime environment. ort made it explicit in
+/// 2.0.0-rc.12 and allows exactly one per process (a second `build()` fails
+/// even after the first is dropped), so it is built once and every engine load
+/// shares it.
+fn environment() -> Result<&'static Environment, String> {
+  static ENV: OnceLock<Result<Environment, String>> = OnceLock::new();
+  ENV
+    .get_or_init(|| {
+      ort::init().build().map_err(|e| format!("ort environment: {e}"))
+    })
+    .as_ref()
+    .map_err(Clone::clone)
+}
 
 // Timestamped Kokoro v1.0 ONNX schema.
 const TOKENS_KEY: &str = "input_ids";
@@ -32,7 +48,7 @@ impl KokoroEngine {
     model_path: &Path,
     voices_path: &Path,
   ) -> Result<Self, String> {
-    let session = SessionBuilder::new()
+    let session = SessionBuilder::new(environment()?)
       .map_err(|e| format!("ort session builder: {e}"))?
       .commit_from_file(model_path)
       .map_err(|e| format!("load model {}: {e}", model_path.display()))?;

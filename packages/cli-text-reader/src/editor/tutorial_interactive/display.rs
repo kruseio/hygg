@@ -1,3 +1,4 @@
+use super::super::char_boundary::Pos;
 use super::super::core::Editor;
 use crate::interactive_tutorial::{
   create_tutorial_buffer, get_interactive_tutorial_steps,
@@ -11,7 +12,8 @@ impl Editor {
     self.debug_log("Starting simple interactive tutorial");
 
     // Save current cursor position
-    self.previous_position = Some((self.offset + self.cursor_y, self.cursor_x));
+    self.previous_position =
+      Some(Pos::new(self.offset + self.cursor_y, self.cursor_x.col()));
 
     // Clear all highlights for the tutorial
     self.highlights.clear_all_highlights();

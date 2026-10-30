@@ -1,3 +1,4 @@
+use super::char_boundary::CursorCol;
 use super::core::{BufferState, Editor};
 use cli_pdf_to_text::PdfLineKind;
 
@@ -174,10 +175,14 @@ impl Editor {
       // Validate cursor_x is within line bounds with better handling
       let current_line_idx = self.offset + self.cursor_y;
       if current_line_idx < self.lines.len() {
-        let line_len = self.lines[current_line_idx].len();
-        if self.cursor_x > line_len {
+        // cursor_x is a byte offset: keep it on the start of a grapheme
+        // cluster, the line's last one at most (issue #99).
+        let line = &self.lines[current_line_idx];
+        let line_len = line.len();
+        let safe_x = CursorCol::clamped(line, self.cursor_x.col());
+        if self.cursor_x != safe_x {
           let old_cursor_x = self.cursor_x;
-          self.cursor_x = line_len;
+          self.cursor_x = safe_x;
           self.debug_log(&format!(
             "  WARNING: Adjusted cursor_x from {} to {} (line {} len={})",
             old_cursor_x, self.cursor_x, current_line_idx, line_len
@@ -187,7 +192,7 @@ impl Editor {
         // If we're somehow beyond the document, reset to safe position
         self.debug_log(&format!("  ERROR: Line index {current_line_idx} out of bounds, resetting cursor"));
         self.cursor_y = 0;
-        self.cursor_x = 0;
+        self.cursor_x = CursorCol::ZERO;
       }
 
       self.debug_log(&format!(
@@ -212,7 +217,7 @@ impl Editor {
       self.line_kinds = vec![PdfLineKind::Text; self.lines.len()];
       self.total_lines = self.lines.len();
       self.offset = 0;
-      self.cursor_x = 0;
+      self.cursor_x = CursorCol::ZERO;
       self.cursor_y = 0;
 
       // Reset editor state to safe defaults

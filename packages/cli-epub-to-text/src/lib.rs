@@ -1,3 +1,8 @@
+// Slicing a str at a byte that is not a char boundary panics (hygg issue #99).
+// With CI's `-D warnings` a raw `&s[a..b]` is a build error: use `str::get`
+// or a boundary-clamping helper. Tests may slice.
+#![cfg_attr(not(test), warn(clippy::string_slice))]
+
 //! # CLI EPUB to Text Converter
 //!
 //! A Rust library for converting EPUB files to plain text with proper error
@@ -131,15 +136,23 @@ fn extract_spine_text<R: std::io::Read + std::io::Seek>(
     if let Some((xhtml_bytes, _media_type)) =
       epub.get_resource(&spine_item.idref)
     {
-      let text =
-        html2text::from_read(xhtml_bytes.as_slice(), 110).map_err(|e| {
-          EpubError::HtmlConversion(format!(
-            "Failed to convert HTML to text for resource '{}': {}",
-            spine_item.idref, e
-          ))
-        })?;
+      // html2text parses its input as UTF-8, but chapters may be UTF-16 (which
+      // EPUB 2 allows) or carry a legacy charset in their XML declaration or
+      // <meta>. Decode first: a BOM wins, then valid UTF-8, then the declared
+      // charset, then detection.
+      let xhtml = hygg_shared::text_decode::decode_markup(&xhtml_bytes).text;
+      let text = html2text::from_read(xhtml.as_bytes(), 110).map_err(|e| {
+        EpubError::HtmlConversion(format!(
+          "Failed to convert HTML to text for resource '{}': {}",
+          spine_item.idref, e
+        ))
+      })?;
 
-      let trimmed_text = text.trim();
+      // Chapters are often separate files that each began with a BOM; one
+      // that survives as a leading U+FEFF would otherwise be glued to the
+      // first word of every chapter. Mid-text U+FEFF (a zero-width no-break
+      // space) is left alone.
+      let trimmed_text = text.trim().trim_start_matches('\u{FEFF}').trim();
       if !trimmed_text.is_empty() {
         text_parts.push(trimmed_text.to_string());
       }

@@ -1,3 +1,4 @@
+use crate::str_slice::{slice_from, slice_to};
 use crate::text_utils::{display_width, leading_whitespace};
 
 use crate::pdf_hybrid::structure::layout_signals::looks_like_git_log_graph_line;
@@ -43,7 +44,7 @@ pub(crate) fn parse_list_marker_with_kind(
   // a break), so without recognising them as list items the whole table
   // collapses into one flowed paragraph.
   if let Some(flag) = parse_option_flag(trimmed) {
-    let rest = &trimmed[flag.len()..];
+    let rest = slice_from(trimmed, flag.len());
     if let Some(rest) = rest.strip_prefix(' ') {
       let trimmed_rest = rest.trim_start();
       if !trimmed_rest.is_empty() {
@@ -63,7 +64,7 @@ pub(crate) fn parse_list_marker_with_kind(
   // flags above — without explicit row recognition the whole specifier
   // table flows together as one paragraph.
   if let Some(spec) = parse_format_specifier(trimmed) {
-    let rest = &trimmed[spec.len()..];
+    let rest = slice_from(trimmed, spec.len());
     if let Some(rest) = rest.strip_prefix(' ') {
       let trimmed_rest = rest.trim_start();
       if !trimmed_rest.is_empty() {
@@ -89,7 +90,7 @@ pub(crate) fn parse_list_marker_with_kind(
     return None;
   }
 
-  let remainder = &trimmed[idx..];
+  let remainder = slice_from(trimmed, idx);
   let mut chars = remainder.chars();
   let delimiter = chars.next()?;
   if delimiter != '.' && delimiter != ')' {
@@ -100,7 +101,7 @@ pub(crate) fn parse_list_marker_with_kind(
     return None;
   }
 
-  let marker = format!("{}{} ", &trimmed[..idx], delimiter);
+  let marker = format!("{}{} ", slice_to(trimmed, idx), delimiter);
   let content = chars.as_str().trim().to_string();
   Some((indent, marker, content, ListMarkerKind::Numbered))
 }
@@ -141,7 +142,7 @@ fn parse_option_flag(trimmed: &str) -> Option<&str> {
       break;
     }
   }
-  Some(&trimmed[..end])
+  Some(slice_to(trimmed, end))
 }
 
 /// Recognises a printf-style format specifier at the start of `trimmed`
@@ -167,7 +168,7 @@ fn parse_format_specifier(trimmed: &str) -> Option<&str> {
       break;
     }
   }
-  Some(&trimmed[..end])
+  Some(slice_to(trimmed, end))
 }
 
 pub(crate) fn is_list_continuation_line(

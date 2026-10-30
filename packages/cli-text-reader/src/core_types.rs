@@ -1,6 +1,8 @@
 // Core type definitions for the editor
 use cli_pdf_to_text::PdfLineKind;
 
+use crate::editor::char_boundary::{CursorCol, DisplayCol, LineSpan, Pos};
+
 // Split position for split buffers
 #[derive(Clone, Debug, PartialEq)]
 pub enum SplitPosition {
@@ -46,12 +48,12 @@ pub struct BufferState {
   pub lines: Vec<String>,
   pub line_kinds: Vec<PdfLineKind>,
   pub offset: usize,
-  pub cursor_x: usize,
+  pub cursor_x: CursorCol,
   pub cursor_y: usize,
   pub search_query: String,
-  pub current_match: Option<(usize, usize, usize)>,
-  pub selection_start: Option<(usize, usize)>,
-  pub selection_end: Option<(usize, usize)>,
+  pub current_match: Option<LineSpan>,
+  pub selection_start: Option<Pos>,
+  pub selection_end: Option<Pos>,
   pub viewport_height: usize,
   pub viewport_start: usize,
   pub command: Option<String>,
@@ -73,7 +75,7 @@ impl BufferState {
       lines,
       line_kinds,
       offset: 0,
-      cursor_x: 0,
+      cursor_x: CursorCol::ZERO,
       cursor_y: 0,
       search_query: String::new(),
       current_match: None,
@@ -107,26 +109,44 @@ pub struct EditorState {
   pub search_query: String, // DEPRECATED: Use active buffer's search_query
   #[allow(dead_code)]
   pub last_search_index: Option<usize>,
-  pub current_match: Option<(usize, usize, usize)>, /* DEPRECATED: Use
-                                                     * active buffer's
-                                                     * current_match */
-  pub selection_start: Option<(usize, usize)>, /* DEPRECATED: Use active buffer's selection_start */
-  pub selection_end: Option<(usize, usize)>,   /* DEPRECATED: Use active
-                                                * buffer's selection_end */
+  pub current_match: Option<LineSpan>, /* DEPRECATED: Use
+                                        * active buffer's
+                                        * current_match */
+  pub selection_start: Option<Pos>, /* DEPRECATED: Use active buffer's
+                                     * selection_start */
+  pub selection_end: Option<Pos>, /* DEPRECATED: Use active
+                                   * buffer's selection_end */
   pub visual_selection_active: bool, /* Track if visual selection should be
                                       * preserved */
   pub previous_visual_mode: Option<EditorMode>, /* Track which visual mode
                                                  * we came from */
   // Last visual selection for gv command
-  pub last_visual_start: Option<(usize, usize)>,
-  pub last_visual_end: Option<(usize, usize)>,
+  pub last_visual_start: Option<Pos>,
+  pub last_visual_end: Option<Pos>,
   pub last_visual_mode: Option<EditorMode>, // VisualChar or VisualLine
   // Search preview state for vim-like behavior
   pub search_preview_active: bool,
-  pub search_original_cursor: Option<(usize, usize)>, // (cursor_y, cursor_x)
+  // (cursor_y, cursor_x) to restore when a search is cancelled; `cursor_y` is
+  // a viewport row, not a document line.
+  pub search_original_cursor: Option<(usize, CursorCol)>,
   pub search_original_offset: Option<usize>,
-  pub search_preview_match: Option<(usize, usize, usize)>, /* (line, start, end) for highlighting */
+  pub search_preview_match: Option<LineSpan>, // for highlighting
   pub command_completion: Option<String>,
+  // vim's curswant: the on-screen column j/k aim for. See `DesiredColumn`.
+  pub desired_column: Option<DesiredColumn>,
+}
+
+// The display column j/k try to keep, so a pass over a short line (or a line
+// of wide CJK) does not drag the cursor left for good. `line` and `cursor_x`
+// record where the cursor was left when the column was last used; if the
+// cursor is anywhere else by the next j/k, some other motion moved it and the
+// column is measured afresh from the cursor instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DesiredColumn {
+  // Display column, or `DisplayCol::END` after `$` for "end of every line".
+  pub column: DisplayCol,
+  pub line: usize,
+  pub cursor_x: CursorCol,
 }
 
 impl EditorState {
@@ -154,6 +174,7 @@ impl EditorState {
       search_original_offset: None,
       search_preview_match: None,
       command_completion: None,
+      desired_column: None,
     }
   }
 }

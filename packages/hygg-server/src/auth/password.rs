@@ -3,17 +3,16 @@
 //! which are high-entropy random and only SHA-256 hashed (see `token`).
 
 use argon2::Argon2;
-use argon2::password_hash::rand_core::OsRng;
-use argon2::password_hash::{
-  PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
-};
+use argon2::password_hash::phc::PasswordHash;
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 
 /// Hash a password into a PHC string suitable for storage.
 pub fn hash_password(
   password: &str,
 ) -> Result<String, argon2::password_hash::Error> {
-  let salt = SaltString::generate(&mut OsRng);
-  let hash = Argon2::default().hash_password(password.as_bytes(), &salt)?;
+  // Draws a 16-byte random salt from the OS RNG, as `SaltString::generate`
+  // did before argon2 0.6, so the PHC strings are unchanged in shape.
+  let hash = Argon2::default().hash_password(password.as_bytes())?;
   Ok(hash.to_string())
 }
 

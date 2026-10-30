@@ -55,6 +55,13 @@ fn run_cli_text_reader_inner(
     debug::debug_log("main", "Raw content provided for consistent hashing");
   }
 
+  // Saved state of a document whose layout changed when hygg started decoding
+  // text input (BOM stripped, CRLF normalised) is moved onto the new layout
+  // once, before the editor loads it.
+  if !demo_mode && let Some(content) = raw_content.as_deref() {
+    super::layout_migration::migrate_saved_state(content, &lines, col);
+  }
+
   let total_lines = lines.len();
   let book_id =
     raw_content.as_deref().map(hygg_shared::sync::book_id_from_text);

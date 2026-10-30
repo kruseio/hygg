@@ -62,8 +62,8 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.1.27"
-rust-version = "1.88"
+version = "0.1.28"
+rust-version = "1.96"
 edition = "2024"
 authors = ["kruseio"]
 # `license` is intentionally NOT inherited: this is a multi-license workspace

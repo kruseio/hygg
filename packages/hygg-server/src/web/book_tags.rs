@@ -68,6 +68,11 @@ pub(crate) async fn book_tag_remove_post(
 
 /// Shared guard: a logged-in workspace user with valid CSRF and read access to
 /// the document, plus the tag scope (`user`/`org`) the tag should live in.
+#[expect(
+  clippy::result_large_err,
+  reason = "the Err is the HTTP response itself, returned straight to axum; \
+            boxing it would only add an allocation on every rejection"
+)]
 async fn tag_context(
   state: &AppState,
   headers: &HeaderMap,

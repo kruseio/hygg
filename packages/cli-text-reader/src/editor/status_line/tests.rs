@@ -144,3 +144,50 @@ fn command_completion_text_hides_when_command_uses_line() {
 
   assert!(editor.command_completion_text(3).is_none());
 }
+
+// A pty can report a 0x0 (or 1x1) window, e.g. while it is being created or
+// when hygg runs under a test harness. The frame's row arithmetic used
+// `height - 1` and `height - 2`, which overflowed and panicked in debug
+// builds. Draw every part of a frame, in every mode, at degenerate sizes.
+#[test]
+fn degenerate_terminal_sizes_render_without_panicking() {
+  use super::super::core::{EditorMode, ViewMode};
+
+  let modes = [
+    EditorMode::Normal,
+    EditorMode::VisualChar,
+    EditorMode::VisualLine,
+    EditorMode::Command,
+    EditorMode::Search,
+    EditorMode::ReverseSearch,
+  ];
+  for (width, height) in [(0, 0), (1, 1), (2, 2), (80, 0), (0, 24)] {
+    for mode in &modes {
+      for split in [false, true] {
+        let view_mode =
+          if split { ViewMode::HorizontalSplit } else { ViewMode::Normal };
+        let mut editor =
+          Editor::new(vec!["canción".to_string(), "中文".to_string()], 80);
+        editor.width = width;
+        editor.height = height;
+        editor.view_mode = view_mode;
+        editor.set_active_mode(mode.clone());
+        editor.center_cursor();
+
+        let mut buffer = Vec::new();
+        let term_width = width as u16;
+        if split {
+          editor
+            .draw_split_view_buffered(&mut buffer, term_width, "")
+            .expect("split view");
+        } else {
+          editor
+            .draw_content_buffered(&mut buffer, term_width, "")
+            .expect("content");
+        }
+        editor.draw_status_line_buffered(&mut buffer).expect("status line");
+        editor.position_cursor_buffered(&mut buffer, 0).expect("cursor");
+      }
+    }
+  }
+}

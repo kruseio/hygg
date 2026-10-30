@@ -1,13 +1,14 @@
+use crate::editor::char_boundary::{ByteCol, char_starts, slice};
 use cli_pdf_to_text::PdfLineKind;
 
 use super::WordSpan;
 
 // Byte ranges of whitespace-separated words within a single line. UTF-8 safe:
-// indices come from `char_indices`, so every boundary is a char boundary.
-pub(crate) fn word_byte_ranges(line: &str) -> Vec<(usize, usize)> {
+// the columns come from `char_starts`, so every boundary is a char boundary.
+pub(crate) fn word_byte_ranges(line: &str) -> Vec<(ByteCol, ByteCol)> {
   let mut ranges = Vec::new();
-  let mut start: Option<usize> = None;
-  for (idx, ch) in line.char_indices() {
+  let mut start: Option<ByteCol> = None;
+  for (idx, ch) in char_starts(line) {
     if ch.is_whitespace() {
       if let Some(s) = start.take() {
         ranges.push((s, idx));
@@ -17,7 +18,7 @@ pub(crate) fn word_byte_ranges(line: &str) -> Vec<(usize, usize)> {
     }
   }
   if let Some(s) = start {
-    ranges.push((s, line.len()));
+    ranges.push((s, ByteCol::end(line)));
   }
   ranges
 }
@@ -78,12 +79,15 @@ pub(crate) fn build_word_spans(
         // Split glued sentences ("end.Start") so each half narrates and
         // highlights on its own; a normal word yields one full-width range.
         for (rel_start, rel_end) in
-          split_glued_sentence(&line[col_start..col_end])
+          split_glued_sentence(slice(line, col_start, col_end))
         {
-          let (ws, we) = (col_start + rel_start, col_start + rel_end);
+          // The sub-ranges are byte offsets into the word, on its char
+          // boundaries, so they are char boundaries of the line too.
+          let ws = ByteCol::floor(line, col_start.raw() + rel_start);
+          let we = ByteCol::floor(line, col_start.raw() + rel_end);
           spans.push(WordSpan {
-            abs_start: abs + ws,
-            abs_end: abs + we,
+            abs_start: abs + ws.raw(),
+            abs_end: abs + we.raw(),
             line: line_idx,
             col_start: ws,
             col_end: we,

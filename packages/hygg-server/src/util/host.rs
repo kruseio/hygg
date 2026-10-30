@@ -33,13 +33,18 @@ pub struct HostMetrics {
 impl HostMetrics {
   pub fn collect_blocking() -> Self {
     let pid = get_current_pid().ok();
-    let mut system = System::new();
+    // sysinfo 0.40 reports an unsupported OS as `Err` rather than through the
+    // removed `IS_SUPPORTED_SYSTEM`; the dashboard then shows zeros, as it did
+    // when an unsupported platform returned empty data.
+    let Ok(mut system) = System::new() else {
+      return Self::default();
+    };
     system.refresh_memory();
     if let Some(pid) = pid {
       system.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
     }
     // Networks needs a baseline before deltas are meaningful.
-    let mut networks = Networks::new_with_refreshed_list();
+    let mut networks = Networks::new_with_refreshed_list().ok();
 
     let interval = MINIMUM_CPU_UPDATE_INTERVAL;
     std::thread::sleep(interval);
@@ -47,7 +52,9 @@ impl HostMetrics {
     if let Some(pid) = pid {
       system.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
     }
-    networks.refresh(true);
+    if let Some(networks) = networks.as_mut() {
+      networks.refresh(true);
+    }
 
     let (cpu_percent, memory_bytes) = pid
       .and_then(|pid| system.process(pid))
@@ -57,8 +64,11 @@ impl HostMetrics {
     let (disk_used_bytes, disk_total_bytes) = primary_disk_usage();
 
     let secs = interval.as_secs_f64().max(0.001);
-    let rx: u64 = networks.values().map(|net| net.received()).sum();
-    let tx: u64 = networks.values().map(|net| net.transmitted()).sum();
+    let (rx, tx) = networks.as_ref().map_or((0, 0), |networks| {
+      let rx: u64 = networks.values().map(|net| net.received()).sum();
+      let tx: u64 = networks.values().map(|net| net.transmitted()).sum();
+      (rx, tx)
+    });
 
     HostMetrics {
       cpu_percent,
@@ -76,7 +86,9 @@ impl HostMetrics {
 /// present, otherwise the disk with the most total space. Returns zeros when no
 /// disks are reported.
 fn primary_disk_usage() -> (u64, u64) {
-  let disks = Disks::new_with_refreshed_list();
+  let Ok(disks) = Disks::new_with_refreshed_list() else {
+    return (0, 0);
+  };
   let primary = disks
     .iter()
     .find(|disk| disk.mount_point() == std::path::Path::new("/"))

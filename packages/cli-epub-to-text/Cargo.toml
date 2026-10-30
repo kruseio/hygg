@@ -23,5 +23,8 @@ html2text = "0.17"
 hygg-shared = { version = "0.1", path = "../hygg-shared" }
 
 [dev-dependencies]
+# Builds legacy-charset chapters for tests/encodings.rs (already in the tree via
+# hygg-shared).
+encoding_rs = "0.8"
 tempfile = "3"
-zip = "8"
+zip = "9"

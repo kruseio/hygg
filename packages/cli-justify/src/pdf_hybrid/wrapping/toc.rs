@@ -1,3 +1,4 @@
+use crate::str_slice::slice_from;
 use crate::text_utils::display_width;
 
 use crate::pdf_hybrid::alignment::TocAlignmentState;
@@ -33,7 +34,7 @@ pub(crate) fn wrap_aligned_toc_row(
     } else {
       continuation_prefix.len()
     };
-    let last_text = &last_line[prefix_len..];
+    let last_text = slice_from(last_line, prefix_len);
     let required = display_width(last_text) + display_width(&page_suffix);
     if required <= first_limit {
       break;

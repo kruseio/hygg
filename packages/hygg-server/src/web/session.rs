@@ -139,6 +139,11 @@ pub async fn issue_session_cookie(
   Some(session_cookie(&session_id))
 }
 
+#[expect(
+  clippy::result_unit_err,
+  reason = "public library API; changing the error type is a breaking change \
+            for downstream crates and out of scope for a dependency bump"
+)]
 pub async fn default_tenant_id(state: &AppState) -> Result<String, ()> {
   if let Ok(Some(id)) =
     repo::tenants::find_id_by_slug(&state.db.conn, DEFAULT_TENANT_SLUG).await

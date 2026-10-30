@@ -8,6 +8,22 @@ use std::io::{self, IsTerminal, Write};
 use super::super::core::{Editor, EditorMode, ViewMode};
 
 impl Editor {
+  // On-screen column of the cursor within its line. `cursor_x` is a byte
+  // offset; the terminal column is the display width of the text before it:
+  // two cells for CJK, fullwidth and most emoji, none for combining marks,
+  // ZWJ and zero-width characters. Measured with cli-justify's rule, so it
+  // agrees with the layout the lines were justified to. Falls back to
+  // `cursor_x` when there is no line under the cursor: with no text to
+  // measure, the byte offset is the only estimate.
+  pub(crate) fn cursor_screen_column(&self) -> usize {
+    self
+      .lines
+      .get(self.offset + self.cursor_y)
+      .map_or(self.cursor_x.raw(), |line| {
+        self.cursor_x.display_col(line).cells()
+      })
+  }
+
   fn hide_cursor_buffered(&mut self, buffer: &mut Vec<u8>) -> io::Result<()> {
     if self.cursor_currently_visible {
       buffer.queue(Hide)?;
@@ -91,7 +107,10 @@ impl Editor {
         // Position cursor exactly on the highlighted line
         execute!(
           stdout,
-          MoveTo((center_offset + self.cursor_x) as u16, cursor_y as u16)
+          MoveTo(
+            (center_offset + self.cursor_screen_column()) as u16,
+            cursor_y as u16
+          )
         )?;
 
         // Set appropriate cursor style for the mode and show cursor
@@ -125,7 +144,7 @@ impl Editor {
           execute!(
             stdout,
             Show,
-            MoveTo(cmd_len as u16, (self.height - 1) as u16),
+            MoveTo(cmd_len as u16, self.height.saturating_sub(1) as u16),
             SetCursorStyle::BlinkingBar
           )?;
         } else {
@@ -186,7 +205,7 @@ impl Editor {
 
       // Position cursor exactly on the highlighted line
       buffer.queue(MoveTo(
-        (center_offset + self.cursor_x) as u16,
+        (center_offset + self.cursor_screen_column()) as u16,
         cursor_y as u16,
       ))?;
 
@@ -217,7 +236,8 @@ impl Editor {
         _ => 0,
       };
 
-      buffer.queue(MoveTo(cmd_len as u16, (self.height - 1) as u16))?;
+      buffer
+        .queue(MoveTo(cmd_len as u16, self.height.saturating_sub(1) as u16))?;
       self
         .queue_cursor_style_if_changed(buffer, SetCursorStyle::BlinkingBar)?;
       self.show_cursor_buffered(buffer)?;
@@ -226,3 +246,6 @@ impl Editor {
     Ok(())
   }
 }
+
+#[cfg(test)]
+mod tests;

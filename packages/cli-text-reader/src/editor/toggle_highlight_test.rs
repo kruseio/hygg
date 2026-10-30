@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::editor::char_boundary::{ByteCol, Pos};
   use crate::editor::core::{Editor, EditorMode};
   use cli_pdf_to_text::PdfLineKind;
 
@@ -18,15 +19,15 @@ mod tests {
     editor.set_active_mode(EditorMode::VisualChar);
 
     // Set selection in editor state
-    editor.editor_state.selection_start = Some((1, 7)); // "line"
-    editor.editor_state.selection_end = Some((1, 11)); // "line"
+    editor.editor_state.selection_start = Some(Pos::new(1, ByteCol::lit(7))); // "line"
+    editor.editor_state.selection_end = Some(Pos::new(1, ByteCol::lit(11))); // "line"
     editor.editor_state.visual_selection_active = true;
     editor.editor_state.previous_visual_mode = Some(EditorMode::VisualChar);
 
     // Also set in buffer state
     if let Some(buffer) = editor.buffers.get_mut(0) {
-      buffer.selection_start = Some((1, 7));
-      buffer.selection_end = Some((1, 11));
+      buffer.selection_start = Some(Pos::new(1, ByteCol::lit(7)));
+      buffer.selection_end = Some(Pos::new(1, ByteCol::lit(11)));
     }
 
     // Toggle highlight
@@ -54,14 +55,14 @@ mod tests {
       vec![PdfLineKind::Text, PdfLineKind::AnsiArt, PdfLineKind::Text];
     editor.buffers[0].line_kinds = editor.line_kinds.clone();
     editor.set_active_mode(EditorMode::VisualChar);
-    editor.editor_state.selection_start = Some((2, 0));
-    editor.editor_state.selection_end = Some((2, 4));
+    editor.editor_state.selection_start = Some(Pos::new(2, ByteCol::lit(0)));
+    editor.editor_state.selection_end = Some(Pos::new(2, ByteCol::lit(4)));
     editor.editor_state.visual_selection_active = true;
     editor.editor_state.previous_visual_mode = Some(EditorMode::VisualChar);
 
     if let Some(buffer) = editor.buffers.get_mut(0) {
-      buffer.selection_start = Some((2, 0));
-      buffer.selection_end = Some((2, 4));
+      buffer.selection_start = Some(Pos::new(2, ByteCol::lit(0)));
+      buffer.selection_end = Some(Pos::new(2, ByteCol::lit(4)));
     }
 
     editor.toggle_highlight();
@@ -92,7 +93,13 @@ mod tests {
     let mut buffer = Vec::new();
     assert!(
       editor
-        .highlight_persistent_buffered(&mut buffer, 2, &lines[2], "")
+        .render_line_highlights(
+          &mut buffer,
+          crate::editor::highlighting::LineView::Main,
+          2,
+          &lines[2],
+          ""
+        )
         .unwrap()
     );
     let output = String::from_utf8(buffer).unwrap();

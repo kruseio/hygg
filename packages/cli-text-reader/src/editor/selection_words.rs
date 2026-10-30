@@ -1,9 +1,10 @@
+use super::char_boundary::{ByteCol, Pos, grapheme_base_chars};
 use super::core::Editor;
 
 impl Editor {
   // Select inner word
   pub fn select_inner_word(&mut self, big_word: bool) {
-    let (line_idx, col_idx) = self.get_cursor_position();
+    let Pos { line: line_idx, col: col_idx } = self.get_cursor_position();
 
     if line_idx >= self.lines.len() {
       return;
@@ -15,13 +16,20 @@ impl Editor {
       return;
     }
 
+    // The cursor column and the selection columns are byte offsets; the walk
+    // below counts graphemes (classified by their first char), so convert in
+    // here and back out when storing
+    // the selection (issue #99).
+    let chars = grapheme_base_chars(line);
+
     // Clamp cursor position to valid range
-    let col_idx = col_idx.min(line.len().saturating_sub(1));
+    let col_idx =
+      col_idx.grapheme_index(line).min(chars.len().saturating_sub(1));
 
     if big_word {
       // Big word (space separated) - non-whitespace sequences
       let is_whitespace =
-        |idx: usize| line.chars().nth(idx).is_none_or(|c| c.is_whitespace());
+        |idx: usize| chars.get(idx).is_none_or(|c| c.is_whitespace());
 
       // If cursor is on whitespace, no word to select
       if is_whitespace(col_idx) {
@@ -38,22 +46,25 @@ impl Editor {
       }
 
       // Move forward to find end
-      while end < line.len() && !is_whitespace(end) {
+      while end < chars.len() && !is_whitespace(end) {
         end += 1;
       }
 
+      let start = ByteCol::from_grapheme_index(line, start);
+      let end = ByteCol::from_grapheme_index(line, end);
+
       // Set selection
-      self.editor_state.selection_start = Some((line_idx, start));
-      self.editor_state.selection_end = Some((line_idx, end));
+      self.editor_state.selection_start = Some(Pos::new(line_idx, start));
+      self.editor_state.selection_end = Some(Pos::new(line_idx, end));
       // Also update active buffer's selection
       if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-        buffer.selection_start = Some((line_idx, start));
-        buffer.selection_end = Some((line_idx, end));
+        buffer.selection_start = Some(Pos::new(line_idx, start));
+        buffer.selection_end = Some(Pos::new(line_idx, end));
       }
     } else {
       // Regular word (alphanumeric + underscore) - vim's 'w' behavior
       let is_word_char = |c: char| c.is_alphanumeric() || c == '_';
-      let char_at = |idx: usize| line.chars().nth(idx).unwrap_or(' ');
+      let char_at = |idx: usize| chars.get(idx).copied().unwrap_or(' ');
 
       let current_char = char_at(col_idx);
 
@@ -74,7 +85,7 @@ impl Editor {
         }
 
         // Move forward to find end of word
-        while end < line.len() && is_word_char(char_at(end)) {
+        while end < chars.len() && is_word_char(char_at(end)) {
           end += 1;
         }
       } else {
@@ -90,7 +101,7 @@ impl Editor {
         }
 
         // Move forward to find end of punctuation sequence
-        while end < line.len() {
+        while end < chars.len() {
           let next_char = char_at(end);
           if next_char.is_whitespace() || is_word_char(next_char) {
             break;
@@ -99,20 +110,23 @@ impl Editor {
         }
       }
 
+      let start = ByteCol::from_grapheme_index(line, start);
+      let end = ByteCol::from_grapheme_index(line, end);
+
       // Set selection
-      self.editor_state.selection_start = Some((line_idx, start));
-      self.editor_state.selection_end = Some((line_idx, end));
+      self.editor_state.selection_start = Some(Pos::new(line_idx, start));
+      self.editor_state.selection_end = Some(Pos::new(line_idx, end));
       // Also update active buffer's selection
       if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-        buffer.selection_start = Some((line_idx, start));
-        buffer.selection_end = Some((line_idx, end));
+        buffer.selection_start = Some(Pos::new(line_idx, start));
+        buffer.selection_end = Some(Pos::new(line_idx, end));
       }
     }
   }
 
   // Select around word (including trailing whitespace)
   pub fn select_around_word(&mut self, big_word: bool) {
-    let (line_idx, col_idx) = self.get_cursor_position();
+    let Pos { line: line_idx, col: col_idx } = self.get_cursor_position();
 
     if line_idx >= self.lines.len() {
       return;
@@ -123,8 +137,11 @@ impl Editor {
       return;
     }
 
-    // First, find the inner word boundaries
-    let chars: Vec<char> = line.chars().collect();
+    // First, find the inner word boundaries. Walk graphemes from the
+    // cursor's grapheme; the cursor and the stored selection are byte
+    // offsets (issue #99).
+    let chars = grapheme_base_chars(line);
+    let col_idx = col_idx.grapheme_index(line);
     let mut start = col_idx;
 
     // If we're on whitespace, find the nearest word
@@ -199,14 +216,20 @@ impl Editor {
       }
     }
 
+    let start = ByteCol::from_grapheme_index(line, start);
+    let end = ByteCol::from_grapheme_index(line, end);
+
     // Update selection
-    self.editor_state.selection_start = Some((line_idx, start));
-    self.editor_state.selection_end = Some((line_idx, end));
+    self.editor_state.selection_start = Some(Pos::new(line_idx, start));
+    self.editor_state.selection_end = Some(Pos::new(line_idx, end));
 
     // Update buffer
     if let Some(buffer) = self.buffers.get_mut(self.active_buffer) {
-      buffer.selection_start = Some((line_idx, start));
-      buffer.selection_end = Some((line_idx, end));
+      buffer.selection_start = Some(Pos::new(line_idx, start));
+      buffer.selection_end = Some(Pos::new(line_idx, end));
     }
   }
 }
+
+#[cfg(test)]
+mod tests;

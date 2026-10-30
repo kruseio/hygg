@@ -48,7 +48,7 @@ impl Editor {
         self.editor_state.search_query =
           self.editor_state.command_buffer.clone();
         // Move cursor to the preview match if found
-        if let Some((_line, _col, _)) = self.editor_state.search_preview_match {
+        if self.editor_state.search_preview_match.is_some() {
           // Set current_match from preview
           self.editor_state.current_match =
             self.editor_state.search_preview_match;

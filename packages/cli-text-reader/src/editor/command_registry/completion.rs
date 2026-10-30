@@ -1,4 +1,5 @@
 use super::types::{COMMANDS, CommandCompletion};
+use crate::editor::char_boundary::{ByteCol, slice_to};
 
 pub(crate) fn complete_command(input: &str) -> CommandCompletion {
   if input.starts_with('!') {
@@ -88,7 +89,11 @@ fn replace_last_word(input: &str, replacement: &str) -> String {
   // ASCII space but cuts inside a multibyte whitespace character (NBSP, EM
   // SPACE) and panics. Step over the whole character by its byte length; for an
   // ASCII space that is exactly `..=start`.
-  format!("{}{}", &input[..start + separator.len_utf8()], replacement)
+  format!(
+    "{}{}",
+    slice_to(input, ByteCol::floor(input, start + separator.len_utf8())),
+    replacement
+  )
 }
 
 pub(crate) fn top_level_commands() -> Vec<&'static str> {

@@ -1,3 +1,8 @@
+// Slicing a str at a byte that is not a char boundary panics (hygg issue #99).
+// With CI's `-D warnings` a raw `&s[a..b]` is a build error: use `str::get`
+// or a boundary-clamping helper. Tests may slice.
+#![cfg_attr(not(test), warn(clippy::string_slice))]
+
 //! # Hygg Shared Utilities
 //!
 //! This crate contains shared utilities used across the hygg project,
@@ -6,6 +11,7 @@
 pub mod anchor;
 pub mod export;
 pub mod sync;
+pub mod text_decode;
 
 use std::path::{Path, PathBuf};
 

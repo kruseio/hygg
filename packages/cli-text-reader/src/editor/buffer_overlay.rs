@@ -1,3 +1,4 @@
+use super::char_boundary::CursorCol;
 use super::core::{BufferState, Editor, EditorMode, ViewMode};
 use cli_pdf_to_text::PdfLineKind;
 
@@ -125,11 +126,9 @@ impl Editor {
         // Validate cursor_x within line bounds
         let cursor_y = overlay_buffer.cursor_y;
         if let Some(line) = overlay_buffer.lines.get(cursor_y) {
-          let max_x = line.len();
-          let _old_cursor_x = overlay_buffer.cursor_x;
-          if overlay_buffer.cursor_x > max_x {
-            overlay_buffer.cursor_x = max_x;
-          }
+          // Byte offset on a grapheme start, at most the last grapheme.
+          overlay_buffer.cursor_x =
+            CursorCol::clamped(line, overlay_buffer.cursor_x.col());
         }
 
         self.total_lines = overlay_buffer.lines.len();
@@ -163,7 +162,7 @@ impl Editor {
 
       // Ensure cursor is within bounds for new buffer
       buffer.cursor_y = 0;
-      buffer.cursor_x = 0;
+      buffer.cursor_x = CursorCol::ZERO;
 
       self.buffers.push(buffer);
       self.debug_log(&format!(

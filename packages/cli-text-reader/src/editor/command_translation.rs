@@ -1,3 +1,4 @@
+use crate::editor::char_boundary::{ByteCol, slice_from};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -164,7 +165,8 @@ fn translate_head(parsed: &ParsedCommand) -> String {
       }
     } else if flag.starts_with("-n") && flag.len() > 2 {
       // Format like -n10
-      if let Ok(n) = flag[2..].parse::<usize>() {
+      if let Ok(n) = slice_from(flag, ByteCol::floor(flag, 2)).parse::<usize>()
+      {
         line_count = n;
       }
     }
@@ -195,7 +197,8 @@ fn translate_tail(parsed: &ParsedCommand) -> String {
       }
     } else if flag.starts_with("-n") && flag.len() > 2 {
       // Format like -n10
-      if let Ok(n) = flag[2..].parse::<usize>() {
+      if let Ok(n) = slice_from(flag, ByteCol::floor(flag, 2)).parse::<usize>()
+      {
         line_count = n;
       }
     }

@@ -1,5 +1,6 @@
 use super::super::command_registry::complete_command;
 use super::super::core::{Editor, EditorMode};
+use crate::editor::char_boundary::{ByteCol, slice_from, slice_to};
 
 impl Editor {
   pub(crate) fn clear_command_completion(&mut self) {
@@ -61,7 +62,11 @@ impl Editor {
     if pos == 0 {
       return 0;
     }
-    command[..pos].char_indices().last().map(|(idx, _)| idx).unwrap_or(0)
+    slice_to(command, ByteCol::floor(command, pos))
+      .char_indices()
+      .last()
+      .map(|(idx, _)| idx)
+      .unwrap_or(0)
   }
 
   pub(crate) fn next_active_command_cursor(&self) -> usize {
@@ -71,7 +76,7 @@ impl Editor {
     if pos >= command.len() {
       return command.len();
     }
-    command[pos..]
+    slice_from(command, ByteCol::floor(command, pos))
       .chars()
       .next()
       .map(|c| pos + c.len_utf8())
@@ -107,7 +112,7 @@ impl Editor {
     if start >= command.len() {
       return;
     }
-    let end = command[start..]
+    let end = slice_from(&command, ByteCol::floor(&command, start))
       .chars()
       .next()
       .map(|c| start + c.len_utf8())

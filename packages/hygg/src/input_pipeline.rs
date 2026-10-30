@@ -1,27 +1,55 @@
+mod content;
+mod pandoc;
+
 use crate::{args::Args, binary_lookup::which};
-use hygg_shared::normalize_file_path;
+pub(crate) use content::Content;
+use pandoc::pandoc_to_text;
 use std::io::{self, IsTerminal, Read};
-use std::process::{Command, Stdio};
 
 pub(crate) struct PreparedInput {
   pub(crate) lines: Vec<String>,
   pub(crate) temp_file: Option<String>,
+  /// The document's identity text: the reader hashes it into the local
+  /// `document_hash` (progress, highlights, bookmarks, notes) and the sync
+  /// `book_id`. See [`Content::identity`]; it is not necessarily the text
+  /// that was justified into `lines`.
   pub(crate) raw_content: Option<String>,
   /// Path the document was read from, when it came from a file (not stdin).
   /// Threaded into the reader so the open is recorded in the `:home` library.
   pub(crate) source_path: Option<String>,
 }
 
+/// Read piped stdin. Returns its identity text (see [`Content::identity`]):
+/// the input exactly as before for UTF-8, otherwise the decoded text — so
+/// UTF-16 or legacy-encoded input is no longer mistaken for "no input".
 pub(crate) fn read_stdin_content() -> Option<String> {
   if io::stdin().is_terminal() {
     return None;
   }
 
-  let mut buffer = String::new();
-  match io::stdin().read_to_string(&mut buffer) {
-    Ok(_) if buffer.is_empty() => None,
-    Ok(_) => Some(buffer),
-    Err(_) => None,
+  let mut buffer = Vec::new();
+  io::stdin().read_to_end(&mut buffer).ok()?;
+  stdin_identity(buffer)
+}
+
+fn stdin_identity(bytes: Vec<u8>) -> Option<String> {
+  if bytes.is_empty() {
+    return None;
+  }
+  let len = bytes.len();
+  let content = Content::from_bytes(bytes, "standard input");
+  debug_log_encoding("stdin", len, &content);
+  Some(content.identity)
+}
+
+/// HYGG_DEBUG only: the encoding detected for a plain-text source, logged here
+/// where the original bytes were decoded rather than decoding them again.
+fn debug_log_encoding(source: &str, len: usize, content: &Content) {
+  if let Some(encoding) = &content.encoding {
+    cli_text_reader::debug_log(
+      "startup",
+      &format!("input: {source}, {len} bytes, encoding {encoding}"),
+    );
   }
 }
 
@@ -30,11 +58,15 @@ pub(crate) fn prepare_input(
   stdin_content: Option<String>,
   ocr_enabled: bool,
 ) -> Result<PreparedInput, Box<dyn std::error::Error>> {
-  if let Some(content) = stdin_content {
+  if let Some(identity) = stdin_content {
+    // Decoding the identity again yields the display text: for UTF-8 input it
+    // strips the BOM and normalises line endings; for input that was decoded
+    // from another encoding it is already clean, and decoding is a no-op.
+    let display = Content::from_bytes(identity.clone().into_bytes(), "stdin");
     return Ok(PreparedInput {
-      lines: cli_justify::justify(&content, args.col),
+      lines: cli_justify::justify(&display.display, args.col),
       temp_file: None,
-      raw_content: Some(content),
+      raw_content: Some(identity),
       source_path: None,
     });
   }
@@ -97,15 +129,15 @@ fn process_file_input(
   let use_ocr = is_pdf && ocr_enabled;
 
   let content = if use_ocr {
-    extract_pdf_text_with_ocr(file)?
+    Content::verbatim(extract_pdf_text_with_ocr(file)?)
   } else {
     read_content_without_ocr(file, extension.as_deref())?
   };
 
   let lines = if is_pdf {
-    cli_justify::justify_pdf_hybrid(&content, args.col)
+    cli_justify::justify_pdf_hybrid(&content.display, args.col)
   } else {
-    cli_justify::justify(&content, args.col)
+    cli_justify::justify(&content.display, args.col)
   };
 
   if lines.is_empty() || (lines.len() == 1 && lines[0].trim().is_empty()) {
@@ -117,7 +149,7 @@ fn process_file_input(
   Ok(PreparedInput {
     lines,
     temp_file: Some(temp_file),
-    raw_content: Some(content),
+    raw_content: Some(content.identity),
     source_path: Some(file.to_string()),
   })
 }
@@ -128,14 +160,22 @@ fn extract_pdf_text_with_ocr(
   cli_pdf_to_text::pdf_to_text_with_bundled_ocr(file)
 }
 
-fn read_content_without_ocr(
+pub(crate) fn read_content_without_ocr(
   file: &str,
   extension: Option<&str>,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<Content, Box<dyn std::error::Error>> {
   match extension {
-    // Plain text reads directly — no pandoc/round-trip needed.
-    Some("txt" | "text") => match std::fs::read_to_string(file) {
-      Ok(content) => Ok(content),
+    // Plain text is read as bytes and decoded from whatever encoding it uses
+    // (UTF-8/16/32 with or without a BOM, or a legacy code page) — no
+    // pandoc round-trip needed.
+    Some("txt" | "text") => match std::fs::read(file) {
+      Ok(bytes) => {
+        let len = bytes.len();
+        let content =
+          Content::from_bytes(bytes, &format!("text file '{file}'"));
+        debug_log_encoding(file, len, &content);
+        Ok(content)
+      }
       Err(e) => {
         eprintln!("Error:\nUnable to read text file '{file}'\n");
         eprintln!("Details:\n{e}\n");
@@ -143,7 +183,7 @@ fn read_content_without_ocr(
       }
     },
     Some("epub") => match cli_epub_to_text::epub_to_text(file) {
-      Ok(content) => Ok(content),
+      Ok(content) => Ok(Content::from_converted(content)),
       Err(e) => {
         eprintln!("Error:\nUnable to read EPUB file '{file}'\n");
         eprintln!("Details:\n{e}\n");
@@ -151,7 +191,7 @@ fn read_content_without_ocr(
       }
     },
     Some("pdf") => match cli_pdf_to_text::pdf_to_text(file) {
-      Ok(content) => Ok(content),
+      Ok(content) => Ok(Content::verbatim(content)),
       Err(e) => {
         eprintln!("Error:\nUnable to read PDF file '{file}'\n");
         eprintln!("Details:\n{e}\n");
@@ -164,10 +204,13 @@ fn read_content_without_ocr(
 
 fn read_via_best_effort(
   file: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<Content, Box<dyn std::error::Error>> {
   match pandoc_to_text(file)
-    .or_else(|_| cli_epub_to_text::epub_to_text(file))
-    .or_else(|_| cli_pdf_to_text::pdf_to_text(file))
+    .map(Content::from_converted)
+    .or_else(|_| {
+      cli_epub_to_text::epub_to_text(file).map(Content::from_converted)
+    })
+    .or_else(|_| cli_pdf_to_text::pdf_to_text(file).map(Content::verbatim))
   {
     Ok(content) => Ok(content),
     Err(e) => {
@@ -184,30 +227,5 @@ fn read_via_best_effort(
   }
 }
 
-fn pandoc_to_text(
-  file_path: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
-  let Some(pandoc) = which("pandoc") else {
-    return Err(
-      "pandoc not found. Install with:\nsudo apt install pandoc\n# scoop install pandoc\n# brew install pandoc".into(),
-    );
-  };
-
-  let canonical_path = normalize_file_path(file_path)?;
-  let output = Command::new(pandoc)
-    .arg("--to=plain")
-    .arg("--wrap=none")
-    .arg("--")
-    .arg(canonical_path)
-    .stdin(Stdio::null())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .output()?;
-
-  if !output.status.success() {
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    return Err(format!("pandoc failed: {stderr}").into());
-  }
-
-  Ok(String::from_utf8(output.stdout)?)
-}
+#[cfg(test)]
+mod tests;

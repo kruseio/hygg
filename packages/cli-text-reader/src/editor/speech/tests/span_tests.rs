@@ -1,12 +1,21 @@
 use super::text_kinds;
+use crate::editor::char_boundary::ByteCol;
 use crate::editor::speech::{WordSpan, build_word_spans, word_byte_ranges};
+
+// A literal byte column from an expected value.
+fn bc(raw: usize) -> ByteCol {
+  ByteCol::lit(raw)
+}
 
 #[test]
 fn word_byte_ranges_handles_spaces_and_utf8() {
-  assert_eq!(word_byte_ranges("the quick fox"), vec![(0, 3), (4, 9), (10, 13)]);
+  assert_eq!(
+    word_byte_ranges("the quick fox"),
+    vec![(bc(0), bc(3)), (bc(4), bc(9)), (bc(10), bc(13))]
+  );
   // "café" is 5 bytes (é = 2); trailing word offset must be byte-based.
   let line = "café ok";
-  assert_eq!(word_byte_ranges(line), vec![(0, 5), (6, 8)]);
+  assert_eq!(word_byte_ranges(line), vec![(bc(0), bc(5)), (bc(6), bc(8))]);
   assert_eq!(&line[0..5], "café");
   assert_eq!(&line[6..8], "ok");
 }
@@ -21,20 +30,44 @@ fn build_word_spans_matches_persistent_offset_space() {
   // line 0
   assert_eq!(
     spans[0],
-    WordSpan { abs_start: 0, abs_end: 3, line: 0, col_start: 0, col_end: 3 }
+    WordSpan {
+      abs_start: 0,
+      abs_end: 3,
+      line: 0,
+      col_start: bc(0),
+      col_end: bc(3)
+    }
   );
   assert_eq!(
     spans[1],
-    WordSpan { abs_start: 4, abs_end: 9, line: 0, col_start: 4, col_end: 9 }
+    WordSpan {
+      abs_start: 4,
+      abs_end: 9,
+      line: 0,
+      col_start: bc(4),
+      col_end: bc(9)
+    }
   );
   // line 1 starts at len("the quick") + 1 = 10
   assert_eq!(
     spans[2],
-    WordSpan { abs_start: 10, abs_end: 15, line: 1, col_start: 0, col_end: 5 }
+    WordSpan {
+      abs_start: 10,
+      abs_end: 15,
+      line: 1,
+      col_start: bc(0),
+      col_end: bc(5)
+    }
   );
   assert_eq!(
     spans[3],
-    WordSpan { abs_start: 16, abs_end: 19, line: 1, col_start: 6, col_end: 9 }
+    WordSpan {
+      abs_start: 16,
+      abs_end: 19,
+      line: 1,
+      col_start: bc(6),
+      col_end: bc(9)
+    }
   );
 }
 
@@ -46,8 +79,10 @@ fn splits_glued_sentence_into_separate_spans() {
   let lines = vec!["all over.The next".to_string()];
   let spans = build_word_spans(&lines, &text_kinds(1));
 
-  let texts: Vec<&str> =
-    spans.iter().map(|s| &lines[s.line][s.col_start..s.col_end]).collect();
+  let texts: Vec<&str> = spans
+    .iter()
+    .map(|s| &lines[s.line][s.col_start.raw()..s.col_end.raw()])
+    .collect();
   assert_eq!(texts, vec!["all", "over.", "The", "next"]);
   // Sub-ranges tile the glued token with no gap or overlap.
   assert_eq!(spans[1].col_end, spans[2].col_start);
@@ -60,7 +95,9 @@ fn does_not_split_decimals_or_abbreviations() {
   let lines = vec!["pi 3.14 the U.S and e.g. this".to_string()];
   let spans = build_word_spans(&lines, &text_kinds(1));
 
-  let texts: Vec<&str> =
-    spans.iter().map(|s| &lines[s.line][s.col_start..s.col_end]).collect();
+  let texts: Vec<&str> = spans
+    .iter()
+    .map(|s| &lines[s.line][s.col_start.raw()..s.col_end.raw()])
+    .collect();
   assert_eq!(texts, vec!["pi", "3.14", "the", "U.S", "and", "e.g.", "this"]);
 }

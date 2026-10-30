@@ -1,253 +1,71 @@
-use crossterm::{
-  QueueableCommand, execute,
-  style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
-};
-use std::io::{Result as IoResult, Write};
-
+use super::char_boundary::ByteCol;
 use super::core::{Editor, EditorMode};
+use super::highlighting::LineView;
 
 impl Editor {
-  // Highlight selected text in visual modes
-  pub fn highlight_selection(
+  // The visual selection's byte columns on document line `line_idx` (text
+  // `line`) as drawn in `view`, or `None` if no visible selection covers the
+  // line. The columns may be stale; `line_highlights` settles them onto the
+  // line.
+  //
+  // A selection is visible while its buffer is in a visual mode, or — for the
+  // active buffer — while `visual_selection_active` keeps it on screen after
+  // `:` from visual mode. It covers whole lines when it was made in VisualLine,
+  // including in that command-mode case (`previous_visual_mode`).
+  pub(crate) fn selection_columns(
     &self,
-    stdout: &mut impl Write,
-    line_index: usize,
+    view: LineView,
+    line_idx: usize,
     line: &str,
-    center_offset_string: &str,
-  ) -> IoResult<bool> {
-    if (self.editor_state.mode == EditorMode::VisualChar
-      || self.editor_state.mode == EditorMode::VisualLine
-      || self.editor_state.visual_selection_active)
-      && let (Some(start), Some(end)) =
-        (self.editor_state.selection_start, self.editor_state.selection_end)
-    {
-      let current_line_idx = self.offset + line_index;
-
-      // Determine if this line is within the selection range
-      // Check if we're in visual line mode or were in visual line mode
-      let is_line_mode = self.editor_state.mode == EditorMode::VisualLine
-        || (self.editor_state.visual_selection_active
-          && self.editor_state.previous_visual_mode
-            == Some(EditorMode::VisualLine));
-      let is_in_selection_range = if is_line_mode {
-        // In line mode, entire lines are selected
-        let (min_line, _) = if start.0 <= end.0 { start } else { end };
-        let (max_line, _) = if start.0 > end.0 { start } else { end };
-        current_line_idx >= min_line && current_line_idx <= max_line
-      } else {
-        // In char mode, parts of lines are selected
-        if start.0 == end.0 {
-          // Single line selection
-          current_line_idx == start.0
-        } else {
-          // Multi-line selection
-          let (min_line, _) = if start.0 <= end.0 { start } else { end };
-          let (max_line, _) = if start.0 > end.0 { start } else { end };
-          current_line_idx >= min_line && current_line_idx <= max_line
-        }
-      };
-
-      if is_in_selection_range {
-        // This line is part of the selection, highlight it
-        write!(stdout, "{center_offset_string}")?;
-
-        if self.editor_state.mode == EditorMode::VisualLine {
-          // In line mode, highlight the entire line
-          execute!(
-            stdout,
-            SetBackgroundColor(Color::DarkBlue),
-            SetForegroundColor(Color::White)
-          )?;
-          write!(stdout, "{line}")?;
-          execute!(stdout, ResetColor)?;
-          execute!(
-            stdout,
-            crossterm::terminal::Clear(
-              crossterm::terminal::ClearType::UntilNewLine
-            )
-          )?;
-          return Ok(true);
-        } else {
-          // In char mode, highlight only the selected portion
-          let (start_col, end_col) = if start.0 == end.0 {
-            // Selection is within the same line
-            if start.1 <= end.1 { (start.1, end.1) } else { (end.1, start.1) }
-          } else if current_line_idx == start.0 {
-            // First line of multi-line selection
-            let (min_line, min_col) =
-              if start.0 <= end.0 { start } else { end };
-            if current_line_idx == min_line {
-              (min_col, line.len())
-            } else {
-              (0, line.len())
-            }
-          } else if current_line_idx == end.0 {
-            // Last line of multi-line selection
-            let (max_line, max_col) = if start.0 > end.0 { start } else { end };
-            if current_line_idx == max_line {
-              (0, max_col)
-            } else {
-              (0, line.len())
-            }
-          } else {
-            // Middle line of multi-line selection
-            (0, line.len())
-          };
-
-          // Ensure column indices are valid
-          let start_col = start_col.min(line.len());
-          let end_col = end_col.min(line.len());
-
-          // Print parts of the line with appropriate highlighting
-          write!(stdout, "{}", &line[..start_col])?;
-          execute!(
-            stdout,
-            SetBackgroundColor(Color::DarkBlue),
-            SetForegroundColor(Color::White)
-          )?;
-          write!(stdout, "{}", &line[start_col..end_col])?;
-          execute!(stdout, ResetColor)?;
-          write!(stdout, "{}", &line[end_col..])?;
-          execute!(
-            stdout,
-            crossterm::terminal::Clear(
-              crossterm::terminal::ClearType::UntilNewLine
-            )
-          )?;
-
-          return Ok(true);
-        }
+  ) -> Option<(ByteCol, ByteCol)> {
+    let (start, end, mode, kept, previous) = match view {
+      LineView::Pane(idx) if idx != self.active_buffer => {
+        let buffer = self.buffers.get(idx)?;
+        (
+          buffer.selection_start?,
+          buffer.selection_end?,
+          &buffer.mode,
+          false,
+          None,
+        )
       }
-    }
-
-    Ok(false)
-  }
-
-  // Check if a line has visual selection
-  pub fn has_selection_on_line(&self, line_index: usize) -> bool {
-    if self.editor_state.selection_start.is_none()
-      || self.editor_state.selection_end.is_none()
-    {
-      return false;
-    }
-
-    let current_line_idx = self.offset + line_index;
-    let start = self.editor_state.selection_start.unwrap();
-    let end = self.editor_state.selection_end.unwrap();
-
-    // Check if line is in selection range
-    let (min_line, _) = if start.0 <= end.0 { start } else { end };
-    let (max_line, _) = if start.0 > end.0 { start } else { end };
-
-    current_line_idx >= min_line && current_line_idx <= max_line
-  }
-
-  // Buffered version of highlight_selection
-  pub fn highlight_selection_buffered(
-    &self,
-    buffer: &mut Vec<u8>,
-    line_index: usize,
-    line: &str,
-    center_offset_string: &str,
-  ) -> IoResult<bool> {
-    if (self.editor_state.mode == EditorMode::VisualChar
-      || self.editor_state.mode == EditorMode::VisualLine
-      || self.editor_state.visual_selection_active)
-      && let (Some(start), Some(end)) =
-        (self.editor_state.selection_start, self.editor_state.selection_end)
-    {
-      let current_line_idx = self.offset + line_index;
-
-      // Determine if this line is within the selection range
-      let is_line_mode = self.editor_state.mode == EditorMode::VisualLine
-        || (self.editor_state.visual_selection_active
-          && self.editor_state.previous_visual_mode
-            == Some(EditorMode::VisualLine));
-      let is_in_selection_range = if is_line_mode {
-        // In line mode, entire lines are selected
-        let (min_line, _) = if start.0 <= end.0 { start } else { end };
-        let (max_line, _) = if start.0 > end.0 { start } else { end };
-        current_line_idx >= min_line && current_line_idx <= max_line
-      } else {
-        // In char mode, parts of lines are selected
-        if start.0 == end.0 {
-          // Single line selection
-          current_line_idx == start.0
-        } else {
-          // Multi-line selection
-          let (min_line, _) = if start.0 <= end.0 { start } else { end };
-          let (max_line, _) = if start.0 > end.0 { start } else { end };
-          current_line_idx >= min_line && current_line_idx <= max_line
-        }
-      };
-
-      if is_in_selection_range {
-        // This line is part of the selection, highlight it
-        write!(buffer, "{center_offset_string}")?;
-
-        if self.editor_state.mode == EditorMode::VisualLine {
-          // In line mode, highlight the entire line
-          buffer.queue(SetBackgroundColor(Color::DarkBlue))?;
-          buffer.queue(SetForegroundColor(Color::White))?;
-          write!(buffer, "{line}")?;
-          buffer.queue(ResetColor)?;
-          buffer.queue(crossterm::terminal::Clear(
-            crossterm::terminal::ClearType::UntilNewLine,
-          ))?;
-          return Ok(true);
-        } else {
-          // In char mode, highlight only the selected portion
-          let (start_col, end_col) = if start.0 == end.0 {
-            // Selection is within the same line
-            if start.1 <= end.1 { (start.1, end.1) } else { (end.1, start.1) }
-          } else if current_line_idx == start.0 {
-            // First line of multi-line selection
-            let (min_line, min_col) =
-              if start.0 <= end.0 { start } else { end };
-            if current_line_idx == min_line {
-              (min_col, line.len())
-            } else {
-              (0, line.len())
-            }
-          } else if current_line_idx == end.0 {
-            // Last line of multi-line selection
-            let (max_line, max_col) = if start.0 > end.0 { start } else { end };
-            if current_line_idx == max_line {
-              (0, max_col)
-            } else {
-              (0, line.len())
-            }
-          } else {
-            // Middle line of multi-line selection
-            (0, line.len())
-          };
-
-          // Ensure column indices are valid. The immediate renderer
-          // (highlight_selection) clamps here; this buffered copy did not, so a
-          // selection column left past the end of a now-shorter line — a stale
-          // visual selection, a restored one, a cross-buffer mismatch — sliced
-          // out of bounds and panicked the reader. Same clamp, same result.
-          let start_col = start_col.min(line.len());
-          let end_col = end_col.min(line.len());
-
-          // Render the line with selection highlight
-          write!(buffer, "{}", &line[..start_col])?;
-
-          buffer.queue(SetBackgroundColor(Color::DarkBlue))?;
-          buffer.queue(SetForegroundColor(Color::White))?;
-          write!(buffer, "{}", &line[start_col..end_col])?;
-          buffer.queue(ResetColor)?;
-
-          write!(buffer, "{}", &line[end_col..])?;
-          buffer.queue(crossterm::terminal::Clear(
-            crossterm::terminal::ClearType::UntilNewLine,
-          ))?;
-
-          return Ok(true);
-        }
+      _ => {
+        let state = &self.editor_state;
+        (
+          state.selection_start?,
+          state.selection_end?,
+          &state.mode,
+          state.visual_selection_active,
+          state.previous_visual_mode.as_ref(),
+        )
       }
-    }
+    };
 
-    Ok(false)
+    let in_visual_mode =
+      matches!(mode, EditorMode::VisualChar | EditorMode::VisualLine);
+    if !in_visual_mode && !kept {
+      return None;
+    }
+    let line_mode = *mode == EditorMode::VisualLine
+      || (kept && previous == Some(&EditorMode::VisualLine));
+
+    // Order the ends so `first` comes first (by line, then column).
+    let (first, last) = (start.min(end), start.max(end));
+    if line_idx < first.line || line_idx > last.line {
+      return None;
+    }
+    let (start, end) = (ByteCol::ZERO, ByteCol::end(line));
+    let (first_col, last_col) = (first.col, last.col);
+    Some(if line_mode {
+      (start, end)
+    } else if first.line == last.line {
+      (first_col, last_col)
+    } else if line_idx == first.line {
+      (first_col, end)
+    } else if line_idx == last.line {
+      (start, last_col)
+    } else {
+      (start, end)
+    })
   }
 }
